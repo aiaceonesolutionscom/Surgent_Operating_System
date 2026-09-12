@@ -120,7 +120,7 @@ class LandingChatService:
         )
 
         history = await self._recent_history(db, conversation.id)
-        reply = await self.llm.chat(history, system_prompt=ARIA_SYSTEM_PROMPT, tier="low")
+        reply = await self.llm.chat(history, system_prompt=ARIA_SYSTEM_PROMPT, tier="low", max_tokens=500)
 
         flow = conversation.extra_data.get("flow")
         booking_created = False

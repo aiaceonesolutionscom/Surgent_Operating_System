@@ -63,7 +63,8 @@ function PatientCell({ patient }: { patient: Patient }) {
 export function PatientsPage() {
   const { authedFetch, role } = usePlan();
   const [showArchived, setShowArchived] = useState(false);
-  const { patients, loading } = usePatients(authedFetch, { includeArchived: role === "owner" && showArchived });
+  const canSeeArchived = role === "owner" || role === "receptionist";
+  const { patients, loading } = usePatients(authedFetch, { includeArchived: canSeeArchived && showArchived });
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -102,7 +103,7 @@ export function PatientsPage() {
             placeholder="Search patients by name, email, or phone…"
             className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted" />
         </div>
-        {role === "owner" &&
+        {canSeeArchived &&
         <button
           type="button"
           onClick={() => setShowArchived((v) => !v)}

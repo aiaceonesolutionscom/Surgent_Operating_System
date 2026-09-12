@@ -23,7 +23,7 @@ export function NeedsAttentionPage() {
         <PageHeader title="Needs attention" subtitle="Sessions an agent escalated to your team — sorted most recent first." />
         <div className="rounded-3xl border border-sand-200 bg-white p-12 text-center">
           <p className="text-sm text-danger">{error}</p>
-          <button onClick={refetch} className="mt-3 text-sm text-teal-600 hover:underline">Retry</button>
+          <button onClick={() => refetch()} className="mt-3 text-sm text-teal-600 hover:underline">Retry</button>
         </div>
       </>);
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
+from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -10,6 +11,7 @@ from src.models.user import User, UserRole
 from src.schemas.doctor import (
     CreateDoctorRequest,
     UpdateDoctorRequest,
+    UpdateMyDoctorRequest,
     DoctorResponse,
     CreateDoctorProcedureRequest,
     UpdateDoctorProcedureRequest,
@@ -20,6 +22,7 @@ from src.schemas.doctor import (
     CreateDoctorTimeBlockRequest,
     DoctorTimeBlockResponse,
 )
+from src.schemas.availability import DoctorSlotsResponse
 from src.controller.doctors.doctors_controllers import DoctorsController
 
 router = APIRouter(prefix="/doctors", tags=["Doctors"])
@@ -62,6 +65,18 @@ async def get_my_today(
     return await controller.get_my_today(db, user)
 
 
+@router.patch("/me", response_model=DoctorResponse)
+async def update_my_doctor(
+    data: UpdateMyDoctorRequest,
+    user: User = Depends(get_current_practice_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """A doctor updating their own recurring weekly schedule (working_hours
+    only). Must stay before /{doctor_id} — otherwise "me" is parsed as a
+    UUID path param."""
+    return await controller.update_my_doctor(db, user, data)
+
+
 @router.post("/me/time-blocks", response_model=DoctorTimeBlockResponse)
 async def create_my_time_block(
     data: CreateDoctorTimeBlockRequest,
@@ -90,6 +105,20 @@ async def delete_my_time_block(
     db: AsyncSession = Depends(get_db),
 ):
     await controller.delete_my_time_block(db, user, block_id)
+
+
+@router.get("/me/slots", response_model=list[DoctorSlotsResponse])
+async def get_my_slots(
+    user: User = Depends(get_current_practice_user),
+    db: AsyncSession = Depends(get_db),
+    date: date = Query(description="Practice-local day to start from"),
+    days: int = Query(default=7, ge=1, le=31),
+    duration_minutes: int = Query(default=30, ge=15, le=240),
+):
+    """The caller's own bookable slots — weekly working_hours minus one-off
+    availability overrides, each slot flagged when an existing appointment
+    occupies it. Must stay before /{doctor_id} (same ordering rule as /me)."""
+    return await controller.get_my_slots(db, user, date, days, duration_minutes)
 
 
 @router.get("/{doctor_id}", response_model=DoctorResponse)
@@ -197,3 +226,17 @@ async def remove_doctor_availability(
     db: AsyncSession = Depends(get_db),
 ):
     await controller.remove_availability(db, user, doctor_id, override_id)
+
+
+@router.get("/{doctor_id}/slots", response_model=list[DoctorSlotsResponse])
+async def get_doctor_slots(
+    doctor_id: UUID,
+    user: User = Depends(get_current_practice_user),
+    db: AsyncSession = Depends(get_db),
+    date: date = Query(description="Practice-local day to start from"),
+    days: int = Query(default=7, ge=1, le=31),
+    duration_minutes: int = Query(default=30, ge=15, le=240),
+):
+    """Any doctor's bookable slots — the staff/front-desk view of what time
+    windows are actually open (working_hours, overrides, booked busy)."""
+    return await controller.get_doctor_slots(db, user, doctor_id, date, days, duration_minutes)

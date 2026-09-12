@@ -1,4 +1,4 @@
-import React from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeftIcon, ZapIcon, InboxIcon, UsersIcon, ScissorsIcon } from "lucide-react";
 import { AGENT_CATEGORIES, AGENTS_BY_SLUG } from "../../../data/agents";
@@ -11,16 +11,25 @@ import { usePlan } from "../plan/PlanContext";
 import { UpgradeRequired } from "../plan/UpgradeRequired";
 import { minTierForCategory } from "../plan/plan";
 import { usePatients } from "../patients/usePatients";
+import { listAgentConfigs, type AgentConfigResponse } from "../../../api/entities";
 
-// receptionist, appointment_reminder, and multilingual_translation are real
-// today — see backend/src/services/ai_receptionist/ (voice_chat_service.py,
-// reminder_service.py, translation_service.py; the 3 previously-separate
-// "agent" folders for these were merged into that one module). appointment_booking
-// and reschedule_cancellation are fully covered by the real Receptionist
-// staff role/AppointmentsService instead (no dedicated AI-agent endpoint any
-// more). Everything else here is still structurally scaffolded but not
-// implemented. Shown honestly rather than implying all 31 agents are equally live.
-const LIVE_AGENT_SLUGS = new Set(["receptionist", "appointment_reminder", "multilingual_translation"]);
+// The consolidated 9-agent roster is real today — receptionist (WhatsApp + landing
+// chat), appointment_reminder (reminders/rescheduling), lead_qualification,
+// patient_intake, consultation_assistant (dictation/SOAP), post_op_recovery,
+// marketing_retention (nurturing/feedback follow-up), finance_agent (this month's
+// numbers), and main_agent (command center). Older session slugs (command_center,
+// post_op_followup, lead_nurturing, …) still map onto these via data/agents/index.ts.
+const LIVE_AGENT_SLUGS = new Set([
+  "receptionist",
+  "appointment_reminder",
+  "lead_qualification",
+  "patient_intake",
+  "consultation_assistant",
+  "post_op_recovery",
+  "marketing_retention",
+  "finance_agent",
+  "main_agent"
+]);
 
 const AGENT_LOGOS: Record<string, string> = {
   receptionist: "/agent-logos/receptionist.png"
@@ -33,6 +42,26 @@ export function AgentDetailPage() {
   const { allowsCategory, loading, authedFetch } = usePlan();
   const { patients } = usePatients(authedFetch);
   const { sessions, loading: sessionsLoading, error: sessionsError, refetch } = useSessions();
+  const [enabledBySlug, setEnabledBySlug] = useState<Record<string, boolean> | null>(null);
+
+  // Live status comes from the real agent-config rows (Owner toggles them on
+  // the Agent settings screen), not a hardcoded roster — a config explicitly
+  // switched off shows "Configured, not yet active" even for a shipped agent.
+  useEffect(() => {
+    let cancelled = false;
+    if (!authedFetch) return;
+    listAgentConfigs(authedFetch)
+      .then((configs: AgentConfigResponse[]) => {
+        if (cancelled) return;
+        const map: Record<string, boolean> = {};
+        for (const c of configs) map[c.agent_type] = c.enabled;
+        setEnabledBySlug(map);
+      })
+      .catch(() => {
+        if (!cancelled) setEnabledBySlug({});
+      });
+    return () => { cancelled = true; };
+  }, [authedFetch]);
 
   if (!category || !agent || agent.categoryId !== categoryId) {
     return <ComingSoon icon={ZapIcon} title="Agent not found" body="This agent doesn't exist in this category." phase="—" />;
@@ -46,7 +75,7 @@ export function AgentDetailPage() {
     return <UpgradeRequired title={category.label} tagline={category.tagline} minTier={minTierForCategory(category.id) || "enterprise"} agents={category.agents} />;
   }
 
-  const isLive = LIVE_AGENT_SLUGS.has(agent.slug);
+  const isLive = LIVE_AGENT_SLUGS.has(agent.slug) && (enabledBySlug === null || enabledBySlug[agent.slug] !== false);
   const agentSessions = sessions.filter((s) => s.agentSlug === agent.slug);
   const routedPatients = patients.filter((p) => p.assignedAgentSlug === agent.slug);
 
@@ -146,7 +175,7 @@ export function AgentDetailPage() {
       sessionsError ?
       <div className="rounded-3xl border border-sand-200 bg-white p-12 text-center">
           <p className="text-sm text-danger">{sessionsError}</p>
-          <button onClick={refetch} className="mt-3 text-sm text-teal-600 hover:underline">Retry</button>
+          <button onClick={() => refetch()} className="mt-3 text-sm text-teal-600 hover:underline">Retry</button>
         </div> :
       agentSessions.length === 0 ?
       <div className="rounded-3xl border border-sand-200 bg-white">

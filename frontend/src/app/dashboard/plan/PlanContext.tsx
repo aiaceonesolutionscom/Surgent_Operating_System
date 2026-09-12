@@ -7,6 +7,7 @@ import type { FeatureKey, PlanCapabilities } from "./plan";
 import { useAuthedFetch } from "../../../api/authFetch";
 
 type AuthedFetch = (<T>(path: string, init?: RequestInit) => Promise<T>) | null;
+type AuthedFetchBlob = ((path: string, init?: RequestInit) => Promise<Blob>) | null;
 
 interface PlanContextValue {
   tier: PlanTier;
@@ -27,6 +28,9 @@ interface PlanContextValue {
   // below just to get one — PlanProvider already wraps the whole dashboard
   // and already computes this for its own usePlanTier() call.
   authedFetch: AuthedFetch;
+  // Sibling to authedFetch for endpoints that return a real file (invoice
+  // PDFs) instead of JSON — see api/authFetch.ts's authedFetchBlob.
+  authedFetchBlob: AuthedFetchBlob;
 }
 
 const PlanContext = createContext<PlanContextValue | null>(null);
@@ -40,7 +44,8 @@ function useContextValue(
   loading: boolean,
   setOverride: (t: PlanTier) => void,
   setRoleOverride: (r: Role) => void,
-  authedFetch: AuthedFetch
+  authedFetch: AuthedFetch,
+  authedFetchBlob: AuthedFetchBlob
 ): PlanContextValue {
   return useMemo<PlanContextValue>(
     () => ({
@@ -56,9 +61,10 @@ function useContextValue(
       atLeast: (min: PlanTier) => tierAtLeast(tier, min),
       setOverride,
       setRoleOverride,
-      authedFetch
+      authedFetch,
+      authedFetchBlob
     }),
-    [tier, role, permissions, source, loading, setOverride, setRoleOverride, authedFetch]
+    [tier, role, permissions, source, loading, setOverride, setRoleOverride, authedFetch, authedFetchBlob]
   );
 }
 
@@ -68,15 +74,15 @@ function useContextValue(
 // constant, never toggles mid-session), same split as
 // profile/ProfilePage.tsx's AccountCard/AccountCardWithUser.
 function PlanProviderWithClerk({ children }: { children: React.ReactNode }) {
-  const { authedFetch } = useAuthedFetch();
+  const { authedFetch, authedFetchBlob } = useAuthedFetch();
   const { tier, role, permissions, source, loading, setOverride, setRoleOverride } = usePlanTier(authedFetch);
-  const value = useContextValue(tier, role, permissions, source, loading, setOverride, setRoleOverride, authedFetch);
+  const value = useContextValue(tier, role, permissions, source, loading, setOverride, setRoleOverride, authedFetch, authedFetchBlob);
   return <PlanContext.Provider value={value}>{children}</PlanContext.Provider>;
 }
 
 function PlanProviderWithoutClerk({ children }: { children: React.ReactNode }) {
   const { tier, role, permissions, source, loading, setOverride, setRoleOverride } = usePlanTier(null);
-  const value = useContextValue(tier, role, permissions, source, loading, setOverride, setRoleOverride, null);
+  const value = useContextValue(tier, role, permissions, source, loading, setOverride, setRoleOverride, null, null);
   return <PlanContext.Provider value={value}>{children}</PlanContext.Provider>;
 }
 

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { LockIcon, PencilIcon, PlusIcon, StethoscopeIcon, TrashIcon, UserCircleIcon } from "lucide-react";
+import { LockIcon, PencilIcon, PlusIcon, StethoscopeIcon, TrashIcon, UserCircleIcon, SendIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { useDoctors } from "./useDoctors";
@@ -13,8 +13,17 @@ import { KebabMenu } from "../components/KebabMenu";
 
 export function DoctorsPage() {
   const { authedFetch, role, capabilities } = usePlan();
-  const { doctors, loading, updateDoctor } = useDoctors(authedFetch);
+  const { doctors, loading, updateDoctor, resendAccess } = useDoctors(authedFetch);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resendMessage, setResendMessage] = useState<{ id: string; text: string } | null>(null);
+
+  async function handleResend(id: string) {
+    setResendingId(id);
+    const error = await resendAccess(id);
+    setResendMessage({ id, text: error || "Invite sent — ask them to check their email." });
+    setResendingId(null);
+  }
   const atLimit = doctors.length >= capabilities.limits.maxDoctors;
   // Deactivated ("permanently removed") doctors drop off the active roster —
   // their record is kept (so linked history stays safe) but they no longer
@@ -82,6 +91,11 @@ export function DoctorsPage() {
               <div className="absolute right-[4.5rem] top-5 z-20 opacity-0 transition-opacity group-hover:opacity-100">
                 <KebabMenu items={[
                   {
+                    label: resendingId === doc.id ? "Sending…" : "Resend access",
+                    icon: <SendIcon className="h-3.5 w-3.5" />,
+                    onClick: () => void handleResend(doc.id)
+                  },
+                  {
                     label: "Delete permanently",
                     icon: <TrashIcon className="h-3.5 w-3.5" />,
                     danger: true,
@@ -89,6 +103,12 @@ export function DoctorsPage() {
                   }
                 ]} />
               </div>
+
+              {resendMessage?.id === doc.id &&
+              <p className="absolute right-5 top-14 z-30 w-64 rounded-xl border border-sand-200 bg-white p-3 text-xs text-ink-muted shadow-[0_8px_24px_rgba(15,23,42,0.14)]">
+                  {resendMessage.text}
+                </p>
+              }
 
               {confirmingDeleteId === doc.id &&
               <div className="absolute right-5 top-14 z-30 rounded-xl border border-danger/25 bg-white w-72 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.14)]">

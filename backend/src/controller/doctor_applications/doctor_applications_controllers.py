@@ -54,3 +54,6 @@ class DoctorApplicationsController:
     ) -> DoctorApplicationResponse:
         application = await self.service.reject_application(db, user.practice_id, request_id, data.reason)
         return DoctorApplicationResponse.model_validate(application)
+
+    async def delete_application(self, db: AsyncSession, user: User, request_id: UUID) -> None:
+        await self.service.delete_application(db, user.practice_id, request_id)

@@ -38,6 +38,12 @@ class User(Base):
     # role == RECEPTIONIST, set by the Owner via PATCH /staff/{id}/permissions.
     # Keys come from data/receptionist_permissions.py's static catalog.
     permissions: Mapped[list] = mapped_column(JSONB, default=list)
+    # Recurring weekly work schedule for User-backed staff (receptionists) —
+    # same shape as Doctor.working_hours: {"mon": [{"start": "09:00", "end":
+    # "17:00"}], ...}. Set by the staff member from their own profile
+    # (PATCH /staff/me); drives the Owner's attendance "who should be in,
+    # who is late" view. See attendance_service.py:_staff_roster.
+    work_schedule: Mapped[dict] = mapped_column(JSONB, default=dict)
     # Platform-level (Aiaceone team), not practice-level — distinct from
     # `role` above, which only ever means something within `practice_id`.
     # Self-healed to True on login for any email in Settings.platform_admin_emails

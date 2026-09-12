@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeftIcon, SparklesIcon, UserIcon, ScissorsIcon, SearchIcon, CheckCircle2Icon } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ArrowLeftIcon, SparklesIcon, UserIcon, ScissorsIcon, SearchIcon, CheckCircle2Icon, KeyIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { usePatients } from "./usePatients";
 import { classifyPatient } from "./classifyPatient";
@@ -8,6 +8,7 @@ import type { Patient } from "./types";
 import { AGENTS_BY_SLUG } from "../../../data/agents";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 import { usePlan } from "../plan/PlanContext";
+import { enablePatientPortal } from "../../../api/entities";
 
 function normalizePhone(value: string): string {
   return value.replace(/\D/g, "");
@@ -27,11 +28,11 @@ function findByPhone(patients: Patient[], phone: string): Patient | null {
 }
 
 export function PatientFormPage() {
-  const navigate = useNavigate();
   const { authedFetch } = usePlan();
   const { patients, addPatient } = usePatients(authedFetch);
 
-  const [step, setStep] = useState<"search" | "create">("search");
+  const [step, setStep] = useState<"search" | "create" | "done">("search");
+  const [savedPatientId, setSavedPatientId] = useState<string | null>(null);
   const [searchPhone, setSearchPhone] = useState("");
   const [searchedOnce, setSearchedOnce] = useState(false);
   const foundPatient = searchedOnce ? findByPhone(patients, searchPhone) : null;
@@ -39,10 +40,14 @@ export function PatientFormPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [gender, setGender] = useState("");
   const [chiefComplaint, setChiefComplaint] = useState("");
   const [needsSurgery, setNeedsSurgery] = useState(false);
+  const [sendPortalAccess, setSendPortalAccess] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [portalNote, setPortalNote] = useState<string | null>(null);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -92,13 +97,33 @@ export function PatientFormPage() {
       source: null
     };
 
-    const saved = await addPatient(patient);
+    const saved = await addPatient(patient, {
+      date_of_birth: dateOfBirth || null,
+      gender: gender || null
+    });
     if (!saved) {
       setSaveError("Couldn't save — this browser's storage is full or unavailable. Please try again.");
       setSaving(false);
       return;
     }
-    navigate(DASHBOARD_ROUTES.patientDetail(saved.id));
+
+    setSavedPatientId(saved.id);
+
+    if (sendPortalAccess && authedFetch && (phone.trim() || email.trim())) {
+      try {
+        const result = await enablePatientPortal(authedFetch, saved.id);
+        setPortalNote(
+          result.invite_sent
+            ? `Portal ID ${result.portal_id} generated and sent to the patient.`
+            : `Portal ID ${result.portal_id} generated, but the invite couldn't be delivered — check their phone/email later.`
+        );
+      } catch {
+        setPortalNote("Patient saved, but portal access couldn't be set up — you can enable it from their profile.");
+      }
+    }
+
+    setSaving(false);
+    setStep("done");
   }
 
   const previewAgent = preview ? AGENTS_BY_SLUG[preview.agentSlug] : null;
@@ -214,7 +239,40 @@ export function PatientFormPage() {
                 className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white" />
 
             </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Date of birth</span>
+              <input
+                type="date"
+                value={dateOfBirth}
+                onChange={(e) => setDateOfBirth(e.target.value)}
+                className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white" />
+
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Gender</span>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
+                className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white">
+                <option value="">Not specified</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
           </div>
+
+          {(phone.trim() || email.trim()) &&
+          <label className="mt-4 flex items-center gap-2.5 rounded-xl bg-teal-600/[0.05] px-4 py-3">
+              <input
+                type="checkbox"
+                checked={sendPortalAccess}
+                onChange={(e) => setSendPortalAccess(e.target.checked)}
+                className="h-4 w-4 rounded border-sand-200 text-teal-600 focus:ring-teal-600/40" />
+              <KeyIcon className="h-4 w-4 text-teal-600" />
+              <span className="text-sm text-ink-soft">Generate a patient portal ID and send it to them now</span>
+            </label>
+          }
         </div>
 
         <div className="rounded-3xl border border-sand-200 bg-white p-6 shadow-[0_4px_20px_rgba(11,29,38,0.05)]">
@@ -280,6 +338,28 @@ export function PatientFormPage() {
           </button>
         </div>
       </form>
+        </>
+      }
+
+      {step === "done" && savedPatientId &&
+      <>
+          <PageHeader title="Patient added" subtitle="Their record has been created." />
+          <div className="max-w-lg rounded-3xl border border-success/25 bg-success/[0.04] p-6">
+            <div className="flex items-center gap-2 text-success">
+              <CheckCircle2Icon className="h-4 w-4" />
+              <p className="text-sm font-bold">{name.trim()} was added</p>
+            </div>
+            {portalNote &&
+          <p className="mt-3 flex items-start gap-2 text-sm text-ink-soft">
+                <KeyIcon className="mt-0.5 h-4 w-4 shrink-0 text-teal-600" /> {portalNote}
+              </p>
+          }
+            <Link
+            to={DASHBOARD_ROUTES.patientDetail(savedPatientId)}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700">
+              Open their profile
+            </Link>
+          </div>
         </>
       }
     </>);

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeftIcon, PlusIcon, XIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
@@ -7,7 +7,7 @@ import { usePatients } from "../patients/usePatients";
 import { useTreatmentPlans } from "../clinical/useTreatmentPlans";
 import { useInvoices } from "./useInvoices";
 import { DASHBOARD_ROUTES } from "../constants/routes";
-import type { CreateInvoiceLineItemRequest } from "../../../api/entities";
+import { getFinanceSettings, type CreateInvoiceLineItemRequest, type FinanceSettingsResponse } from "../../../api/entities";
 
 interface DraftLine {
   description: string;
@@ -33,6 +33,18 @@ export function InvoiceFormPage() {
   const [dueDate, setDueDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [financeSettings, setFinanceSettings] = useState<FinanceSettingsResponse | null>(null);
+  const [currency, setCurrency] = useState<string>("");
+  useEffect(() => {
+    if (!authedFetch) return;
+    getFinanceSettings(authedFetch)
+      .then((s) => { setFinanceSettings(s); setCurrency(s.base_currency); })
+      .catch(() => setFinanceSettings(null));
+  }, [authedFetch]);
+
+  const otherCurrency = financeSettings?.base_currency === "USD" ? "PKR" : "USD";
+  const canBillInOtherCurrency = Boolean(financeSettings?.usd_to_pkr_rate);
 
   const billableFromPlan = plans.filter((p) => p.items.length > 0);
 
@@ -69,7 +81,8 @@ export function InvoiceFormPage() {
         line_items: lineItems,
         tax_amount: taxAmount ? Number(taxAmount) : 0,
         discount_amount: discountAmount ? Number(discountAmount) : 0,
-        due_date: dueDate || undefined
+        due_date: dueDate || undefined,
+        currency: currency || undefined
       });
       if (!invoice) throw new Error("no invoice");
       navigate(DASHBOARD_ROUTES.invoiceDetail(invoice.id));
@@ -182,10 +195,29 @@ export function InvoiceFormPage() {
           </div>
         }
 
+        {patientId && financeSettings &&
+        <label className="block max-w-xs">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Currency</span>
+            <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+            className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white">
+
+              <option value={financeSettings.base_currency}>{financeSettings.base_currency} (practice base currency)</option>
+              {canBillInOtherCurrency && <option value={otherCurrency}>{otherCurrency}</option>}
+            </select>
+            {!canBillInOtherCurrency &&
+          <p className="mt-1.5 text-xs text-ink-muted">
+                Set an exchange rate in Finance Settings to bill in {otherCurrency} too.
+              </p>
+          }
+          </label>
+        }
+
         {patientId &&
         <div className="grid gap-4 sm:grid-cols-3">
             <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Tax ($)</span>
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Tax ({currency || "$"})</span>
               <input
               type="number"
               min="0"
@@ -196,7 +228,7 @@ export function InvoiceFormPage() {
 
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Discount ($)</span>
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Discount ({currency || "$"})</span>
               <input
               type="number"
               min="0"

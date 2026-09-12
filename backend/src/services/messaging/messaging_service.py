@@ -116,3 +116,32 @@ class MessagingService:
         db.add(message)
         await db.flush()
         return message
+
+    async def send_document_and_log(
+        self, db: AsyncSession, practice_id: UUID, patient: Patient, agent_type: str,
+        file_url: str, filename: str, caption: str,
+    ) -> Message:
+        # WhatsApp-only — Green API is the only channel here that can carry
+        # a document (see WhatsAppGreenAPI.send_file_by_url); Twilio SMS has
+        # no attachment support in this codebase. Callers (invoice receipts)
+        # already send a plain-text fallback through send_and_log first, so
+        # this raising for a non-WhatsApp patient is expected, not fatal.
+        channel = await self.resolve_channel(db, practice_id, patient)
+        if channel != ConversationChannel.WHATSAPP:
+            raise AppException("Patient's channel isn't WhatsApp — can't send a document.")
+
+        result = await db.execute(select(Practice).where(Practice.id == practice_id))
+        practice = result.scalar_one_or_none()
+        ga = WhatsAppGreenAPI.from_practice_settings((practice.settings if practice else None) or {})
+        if ga is None:
+            raise AppException("WhatsApp isn't connected for this practice yet")
+
+        send_result = await ga.send_file_by_url(patient.phone, file_url, filename, caption)
+        if "idMessage" not in send_result:
+            raise AppException(f"WhatsApp file send did not return a message id: {send_result}")
+
+        conversation = await self._find_or_create_conversation(db, practice_id, patient.id, agent_type, channel)
+        message = Message(conversation_id=conversation.id, role=MessageRole.AGENT, content=f"{caption}\n[Attached: {filename}]")
+        db.add(message)
+        await db.flush()
+        return message

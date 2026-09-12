@@ -7,22 +7,21 @@ import { usePlan } from "../plan/PlanContext";
 import { usePatients } from "../patients/usePatients";
 import { useInvoices } from "./useInvoices";
 import { DASHBOARD_ROUTES } from "../constants/routes";
+import { formatMoney, formatDate } from "../finance/money";
 import type { InvoiceResponse } from "../../../api/entities";
 
 const STATUS_CLASS: Record<string, string> = {
   pending: "bg-sand-100 text-ink-soft",
+  partially_paid: "bg-[#7C3AED]/10 text-[#7C3AED]",
   paid: "bg-success/10 text-success",
   overdue: "bg-danger/10 text-danger",
   cancelled: "bg-ink-muted/10 text-ink-muted",
   refunded: "bg-warning/10 text-warning"
 };
 
-const STATUS_FILTERS: Array<InvoiceResponse["status"] | "all"> = ["all", "pending", "paid", "overdue", "cancelled", "refunded"];
+const STATUS_LABEL: Record<string, string> = { partially_paid: "Partially paid" };
 
-function formatDate(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
+const STATUS_FILTERS: Array<InvoiceResponse["status"] | "all"> = ["all", "pending", "partially_paid", "paid", "overdue", "cancelled", "refunded"];
 
 export function InvoicesPage() {
   const { authedFetch, role } = usePlan();
@@ -62,7 +61,7 @@ export function InvoicesPage() {
           statusFilter === s ? "bg-teal-600 text-white" : "bg-sand-100 text-ink-soft hover:bg-sand-200"}`
           }>
 
-            {s}
+            {STATUS_LABEL[s] || s}
           </button>
         )}
       </div>
@@ -95,9 +94,9 @@ export function InvoicesPage() {
                   <td className="px-5 py-3 font-medium text-ink">
                     <Link to={DASHBOARD_ROUTES.invoiceDetail(inv.id)} className="hover:underline">{patientName(inv.patient_id)}</Link>
                   </td>
-                  <td className="px-5 py-3 text-ink-soft">${inv.total_amount.toLocaleString()}</td>
+                  <td className="px-5 py-3 text-ink-soft tabular-nums">{formatMoney(inv.total_amount, inv.currency)}</td>
                   <td className="px-5 py-3">
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${STATUS_CLASS[inv.status]}`}>{inv.status}</span>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_CLASS[inv.status]}`}>{STATUS_LABEL[inv.status] || inv.status}</span>
                   </td>
                   <td className="px-5 py-3 text-ink-soft">{formatDate(inv.due_date)}</td>
                   <td className="px-5 py-3 text-ink-soft">{formatDate(inv.created_at)}</td>

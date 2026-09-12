@@ -153,7 +153,14 @@ export function usePatients(authedFetch: AuthedFetch = null, options: { includeA
   const getPatient = useCallback((id: string) => patients.find((p) => p.id === id), [patients]);
 
   const addPatient = useCallback(
-    async (patient: Patient): Promise<Patient | null> => {
+    async (
+      patient: Patient,
+      // Fields the lightweight client-side Patient type doesn't carry (see
+      // types.ts's own comment on why profile-depth fields stay
+      // self-fetched rather than living on this type) — passed straight
+      // through to the real create call only, same as chiefComplaint above.
+      extra?: { date_of_birth?: string | null; gender?: string | null; additional_phones?: Array<{ number?: string; label?: string }> }
+    ): Promise<Patient | null> => {
       let toSave = patient;
 
       if (authedFetch) {
@@ -166,7 +173,10 @@ export function usePatients(authedFetch: AuthedFetch = null, options: { includeA
             phone: patient.phone || null,
             chief_complaint: patient.chiefComplaint || null,
             needs_surgery: patient.needsSurgery,
-            ai_agent_assigned: patient.assignedAgentSlug
+            ai_agent_assigned: patient.assignedAgentSlug,
+            date_of_birth: extra?.date_of_birth || null,
+            gender: extra?.gender || null,
+            additional_phones: extra?.additional_phones || []
           });
           // Keep the locally-known reasoning/categoryId (classifyPatient()'s
           // output) — the backend doesn't store those — but use its real id

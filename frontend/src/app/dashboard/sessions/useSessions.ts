@@ -9,78 +9,20 @@ import {
   type ConversationDetail
 } from "../../../api/entities";
 import { usePlan } from "../plan/PlanContext";
+import { AGENTS_BY_SLUG } from "../../../data/agents";
 import type { Session, SessionMessage } from "./types";
 
-const AGENT_DISPLAY_NAMES: Record<string, string> = {
-  receptionist: "AI Receptionist",
-  appointment_booking: "Appointment Booking",
-  reschedule_cancellation: "Reschedule & Cancellation",
-  appointment_reminder: "Appointment Reminder",
-  multilingual_translation: "Multilingual Translation",
-  ai_consultation: "AI Consultation",
-  photo_analysis: "Photo Analysis",
-  video_consultation: "Video Consultation",
-  medical_history_intake: "Medical History Intake",
-  risk_assessment: "Risk Assessment",
-  procedure_recommendation: "Procedure Recommendation",
-  pre_surgery_preparation: "Pre-Surgery Prep",
-  surgery_scheduling: "Surgery Scheduling",
-  surgeon_calendar: "Surgeon Calendar",
-  operating_room_scheduler: "OR Scheduler",
-  equipment_checklist: "Equipment Checklist",
-  implant_inventory: "Implant Inventory",
-  surgical_documentation: "Surgical Documentation",
-  recovery_followup: "Recovery Follow-up",
-  healing_monitoring: "Healing Monitoring",
-  emergency_triage: "Emergency Triage",
-  medication_reminder: "Medication Reminder",
-  wound_care_guidance: "Wound Care Guidance",
-  recovery_dashboard: "Recovery Dashboard",
-  cost_estimation: "Cost Estimation",
-  payment_invoice: "Payment & Invoice",
-  insurance_verification: "Insurance Verification",
-  analytics_dashboard: "Analytics Dashboard",
-  patient_feedback: "Patient Feedback",
-  marketing_followup: "Marketing Follow-up",
-  lead_nurturing: "Lead Nurturing",
-};
-
-const CATEGORY_MAP: Record<string, string> = {
-  receptionist: "front-desk",
-  appointment_booking: "front-desk",
-  reschedule_cancellation: "front-desk",
-  appointment_reminder: "front-desk",
-  multilingual_translation: "front-desk",
-  ai_consultation: "consultation",
-  photo_analysis: "consultation",
-  video_consultation: "consultation",
-  medical_history_intake: "consultation",
-  risk_assessment: "consultation",
-  procedure_recommendation: "consultation",
-  pre_surgery_preparation: "consultation",
-  surgery_scheduling: "surgery",
-  surgeon_calendar: "surgery",
-  operating_room_scheduler: "surgery",
-  equipment_checklist: "surgery",
-  implant_inventory: "surgery",
-  surgical_documentation: "surgery",
-  recovery_followup: "post-care",
-  healing_monitoring: "post-care",
-  emergency_triage: "post-care",
-  medication_reminder: "post-care",
-  wound_care_guidance: "post-care",
-  recovery_dashboard: "post-care",
-  cost_estimation: "business",
-  payment_invoice: "business",
-  insurance_verification: "business",
-  analytics_dashboard: "business",
-  patient_feedback: "business",
-  marketing_followup: "business",
-  lead_nurturing: "business",
-};
+// Display name/category for a session come straight from the consolidated
+// agent catalog (AGENTS_BY_SLUG includes the legacy-slug aliases, so old
+// Conversation.agent_type values like "command_center" resolve onto their
+// successor agent here). "patient_doctor_message" has no catalog entry — it's
+// the patient portal channel, handled explicitly below.
+const PORTAL_SLUG = "patient_doctor_message";
 
 export function mapConversationToSession(c: ConversationListItem): Session {
   const name = c.patient_name || "Unknown Patient";
+  const isPortal = c.agent_type === PORTAL_SLUG;
+  const agent = AGENTS_BY_SLUG[c.agent_type];
   return {
     id: c.id,
     patientId: c.patient_id || "",
@@ -88,14 +30,16 @@ export function mapConversationToSession(c: ConversationListItem): Session {
     patientInitial: name.charAt(0).toUpperCase(),
     avatarUrl: c.avatar_url,
     channel: c.channel as Session["channel"],
-    agentSlug: c.agent_type,
-    agentName: AGENT_DISPLAY_NAMES[c.agent_type] || c.agent_type,
-    categoryId: CATEGORY_MAP[c.agent_type] || "business",
+    agentSlug: isPortal ? PORTAL_SLUG : (agent?.slug ?? c.agent_type),
+    agentName: isPortal ? "Patient Portal" : (agent?.name ?? c.agent_type),
+    categoryId: isPortal ? "patient-messages" : (agent?.categoryId ?? "business"),
     status: c.status as Session["status"],
     lastMessagePreview: c.last_message_preview,
     updatedAt: c.updated_at,
     aiPaused: c.ai_paused,
     messages: [],
+    extraData: c.extra_data || {},
+    aiBookedAppointmentId: c.ai_booked_appointment_id ?? null,
   };
 }
 
@@ -111,6 +55,7 @@ function mapDetailMessages(detail: ConversationDetail): SessionMessage[] {
     id: m.id,
     from: mapRole(m.role),
     text: m.content,
+    contentType: "text",
     at: m.created_at,
   }));
 }

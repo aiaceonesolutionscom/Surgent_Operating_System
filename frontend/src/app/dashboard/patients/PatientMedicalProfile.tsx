@@ -25,6 +25,10 @@ const COSMETIC_FIELDS: ListField[] = [
   { key: "year", placeholder: "Year" },
   { key: "provider", placeholder: "Provider" }
 ];
+const PHONE_FIELDS: ListField[] = [
+  { key: "number", placeholder: "Phone number" },
+  { key: "label", placeholder: "Label (Home, Work…)" }
+];
 
 const SMOKING_OPTIONS = ["", "never", "former", "current"];
 const COMM_CHANNELS = ["sms", "email", "whatsapp", "call"];
@@ -70,7 +74,7 @@ export function PatientMedicalProfile({ patientId }: { patientId: string }) {
   }
 
   const hasAnyDepth =
-    patient.gender || patient.emergency_contact_name || patient.allergies.length > 0 || patient.surgical_history.length > 0 ||
+    patient.gender || patient.additional_phones.length > 0 || patient.emergency_contact_name || patient.allergies.length > 0 || patient.surgical_history.length > 0 ||
     patient.current_medications.length > 0 || patient.smoking_status || patient.previous_cosmetic_procedures.length > 0 ||
     patient.referral_source || patient.preferred_language || Object.keys(patient.communication_preferences).length > 0 ||
     patient.insurance_provider;
@@ -98,6 +102,11 @@ export function PatientMedicalProfile({ patientId }: { patientId: string }) {
           <div className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Personal &amp; contact</p>
             {patient.gender && <Field label="Gender" value={patient.gender} />}
+            {patient.additional_phones.length > 0 &&
+          <ListSummary
+            label="Other phone numbers"
+            items={patient.additional_phones.map((p) => [p.number, p.label].filter(Boolean).join(" — "))} />
+          }
             {(patient.emergency_contact_name || patient.emergency_contact_phone) &&
           <Field label="Emergency contact" value={[patient.emergency_contact_name, patient.emergency_contact_phone].filter(Boolean).join(" · ")} icon={PhoneIcon} />
           }
@@ -211,6 +220,8 @@ function ListFieldEditor({
 
 function EditProfile({ patient, onCancel, onSaved }: { patient: PatientResponse; onCancel: () => void; onSaved: () => void }) {
   const { authedFetch } = usePlan();
+  const [phone, setPhone] = useState(patient.phone || "");
+  const [additionalPhones, setAdditionalPhones] = useState<Record<string, string>[]>(patient.additional_phones as Record<string, string>[]);
   const [gender, setGender] = useState(patient.gender || "");
   const [emergencyName, setEmergencyName] = useState(patient.emergency_contact_name || "");
   const [emergencyPhone, setEmergencyPhone] = useState(patient.emergency_contact_phone || "");
@@ -238,6 +249,8 @@ function EditProfile({ patient, onCancel, onSaved }: { patient: PatientResponse;
     setError(null);
     try {
       const data: UpdatePatientRequest = {
+        phone: phone.trim() || null,
+        additional_phones: additionalPhones.filter((p) => p.number),
         gender: gender || null,
         emergency_contact_name: emergencyName || null,
         emergency_contact_phone: emergencyPhone || null,
@@ -270,6 +283,11 @@ function EditProfile({ patient, onCancel, onSaved }: { patient: PatientResponse;
 
       <div className="grid gap-5 p-5 sm:grid-cols-2">
         <div className="space-y-4">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Primary phone</span>
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+          </label>
+          <ListFieldEditor label="Other phone numbers" fields={PHONE_FIELDS} items={additionalPhones} onChange={setAdditionalPhones} />
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Gender</span>

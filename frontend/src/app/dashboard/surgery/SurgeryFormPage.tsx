@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeftIcon, PlusIcon, XIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
@@ -7,6 +7,7 @@ import { usePatients } from "../patients/usePatients";
 import { useDoctors } from "../doctors/useDoctors";
 import { useProcedures } from "../clinical/useProcedures";
 import { useSurgeries } from "./useSurgeries";
+import { listPracticeAppointments } from "../../../api/entities";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 
 export function SurgeryFormPage() {
@@ -14,6 +15,8 @@ export function SurgeryFormPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const preselectedPatientId = searchParams.get("patient_id") || "";
+  const preselectedProcedureId = searchParams.get("procedure_id") || "";
+  const appointmentId = searchParams.get("appointment_id") || "";
 
   const { patients, loading: patientsLoading } = usePatients(authedFetch);
   const { doctors, loading: doctorsLoading } = useDoctors(authedFetch);
@@ -23,7 +26,7 @@ export function SurgeryFormPage() {
   const [patientId, setPatientId] = useState(preselectedPatientId);
   const [doctorId, setDoctorId] = useState("");
   const [assistantDoctorId, setAssistantDoctorId] = useState("");
-  const [procedureId, setProcedureId] = useState("");
+  const [procedureId, setProcedureId] = useState(preselectedProcedureId);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("09:00");
   const [durationMinutes, setDurationMinutes] = useState("");
@@ -33,6 +36,30 @@ export function SurgeryFormPage() {
   const [newChecklistItem, setNewChecklistItem] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Appointment -> Surgery: when opened from the Front Desk (or any call
+  // site) via ?appointment_id=..., pre-fill the patient, surgeon, and time
+  // from that appointment and pin it as the surgery's source appointment.
+  // Validation happens backend-side too (the appointment must exist in this
+  // practice and belong to the same patient).
+  useEffect(() => {
+    if (!appointmentId || !authedFetch) return;
+    let cancelled = false;
+    listPracticeAppointments(authedFetch)
+      .then((appointments) => {
+        if (cancelled) return;
+        const appt = appointments.find((a) => a.id === appointmentId);
+        if (!appt) return;
+        setPatientId(appt.patient_id);
+        setDoctorId(appt.doctor_id || "");
+        const start = new Date(appt.start_time);
+        setDate(`${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`);
+        setTime(`${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`);
+      })
+      .catch(() => { /* non-fatal: fall back to an empty, fully editable form */ })
+      .finally(() => { cancelled = true; });
+    return () => { cancelled = true; };
+  }, [appointmentId, authedFetch]);
 
   const activeDoctors = doctors.filter((d) => d.isActive);
 
@@ -60,6 +87,7 @@ export function SurgeryFormPage() {
         doctor_id: doctorId,
         assistant_doctor_id: assistantDoctorId || null,
         procedure_id: procedureId || null,
+        scheduled_appointment_id: appointmentId || null,
         scheduled_date: scheduledDate,
         duration_estimate_minutes: durationMinutes ? Number(durationMinutes) : null,
         anesthesia_type: anesthesiaType.trim() || null,
@@ -79,6 +107,11 @@ export function SurgeryFormPage() {
         <ArrowLeftIcon className="h-4 w-4" /> Back to Surgery
       </Link>
       <PageHeader title="Schedule surgery" subtitle="Real, working single-surgery record — who, what, when, and the pre-op checklist." />
+      {appointmentId &&
+      <p className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-teal-50 px-3.5 py-2 text-xs font-semibold text-teal-700">
+        <ArrowLeftIcon className="h-3.5 w-3.5 rotate-180" /> Coming from an appointment — patient, surgeon, and time pre-filled and linked.
+      </p>
+      }
 
       <form onSubmit={handleSubmit} className="mt-6 max-w-2xl space-y-5 rounded-3xl border border-sand-200 bg-white p-6 shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
         <div className="grid gap-4 sm:grid-cols-2">

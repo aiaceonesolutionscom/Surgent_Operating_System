@@ -30,6 +30,7 @@ export const DASHBOARD_ROUTES = {
   frontDesk: "/dashboard/front-desk",
   bookAppointment: "/dashboard/book-appointment",
   staff: "/dashboard/staff",
+  teamAttendance: "/dashboard/attendance",
   consultationNoteNew: (patientId: string) => `/dashboard/patients/${patientId}/notes/new`,
   treatmentPlanNew: (patientId: string) => `/dashboard/patients/${patientId}/treatment-plans/new`,
   treatmentPlanDetail: (id: string) => `/dashboard/treatment-plans/${id}`,
@@ -44,9 +45,16 @@ export const DASHBOARD_ROUTES = {
   inventory: "/dashboard/inventory",
   inventoryItemDetail: (id: string) => `/dashboard/inventory/${id}`,
   surgeries: "/dashboard/surgeries",
-  surgeryNew: (patientId?: string) => (patientId ? `/dashboard/surgeries/new?patient_id=${patientId}` : "/dashboard/surgeries/new"),
+  surgeryNew: (patientId?: string, procedureId?: string) => {
+    const params = new URLSearchParams();
+    if (patientId) params.set("patient_id", patientId);
+    if (procedureId) params.set("procedure_id", procedureId);
+    const qs = params.toString();
+    return qs ? `/dashboard/surgeries/new?${qs}` : "/dashboard/surgeries/new";
+  },
   surgeryDetail: (id: string) => `/dashboard/surgeries/${id}`,
   settingsAgents: "/dashboard/settings/agents",
+  settingsIntegrations: "/dashboard/settings/integrations",
   settingsProcedures: "/dashboard/settings/procedures",
   settingsProfile: "/dashboard/settings/profile",
   settingsBilling: "/dashboard/settings/billing",

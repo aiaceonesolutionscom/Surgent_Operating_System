@@ -80,6 +80,7 @@ export interface AdminPracticeListItem {
   id: string;
   name: string;
   email: string;
+  status: "pending_approval" | "active" | "suspended";
   plan_tier: string;
   subscription_status: string;
   agents_enabled_count: number;
@@ -99,6 +100,7 @@ export interface AdminPracticeDetailResponse {
   id: string;
   name: string;
   email: string;
+  status: "pending_approval" | "active" | "suspended";
   phone: string | null;
   address: string | null;
   plan_tier: string;
@@ -130,10 +132,59 @@ export function getAdminPracticeDetail(practiceId: string) {
   return adminFetch<AdminPracticeDetailResponse>(`/api/v1/admin/practices/${practiceId}`);
 }
 
+export function createAdminPractice(data: { name: string; email: string; plan_tier?: string }) {
+  return adminFetch<AdminPracticeDetailResponse>("/api/v1/admin/practices", {
+    method: "POST",
+    body: JSON.stringify(data)
+  });
+}
+
+export function updateAdminPractice(practiceId: string, data: { name?: string; email?: string; plan_tier?: string }) {
+  return adminFetch<AdminPracticeDetailResponse>(`/api/v1/admin/practices/${practiceId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data)
+  });
+}
+
 export function updatePracticeSubscription(practiceId: string, tier: string) {
   return adminFetch<AdminPracticeDetailResponse>(`/api/v1/admin/practices/${practiceId}/subscription`, {
     method: "PATCH",
     body: JSON.stringify({ tier })
+  });
+}
+
+export function suspendPractice(practiceId: string) {
+  return adminFetch<AdminPracticeDetailResponse>(`/api/v1/admin/practices/${practiceId}/suspend`, { method: "POST" });
+}
+
+export function reactivatePractice(practiceId: string) {
+  return adminFetch<AdminPracticeDetailResponse>(`/api/v1/admin/practices/${practiceId}/reactivate`, { method: "POST" });
+}
+
+// --- new-organization approval queue ---------------------------------------
+export interface OrgRequestListItem {
+  id: string;
+  email: string;
+  org_name: string | null;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+}
+
+export function listOrgRequests() {
+  return adminFetch<OrgRequestListItem[]>("/api/v1/admin/org-requests");
+}
+
+export function approveOrgRequest(requestId: string, planTier: "practice" | "enterprise" | null = null) {
+  return adminFetch<AdminPracticeDetailResponse>(`/api/v1/admin/org-requests/${requestId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ plan_tier: planTier || undefined })
+  });
+}
+
+export function rejectOrgRequest(requestId: string, reason?: string) {
+  return adminFetch<void>(`/api/v1/admin/org-requests/${requestId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason || null })
   });
 }
 
@@ -169,4 +220,45 @@ export function listAdminSalesLeads(params: { q?: string } = {}) {
   if (params.q) qs.set("q", params.q);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return adminFetch<SalesLeadResponse[]>(`/api/v1/admin/sales-leads${suffix}`);
+}
+
+// --- Super Agent (platform-level, Aiaceone-team only) -----------------------
+// Backend: /api/v1/admin/super-agent/* — an LLM agent that answers questions
+// about the WHOLE platform (not one clinic) from live practices/plans data.
+export interface AskSuperAgentResponse {
+  session_id: string;
+  answer: string;
+}
+
+export interface SuperAgentMessage {
+  role: "staff" | "agent";
+  content: string;
+  created_at: string;
+}
+
+export interface SuperAgentSessionSummary {
+  id: string;
+  title: string;
+  updated_at: string;
+}
+
+export interface SuperAgentSessionDetail {
+  id: string;
+  title: string;
+  messages: SuperAgentMessage[];
+}
+
+export function askSuperAgent(question: string, sessionId?: string | null) {
+  return adminFetch<AskSuperAgentResponse>("/api/v1/admin/super-agent/ask", {
+    method: "POST",
+    body: JSON.stringify({ question, session_id: sessionId ?? null })
+  });
+}
+
+export function listSuperAgentSessions() {
+  return adminFetch<SuperAgentSessionSummary[]>("/api/v1/admin/super-agent/sessions");
+}
+
+export function getSuperAgentSession(sessionId: string) {
+  return adminFetch<SuperAgentSessionDetail>(`/api/v1/admin/super-agent/sessions/${sessionId}`);
 }

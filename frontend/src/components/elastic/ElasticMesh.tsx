@@ -386,6 +386,18 @@ const ElasticMesh = ({
     let maxOffset = 0;
     let maxVel = 0;
 
+    // ── Intersection Observer: pause rAF when off-screen ──────────────
+    let isVisible = true;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        isVisible = entry.isIntersecting;
+        // Reset timing so we don't get a huge dt spike on re-entry
+        if (isVisible) last = performance.now();
+      },
+      { threshold: 0 }
+    );
+    io.observe(container);
+
     function substep() {
       const p = propsRef.current;
       const s = p.stiffness as number;
@@ -552,6 +564,12 @@ const ElasticMesh = ({
 
     let raf = 0;
     function frame(now: number) {
+      // Skip frame entirely when off-screen — saves GPU + CPU
+      if (!isVisible) {
+        raf = requestAnimationFrame(frame);
+        return;
+      }
+
       raf = requestAnimationFrame(frame);
       const p = propsRef.current;
 
@@ -594,6 +612,7 @@ const ElasticMesh = ({
 
     return () => {
       cancelAnimationFrame(raf);
+      io.disconnect();
       ro.disconnect();
       container.removeEventListener("mousemove", onMove);
       container.removeEventListener("mouseenter", onEnter);

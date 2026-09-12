@@ -1,7 +1,7 @@
 from __future__ import annotations
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -65,3 +65,16 @@ async def send_message(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.send_message(db, user, conversation_id, data)
+
+
+@router.post("/conversations/{conversation_id}/upload", response_model=StaffMessageResponse)
+async def upload_file(
+    conversation_id: UUID,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_practice_user),
+    db: AsyncSession = Depends(get_db),
+):
+    file_bytes = await file.read()
+    return await controller.send_file(
+        db, user, conversation_id, file_bytes, file.filename or "file", file.content_type or "application/octet-stream"
+    )

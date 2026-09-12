@@ -2,7 +2,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { CheckCircle2Icon } from "lucide-react";
 import { usePlanTier, planFor, capabilitiesFor } from "../../dashboard/plan/plan";
-import { AGENT_CATEGORIES } from "../../../data/agents";
+import { AGENT_CATEGORIES, TOTAL_AGENTS } from "../../../data/agents";
 
 export function CompleteStep() {
   const navigate = useNavigate();
@@ -18,7 +18,7 @@ export function CompleteStep() {
       </span>
       <p className="mt-4 text-lg font-bold text-ink">You're all set</p>
       <p className="mt-1.5 text-sm text-ink-muted">
-        Your <span className="font-semibold text-teal-600">{plan.name}</span> plan includes {unlockedAgents} of 31 agents
+        Your <span className="font-semibold text-teal-600">{plan.name}</span> plan includes {unlockedAgents} of {TOTAL_AGENTS} agents
         across {capabilities.agentCategoryIds.length} categories.
       </p>
 

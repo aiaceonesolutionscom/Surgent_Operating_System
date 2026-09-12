@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeftIcon, MailIcon, PhoneIcon, AwardIcon, FileTextIcon, CheckIcon, XIcon, DownloadIcon } from "lucide-react";
+import { ArrowLeftIcon, MailIcon, PhoneIcon, AwardIcon, FileTextIcon, CheckIcon, XIcon, DownloadIcon, TrashIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
-import { getApplication, approveApplication, rejectApplication, type DoctorApplicationResponse } from "../../../api/entities";
+import { getApplication, approveApplication, rejectApplication, deleteApplication, type DoctorApplicationResponse } from "../../../api/entities";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 import { DOCTOR_PERMISSIONS, RECOMMENDED_DOCTOR_PERMISSIONS } from "../../../data/doctorPermissions";
 
@@ -15,6 +15,7 @@ export function DoctorRequestDetailPage() {
   const [selected, setSelected] = useState<string[]>(RECOMMENDED_DOCTOR_PERMISSIONS);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +72,19 @@ export function DoctorRequestDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!authedFetch || !id) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await deleteApplication(authedFetch, id);
+      navigate(DASHBOARD_ROUTES.doctorRequests);
+    } catch (e: unknown) {
+      setError(e instanceof Error && e.message ? e.message : "Couldn't delete — try again.");
+      setSaving(false);
+    }
+  }
+
   if (loading) return null;
 
   if (!application) {
@@ -83,12 +97,39 @@ export function DoctorRequestDetailPage() {
 
   return (
     <>
-      <Link
-        to={DASHBOARD_ROUTES.doctorRequests}
-        className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted transition-colors hover:text-ink">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <Link
+          to={DASHBOARD_ROUTES.doctorRequests}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted transition-colors hover:text-ink">
 
-        <ArrowLeftIcon className="h-4 w-4" /> Back to requests
-      </Link>
+          <ArrowLeftIcon className="h-4 w-4" /> Back to requests
+        </Link>
+
+        {!confirmingDelete ?
+        <button
+          type="button"
+          onClick={() => setConfirmingDelete(true)}
+          className="flex items-center gap-1.5 rounded-xl border border-sand-200 px-3.5 py-2 text-xs font-semibold text-ink-soft transition-colors hover:border-danger/40 hover:text-danger">
+
+            <TrashIcon className="h-3.5 w-3.5" /> Delete request
+          </button> :
+
+        <div className="flex items-center gap-2">
+            <span className="text-xs text-ink-muted">Delete this request permanently?</span>
+            <button
+            type="button"
+            onClick={handleDelete}
+            disabled={saving}
+            className="rounded-lg bg-danger px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
+
+              {saving ? "Deleting…" : "Confirm"}
+            </button>
+            <button type="button" onClick={() => setConfirmingDelete(false)} className="text-xs font-medium text-ink-muted hover:text-ink">
+              Cancel
+            </button>
+          </div>
+        }
+      </div>
 
       <div className="mb-6 rounded-3xl border border-sand-200 bg-white p-6 shadow-[0_4px_20px_rgba(11,29,38,0.05)]">
         <div className="flex items-center gap-4">

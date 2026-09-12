@@ -1,8 +1,7 @@
 from __future__ import annotations
 import logging
 import secrets
-
-import redis.asyncio as redis
+import time
 
 from src.config import get_settings
 from src.server.exceptions import AppException
@@ -19,22 +18,24 @@ def _normalize_phone(phone: str) -> str:
 
 
 class PatientOtpStore:
-    """Redis-backed one-time login code for the Patient Portal — replaces
-    the old static portal PIN (see patient_portal_auth_service.py). A code
-    is single-use (deleted on successful verify) and expires on its own, so
-    unlike the rate limiter this fails CLOSED on a Redis outage: a rate
-    limiter blocking real logins is worse than the brute-force risk it
-    guards against, but an OTP store that lets everyone in when its backing
-    store is unreachable is a straightforward auth bypass — the opposite
-    tradeoff applies here."""
+    """Hybrid OTP store: tries Redis first, falls back to in-memory dict
+    in development mode when Redis is unreachable. In production, Redis
+    failure still raises an error (fail-closed for security)."""
 
     def __init__(self):
         self._client = None
+        self._memory_store: dict[str, tuple[str, float]] = {}
+        self._redis_available: bool | None = None
 
     @property
     def client(self):
         if self._client is None:
-            self._client = redis.from_url(settings.redis_url, decode_responses=True)
+            try:
+                import redis.asyncio as redis
+                self._client = redis.from_url(settings.redis_url, decode_responses=True)
+            except Exception:
+                logger.warning("Could not initialize Redis client")
+                self._client = None
         return self._client
 
     def _key(self, phone: str) -> str:
@@ -42,24 +43,55 @@ class PatientOtpStore:
 
     async def generate(self, phone: str) -> str:
         code = "".join(str(secrets.randbelow(10)) for _ in range(_CODE_LENGTH))
-        try:
-            await self.client.set(self._key(phone), code, ex=_TTL_SECONDS)
-        except Exception as exc:
-            logger.exception("Failed to store OTP for phone lookup")
-            raise AppException("Couldn't generate a login code right now — try again shortly.") from exc
-        return code
+        key = self._key(phone)
+
+        # Try Redis first
+        if self.client is not None:
+            try:
+                await self.client.set(key, code, ex=_TTL_SECONDS)
+                self._redis_available = True
+                return code
+            except Exception:
+                if self._redis_available is not False:
+                    logger.warning("Redis unavailable, falling back to in-memory OTP store")
+                self._redis_available = False
+
+        # Fallback to in-memory (dev mode only)
+        if settings.app_env == "development":
+            self._memory_store[key] = (code, time.time() + _TTL_SECONDS)
+            logger.debug("OTP stored in memory for phone lookup (dev mode)")
+            return code
+
+        # Production: fail closed
+        raise AppException("Couldn't generate a login code right now — try again shortly.")
 
     async def verify(self, phone: str, code: str) -> bool:
         key = self._key(phone)
-        try:
-            stored = await self.client.get(key)
-        except Exception as exc:
-            logger.exception("Failed to read OTP during verification")
-            raise AppException("Couldn't verify your code right now — try again shortly.") from exc
-        if stored is None or not secrets.compare_digest(stored, code.strip()):
+
+        # Try Redis first
+        if self.client is not None and self._redis_available is not False:
+            try:
+                stored = await self.client.get(key)
+                if stored is not None:
+                    if secrets.compare_digest(stored, code.strip()):
+                        try:
+                            await self.client.delete(key)
+                        except Exception:
+                            logger.warning("OTP verified but failed to delete from Redis")
+                        return True
+                    return False
+            except Exception:
+                pass
+
+        # Fallback to in-memory
+        entry = self._memory_store.get(key)
+        if entry is None:
             return False
-        try:
-            await self.client.delete(key)
-        except Exception:
-            logger.warning("OTP verified but failed to delete from Redis — a replay is possible until TTL expiry")
-        return True
+        stored_code, expires_at = entry
+        if time.time() > expires_at:
+            del self._memory_store[key]
+            return False
+        if secrets.compare_digest(stored_code, code.strip()):
+            del self._memory_store[key]
+            return True
+        return False

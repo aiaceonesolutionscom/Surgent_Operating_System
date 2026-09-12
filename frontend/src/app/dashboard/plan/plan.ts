@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PlanTier } from "../../../data/planTiers";
-import { tierAtLeast, PLAN_ORDER } from "../../../data/planTiers";
+import { tierAtLeast, PLAN_ORDER, normalizeTier } from "../../../data/planTiers";
 import type { Role } from "../../../data/roles";
 import { AGENTS_BY_SLUG } from "../../../data/agents";
 import type { AgentCategory } from "../../../data/agents";
@@ -26,7 +26,7 @@ export interface PlanLimits {
 
 export interface PlanCapabilities {
   tier: PlanTier;
-  // Which of the 5 AGENT_CATEGORIES ids (front-desk/consultation/surgery/post-care/business) this tier unlocks.
+  // Which of the 4 AGENT_CATEGORIES ids (front-desk/consultation/post-care/business) this tier unlocks.
   agentCategoryIds: AgentCategory["id"][];
   features: Partial<Record<FeatureKey, boolean>>;
   limits: PlanLimits;
@@ -104,58 +104,49 @@ export function clearRoleOverride() {
 // ============================================================================
 
 export const PLAN_CAPABILITIES: Record<PlanTier, PlanCapabilities> = {
+  // Legacy "solo" — same caps as practice (the Solo plan was removed; all solo
+  // subscriptions migrated to practice). Kept only so a stale solo tier in an
+  // API response resolves to the same gating as practice.
   solo: {
     tier: "solo",
-    // "Front desk & intake agents" — data/plans.ts:20
-    agentCategoryIds: ["front-desk"],
-    features: {},
-    limits: {
-      // Solo's own tagline is "For single-surgeon practices" — data/plans.ts:15
-      maxDoctors: 1,
-      // "1 connected social channel" — data/plans.ts:22
-      maxSocialChannels: 1,
-      maxLocations: 1
-    },
-    // "Email support" — data/plans.ts:24
-    supportLevel: "email"
-  },
-  practice: {
-    tier: "practice",
-    // "Full consultation & surgery agents" + "Post-surgery care & recovery suite"
-    // — data/plans.ts:36-37, plus everything in Solo (data/plans.ts:35)
-    agentCategoryIds: ["front-desk", "consultation", "surgery", "post-care"],
+    agentCategoryIds: ["front-desk", "consultation", "post-care", "business"],
     features: {
-      // "Analytics dashboard" — data/plans.ts:39. This is the dashboard's own
-      // /dashboard/analytics PAGE, not the `analytics_dashboard` AGENT (that
-      // agent lives in the "business" category, which stays Enterprise-only).
       analytics: true
     },
     limits: {
       maxDoctors: Infinity,
-      // "All social channels connected" — data/plans.ts:38
       maxSocialChannels: Infinity,
       maxLocations: 1
     },
-    // "Priority onboarding & support" — data/plans.ts:40
+    supportLevel: "priority"
+  },
+  practice: {
+    tier: "practice",
+    // All 4 catalog categories — this plan ships every one of the 9 agents.
+    agentCategoryIds: ["front-desk", "consultation", "post-care", "business"],
+    features: {
+      analytics: true
+    },
+    limits: {
+      maxDoctors: Infinity,
+      maxSocialChannels: Infinity,
+      maxLocations: 1
+    },
     supportLevel: "priority"
   },
   enterprise: {
     tier: "enterprise",
-    // "All 31 agents, fully configured" — data/plans.ts:52
-    agentCategoryIds: ["front-desk", "consultation", "surgery", "post-care", "business"],
+    agentCategoryIds: ["front-desk", "consultation", "post-care", "business"],
     features: {
       analytics: true,
       billingAgents: true,
-      // "Custom integrations & EHR" — data/plans.ts:54
       ehrIntegration: true,
       customIntegrations: true,
-      // "BAA & dedicated success manager" — data/plans.ts:55
       baa: true
     },
     limits: {
       maxDoctors: Infinity,
       maxSocialChannels: Infinity,
-      // "Multi-location orchestration" — data/plans.ts:53
       maxLocations: Infinity
     },
     supportLevel: "dedicated"
@@ -163,15 +154,15 @@ export const PLAN_CAPABILITIES: Record<PlanTier, PlanCapabilities> = {
 };
 
 export function capabilitiesFor(tier: PlanTier): PlanCapabilities {
-  return PLAN_CAPABILITIES[tier];
+  return PLAN_CAPABILITIES[normalizeTier(tier)];
 }
 
 export function hasFeature(tier: PlanTier, feature: FeatureKey): boolean {
-  return Boolean(PLAN_CAPABILITIES[tier].features[feature]);
+  return Boolean(PLAN_CAPABILITIES[normalizeTier(tier)].features[feature]);
 }
 
 export function allowsCategory(tier: PlanTier, categoryId: string): boolean {
-  return PLAN_CAPABILITIES[tier].agentCategoryIds.includes(categoryId);
+  return PLAN_CAPABILITIES[normalizeTier(tier)].agentCategoryIds.includes(categoryId);
 }
 
 export function allowsAgent(tier: PlanTier, agentSlug: string): boolean {
@@ -180,7 +171,7 @@ export function allowsAgent(tier: PlanTier, agentSlug: string): boolean {
   return allowsCategory(tier, agent.categoryId);
 }
 
-// Lowest tier that unlocks a category — drives "Included in Practice — $1,690/mo" copy.
+// Lowest tier that unlocks a category — drives "Included in Practice — $999/mo" copy.
 export function minTierForCategory(categoryId: string): PlanTier | null {
   for (const tier of PLAN_ORDER) {
     if (allowsCategory(tier, categoryId)) return tier;
@@ -198,12 +189,12 @@ export function minTierForFeature(feature: FeatureKey): PlanTier | null {
 // The marketing Plan record (name/price) for a tier — so upgrade copy never
 // hardcodes a price that could drift from the Pricing section.
 export function planFor(tier: PlanTier) {
-  return PLANS.find((p) => p.id === tier)!;
+  return PLANS.find((p) => p.id === normalizeTier(tier))!;
 }
 
 // ============================================================================
 // usePlanTier hook — ordered source chain: real API -> local override
-// (onboarding claim / the Plan & Billing page's dev switch buttons) -> "solo"
+// (onboarding claim / the Plan & Billing page's dev switch buttons) -> "practice"
 // default. Every dashboard component reads `tier`/`source` from this without
 // knowing which source answered. `role` follows the same chain — a real
 // signed-in session (API) always wins; the local role-preview override only
@@ -229,7 +220,7 @@ async function fetchFromApi(authedFetch: AuthedFetch): Promise<{ tier: PlanTier;
 }
 
 export function usePlanTier(authedFetch: AuthedFetch = null) {
-  const [tier, setTier] = useState<PlanTier>(() => readPlanOverride() || "solo");
+  const [tier, setTier] = useState<PlanTier>(() => readPlanOverride() || "practice");
   const [role, setRole] = useState<Role>(() => readRoleOverride() || "owner");
   // Only meaningful for role === "doctor" (see backend/src/data/doctor_permissions.py)
   // — the granted permission keys an Owner assigned at application-approval
@@ -244,28 +235,14 @@ export function usePlanTier(authedFetch: AuthedFetch = null) {
     (async () => {
       const result = await fetchFromApi(authedFetch);
       if (cancelled) return;
-      // A local "preview as"/Portal demo role override always wins over the
-      // API. This is what lets the Portal switcher hop into a Doctor or
-      // Receptionist dashboard even while signed in as a real Owner — same
-      // intent as Plan & Billing's existing dev preview buttons. Only ever
-      // demo behavior; production role enforcement belongs in the backend.
-      const override = readRoleOverride();
-      if (override) {
-        const local = readPlanOverride();
-        setTier(local || "solo");
-        setRole(override);
-        // A demo/Portal doctor or receptionist needs the recommended default
-        // permissions, otherwise Patients/Procedures/etc. never surface in the
-        // sidebar. Owners are never permission-gated.
-        setPermissions(
-          override === "doctor"
-            ? RECOMMENDED_DOCTOR_PERMISSIONS
-            : override === "receptionist"
-            ? RECOMMENDED_RECEPTIONIST_PERMISSIONS
-            : []
-        );
-        setSource(local ? "local" : "default");
-      } else if (result) {
+      if (result) {
+        // A REAL practice membership resolved from the backend — this is the
+        // source of truth and it ALWAYS wins. The dev "preview as" override
+        // deliberately does NOT apply here: it was the root of the role
+        // mixing seen live (an Owner "previewing as Doctor" while the backend
+        // session stayed Owner → doctor URLs 403'd or bounced to the Owner
+        // dashboard, and vice versa). To demo a Doctor or Receptionist
+        // dashboard you sign in with a real account of that role.
         setTier(result.tier);
         setRole(result.role);
         setPermissions(result.permissions);
@@ -274,21 +251,40 @@ export function usePlanTier(authedFetch: AuthedFetch = null) {
         // No real auth session at all (Clerk disabled) — safe to use the
         // local dev overrides (Plan & Billing's "preview as" switcher).
         const local = readPlanOverride();
-        setTier(local || "solo");
+        setTier(local || "practice");
         setRole(readRoleOverride() || "owner");
         setPermissions([]);
         setSource(local ? "local" : "default");
       } else {
         // A real Clerk session exists but the backend has no active
-        // practice/user for it yet (pending doctor approval, unclaimed
-        // signup, etc.) — must never default to a privileged role here.
-        // RequirePractice.tsx is responsible for blocking the dashboard in
-        // this state; this is a defense-in-depth floor so a failed API call
-        // can't silently grant Owner-level access the way it once did.
-        setTier("solo");
-        setRole("staff");
-        setPermissions([]);
-        setSource("default");
+        // practice/user for it yet (pending doctor/staff approval, unclaimed
+        // signup, or a Portal demo with no local User). The demo override is
+        // allowed ONLY here — never when a real practice role resolved above.
+        const override = readRoleOverride();
+        if (override) {
+          const local = readPlanOverride();
+          setTier(local || "practice");
+          setRole(override);
+          // A demo/Portal doctor or receptionist needs the recommended default
+          // permissions, otherwise Patients/Procedures/etc. never surface in the
+          // sidebar. Owners are never permission-gated.
+          setPermissions(
+            override === "doctor"
+              ? RECOMMENDED_DOCTOR_PERMISSIONS
+              : override === "receptionist"
+              ? RECOMMENDED_RECEPTIONIST_PERMISSIONS
+              : []
+          );
+          setSource(local ? "local" : "default");
+        } else {
+          // Must never default to a privileged role here — get_current_practice_user
+          // rejects inactive/staff-floor accounts anyway, and RequirePractice.tsx
+          // blocks the dashboard; this is a defense-in-depth floor.
+          setTier("practice");
+          setRole("staff");
+          setPermissions([]);
+          setSource("default");
+        }
       }
       setLoading(false);
     })();
@@ -306,14 +302,15 @@ export function usePlanTier(authedFetch: AuthedFetch = null) {
     setSource("local");
   }, []);
 
-  // Plan & Billing's "Preview as" dev switcher calls this — same immediate-
-  // update shape as setOverride above. Updates local state directly, so it
-  // overrides an already-resolved API role too (until the next reload/
-  // authedFetch change re-runs the effect above and re-resolves from the API).
+  // Plan & Billing's "Preview as" dev switcher calls this — but only when no
+  // real backend role resolved (source === "api" means the live session IS
+  // that role, so a demo override could only fake a role that would then
+  // 403/loop against the real backend). Same no-op guard as the effect above.
   const setRoleOverride = useCallback((next: Role) => {
+    if (source === "api") return;
     writeRoleOverride(next);
     setRole(next);
-  }, []);
+  }, [source]);
 
   return { tier, role, permissions, source, loading, setOverride, setRoleOverride };
 }

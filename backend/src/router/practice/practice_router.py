@@ -11,6 +11,13 @@ from src.schemas.practice import (
     ClaimPlanResponse,
     DoctorSignupCodeResponse,
     ValidateDoctorCodeResponse,
+    SubmitOrgRequestRequest,
+    OrgRequestResponse,
+    UpdateGreenApiSettingsRequest,
+    GreenApiSettingsResponse,
+    MetaSettingsResponse,
+    MetaConnectUrlResponse,
+    MetaCallbackRequest,
 )
 from src.controller.practice.practice_controllers import PracticeController
 from src.server.dependencies import get_current_practice_context, get_current_user, PracticeContext
@@ -69,6 +76,36 @@ async def validate_doctor_code(
     return await controller.validate_doctor_code(db, code)
 
 
+@router.get("/staff-signup-code", response_model=DoctorSignupCodeResponse)
+async def get_staff_signup_code(
+    ctx: PracticeContext = Depends(get_current_practice_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can view the staff signup link.")
+    return await controller.get_staff_signup_code(db, ctx)
+
+
+@router.post("/staff-signup-code/regenerate", response_model=DoctorSignupCodeResponse)
+async def regenerate_staff_signup_code(
+    ctx: PracticeContext = Depends(get_current_practice_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can regenerate the staff signup link.")
+    return await controller.regenerate_staff_signup_code(db, ctx)
+
+
+@router.get("/validate-staff-code", response_model=ValidateDoctorCodeResponse)
+async def validate_staff_code(
+    code: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    # Public/unauthenticated for the same reason as validate-doctor-code — a
+    # prospective receptionist confirms the link before having any account.
+    return await controller.validate_staff_code(db, code)
+
+
 @router.post("/claim", response_model=ClaimPlanResponse)
 async def claim_plan(
     body: ClaimPlanRequest,
@@ -78,3 +115,96 @@ async def claim_plan(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.claim(db, clerk_user, body.session_id)
+
+
+@router.get("/settings/green-api", response_model=GreenApiSettingsResponse)
+async def get_green_api_settings(
+    ctx: PracticeContext = Depends(get_current_practice_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can view WhatsApp connection settings.")
+    return await controller.get_green_api_settings(db, ctx)
+
+
+@router.patch("/settings/green-api", response_model=GreenApiSettingsResponse)
+async def update_green_api_settings(
+    body: UpdateGreenApiSettingsRequest,
+    ctx: PracticeContext = Depends(get_current_practice_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can connect WhatsApp.")
+    return await controller.update_green_api_settings(db, ctx, body)
+
+
+@router.delete("/settings/green-api", status_code=204)
+async def disconnect_green_api(
+    ctx: PracticeContext = Depends(get_current_practice_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can disconnect WhatsApp.")
+    await controller.disconnect_green_api(db, ctx)
+
+
+@router.get("/settings/meta", response_model=MetaSettingsResponse)
+async def get_meta_settings(
+    ctx: PracticeContext = Depends(get_current_practice_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can view Instagram/Facebook connection settings.")
+    return await controller.get_meta_settings(db, ctx)
+
+
+@router.get("/settings/meta/connect-url", response_model=MetaConnectUrlResponse)
+async def get_meta_connect_url(
+    redirect_uri: str = Query(...),
+    ctx: PracticeContext = Depends(get_current_practice_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can connect Instagram/Facebook.")
+    return await controller.get_meta_connect_url(db, ctx, redirect_uri)
+
+
+@router.post("/settings/meta/callback", response_model=MetaSettingsResponse)
+async def complete_meta_connect(
+    body: MetaCallbackRequest,
+    ctx: PracticeContext = Depends(get_current_practice_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can connect Instagram/Facebook.")
+    return await controller.complete_meta_connect(db, ctx, body)
+
+
+@router.delete("/settings/meta", status_code=204)
+async def disconnect_meta(
+    ctx: PracticeContext = Depends(get_current_practice_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can disconnect Instagram/Facebook.")
+    await controller.disconnect_meta(db, ctx)
+
+
+@router.post("/request-org", response_model=OrgRequestResponse)
+async def submit_org_request(
+    body: SubmitOrgRequestRequest,
+    # Same reasoning as /claim — a brand-new self-signup has no local User/
+    # Practice row yet; this endpoint is what a Super Admin's later approval
+    # turns into one (see org_request_service.py, admin_services.py).
+    clerk_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.submit_org_request(db, clerk_user, body)
+
+
+@router.get("/my-org-request", response_model=OrgRequestResponse)
+async def get_my_org_request(
+    clerk_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.get_my_org_request(db, clerk_user)

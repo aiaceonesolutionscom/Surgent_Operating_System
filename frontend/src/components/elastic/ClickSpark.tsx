@@ -1,6 +1,11 @@
 import { useRef, useEffect, useCallback } from "react";
 import type { ReactNode, MouseEvent } from "react";
 
+type StartLoopFn = () => void;
+interface ExtendedCanvas extends HTMLCanvasElement {
+  __startLoop?: StartLoopFn;
+}
+
 interface Spark {
   x: number;
   y: number;
@@ -89,6 +94,7 @@ const ClickSpark = ({
     if (!ctx) return;
 
     let animationId = 0;
+    let running = false;
 
     const draw = (timestamp: number) => {
       if (startTimeRef.current === null) {
@@ -123,12 +129,27 @@ const ClickSpark = ({
         return true;
       });
 
+      // Stop the loop when no sparks remain — avoids burning CPU idle
+      if (sparksRef.current.length === 0) {
+        running = false;
+        return;
+      }
       animationId = requestAnimationFrame(draw);
     };
 
-    animationId = requestAnimationFrame(draw);
+    // Only start rAF when there are sparks to render
+    const startLoop = () => {
+      if (!running) {
+        running = true;
+        animationId = requestAnimationFrame(draw);
+      }
+    };
+
+    // Expose startLoop via ref so handleClick can trigger it
+    (canvas as ExtendedCanvas).__startLoop = startLoop;
 
     return () => {
+      running = false;
       cancelAnimationFrame(animationId);
     };
   }, [sparkColor, sparkSize, sparkRadius, sparkCount, duration, easeFunc, extraScale]);
@@ -149,6 +170,10 @@ const ClickSpark = ({
     }));
 
     sparksRef.current.push(...newSparks);
+
+    // Start the rAF loop (no-op if already running)
+    const startLoop = (canvas as ExtendedCanvas).__startLoop;
+    if (startLoop) startLoop();
   };
 
   return (

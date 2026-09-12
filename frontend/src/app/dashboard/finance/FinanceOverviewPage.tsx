@@ -1,22 +1,29 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   WalletIcon, ReceiptIcon, PlusIcon, CreditCardIcon,
-  BanknoteIcon,   UserPlusIcon, CheckIcon, XIcon, SendIcon,
+  BanknoteIcon, UserPlusIcon, XIcon, SettingsIcon,
   TrashIcon, ScaleIcon, TrendingDownIcon, DollarSignIcon,
-  FileTextIcon, ArrowUpRightIcon, SparklesIcon
+  ArrowUpRightIcon, CoinsIcon
 } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { KpiCard } from "../components/KpiCard";
 import { EmptyState } from "../components/EmptyState";
+import { FinanceAgentCard } from "./FinanceAgentCard";
 import { usePlan } from "../plan/PlanContext";
 import { usePatients } from "../patients/usePatients";
 import { useInvoices } from "../billing-invoices/useInvoices";
 import { useExpenses } from "./useExpenses";
-import { listStaff, listStaffContacts, startStaffConversation, getFinanceOverview, type FinanceOverviewResponse, type ExpenseResponse, type InvoiceResponse, type StaffResponse, type StaffContactResponse } from "../../../api/entities";
+import { formatMoney, formatDate } from "./money";
+import {
+  listStaff, getFinanceOverview, getFinanceSettings, updateFinanceSettings,
+  getWalletBalance, listWalletTransactions, createWalletCheckoutSession, confirmWalletCheckoutSession,
+  type FinanceOverviewResponse, type ExpenseResponse, type InvoiceResponse, type StaffResponse,
+  type FinanceSettingsResponse, type WalletBalanceResponse, type WalletTransactionResponse
+} from "../../../api/entities";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 
-type Tab = "overview" | "invoices" | "payments";
+type Tab = "overview" | "invoices" | "payments" | "wallet";
 type AuthedFetch = (<T>(path: string, init?: RequestInit) => Promise<T>) | null;
 
 const TYPE_META: Record<string, { label: string; className: string }> = {
@@ -27,23 +34,16 @@ const TYPE_META: Record<string, { label: string; className: string }> = {
 
 const INVOICE_STATUS_CLASS: Record<string, string> = {
   pending: "bg-sand-100 text-ink-soft",
+  partially_paid: "bg-[#7C3AED]/10 text-[#7C3AED]",
   paid: "bg-success/10 text-success",
   overdue: "bg-danger/10 text-danger",
   cancelled: "bg-ink-muted/10 text-ink-muted",
   refunded: "bg-warning/10 text-warning"
 };
 
+const INVOICE_STATUS_LABEL: Record<string, string> = { partially_paid: "Partially paid" };
+
 const TYPE_OPTIONS = ["expense", "refund", "salary"];
-
-function formatMoney(n: number) {
-  const sign = n < 0 ? "-" : "";
-  return `${sign}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function formatDate(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
 
 function TypeBadge({ type }: { type: string }) {
   const meta = TYPE_META[type] ?? TYPE_META.expense;
@@ -59,25 +59,31 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// One finance hub: KPIs, invoices, and payments (expenses / refunds /
-// salaries) all in one premium screen. An owner can run the whole money side
-// without leaving this page — raise an invoice, charge a card, pay a salary,
-// refund a patient, and share a receipt straight into a staff chat. A
-// receptionist sees the same numbers read-only.
+// One finance hub: KPIs, invoices, payments (expenses/refunds/salaries), and
+// the practice's Stripe-funded credits wallet, all in one screen. An owner
+// can run the whole money side without leaving this page. A receptionist
+// sees invoices/payments read-only; Wallet + Finance Settings are Owner-only.
 export function FinanceOverviewPage() {
-  const { authedFetch, role } = usePlan();
-  const isOwner = role === "owner";
-  const [tab, setTab] = useState<Tab>("overview");
+  const { authedFetch, role, loading: roleLoading } = usePlan();
+  // usePlanTier() seeds `role` with a placeholder "owner" before the real
+  // /practice/me response resolves — trusting it before `loading` clears
+  // fires Owner-only calls (finance/settings, staff) for every role for one
+  // render, each a real (if harmless) 403. Same fix as MessagesBell.tsx.
+  const isOwner = !roleLoading && role === "owner";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = (searchParams.get("tab") as Tab) || "overview";
+  const [tab, setTab] = useState<Tab>(["overview", "invoices", "payments", "wallet"].includes(initialTab) ? initialTab : "overview");
 
   const [overview, setOverview] = useState<FinanceOverviewResponse | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [staff, setStaff] = useState<StaffResponse[]>([]);
+  const [financeSettings, setFinanceSettings] = useState<FinanceSettingsResponse | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   const { patients } = usePatients(authedFetch);
-  const { invoices, loading: invoicesLoading, refetch: refetchInvoices, update: updateInvoice } = useInvoices(authedFetch);
-  const { expenses, loading: expensesLoading, refetch: refetchExpenses, create: createExpense, update: updateExpense, remove: removeExpense } = useExpenses(authedFetch);
+  const { invoices, loading: invoicesLoading } = useInvoices(authedFetch);
+  const { expenses, loading: expensesLoading, create: createExpense, update: updateExpense, remove: removeExpense } = useExpenses(authedFetch);
 
-  const [showCharge, setShowCharge] = useState<InvoiceResponse | null>(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showPaySalary, setShowPaySalary] = useState(false);
 
@@ -91,32 +97,45 @@ export function FinanceOverviewPage() {
     })();
     if (isOwner && authedFetch) {
       listStaff(authedFetch).then(setStaff).catch(() => undefined);
+      getFinanceSettings(authedFetch).then(setFinanceSettings).catch(() => undefined);
     }
     return () => { cancelled = true; };
   }, [authedFetch, isOwner]);
+
+  function switchTab(t: Tab) {
+    setTab(t);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tab", t);
+      return next;
+    }, { replace: true });
+  }
 
   const patientName = (patientId: string) => patients.find((p) => p.id === patientId)?.name || "Unknown patient";
   const loading = overviewLoading || invoicesLoading || expensesLoading;
   const hasData = overview ? overview.invoice_count > 0 || overview.expense_count > 0 : false;
 
-  const pendingInvoices = useMemo(() => invoices.filter((i) => i.status === "pending" || i.status === "overdue"), [invoices]);
+  const pendingInvoices = useMemo(() => invoices.filter((i) => i.status === "pending" || i.status === "partially_paid" || i.status === "overdue"), [invoices]);
   const recentInvoices = useMemo(() => invoices.slice(0, 5), [invoices]);
   const recentExpenses = useMemo(() => expenses.slice(0, 5), [expenses]);
 
-  async function markInvoicePaid(id: string) {
-    await updateInvoice(id, { status: "paid" });
-    await refetchInvoices();
-    await refetchExpenses();
-    setOverview(await getFinanceOverview(authedFetch!));
-  }
-
   return (
     <>
-      <PageHeader
-        title="Finance"
-        subtitle={isOwner
-          ? "Everything money, in one place — raise invoices, charge cards, pay salaries & expenses, and share receipts."
-          : "A read-only view of the practice's finances."} />
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <PageHeader
+          title="Finance"
+          subtitle={isOwner
+            ? "Everything money, in one place — invoices, payments, salaries & expenses, and practice credits."
+            : "A read-only view of the practice's finances."} />
+        {isOwner &&
+        <button
+          type="button"
+          onClick={() => setShowSettings(true)}
+          className="flex shrink-0 items-center gap-1.5 rounded-xl border border-sand-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">
+            <SettingsIcon className="h-4 w-4" /> Finance settings
+          </button>
+        }
+      </div>
 
       {isOwner &&
       <div className="mb-6 flex flex-wrap items-center gap-2.5">
@@ -148,19 +167,21 @@ export function FinanceOverviewPage() {
         <KpiCard icon={ReceiptIcon} label="Open invoices" value={String(pendingInvoices.length)} color="#F59E0B" />
       </div>
 
+      {authedFetch && <FinanceAgentCard authedFetch={authedFetch} />}
+
       {/* Quick money actions (owner) */}
       {isOwner && pendingInvoices.length > 0 &&
       <div className="mt-6 overflow-hidden rounded-3xl border border-teal-600/15 bg-gradient-to-r from-teal-600/8 to-white p-5">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="flex items-center gap-2 text-sm font-bold text-ink"><SparklesIcon className="h-4 w-4 text-teal-600" /> Charge a card to clear outstanding invoices</p>
-              <p className="mt-0.5 text-xs text-ink-muted">{pendingInvoices.length} invoice{pendingInvoices.length > 1 ? "s" : ""} awaiting payment · {formatMoney(pendingInvoices.reduce((s, i) => s + i.total_amount, 0))}</p>
+              <p className="flex items-center gap-2 text-sm font-bold text-ink"><CreditCardIcon className="h-4 w-4 text-teal-600" /> Outstanding invoices</p>
+              <p className="mt-0.5 text-xs text-ink-muted">{pendingInvoices.length} invoice{pendingInvoices.length > 1 ? "s" : ""} awaiting payment</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {pendingInvoices.slice(0, 3).map((inv) =>
-            <button key={inv.id} type="button" onClick={() => setShowCharge(inv)} className="flex items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-teal-700">
-                  <CreditCardIcon className="h-3.5 w-3.5" /> {patientName(inv.patient_id)} · {formatMoney(inv.total_amount)}
-                </button>
+            <Link key={inv.id} to={DASHBOARD_ROUTES.invoiceDetail(inv.id)} className="flex items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-teal-700">
+                  <CreditCardIcon className="h-3.5 w-3.5" /> {patientName(inv.patient_id)} · {formatMoney(inv.balance_due, inv.currency)}
+                </Link>
             )}
             </div>
           </div>
@@ -169,19 +190,22 @@ export function FinanceOverviewPage() {
 
       {/* Tabs */}
       <div className="mt-8 flex gap-1 border-b border-sand-200">
-        {(["overview", "invoices", "payments"] as Tab[]).map((t) =>
+        {(["overview", "invoices", "payments", ...(isOwner ? ["wallet" as Tab] : [])] as Tab[]).map((t) =>
       <button
         key={t}
         type="button"
-        onClick={() => setTab(t)}
-        className={`rounded-t-xl px-4 py-2.5 text-sm font-semibold capitalize transition-colors ${tab === t ? "border-b-2 border-teal-600 text-teal-600" : "text-ink-muted hover:text-ink"}`}>
-          {t}
+        onClick={() => switchTab(t)}
+        className={`flex items-center gap-1.5 rounded-t-xl px-4 py-2.5 text-sm font-semibold capitalize transition-colors ${tab === t ? "border-b-2 border-teal-600 text-teal-600" : "text-ink-muted hover:text-ink"}`}>
+          {t === "wallet" && <CoinsIcon className="h-3.5 w-3.5" />} {t}
         </button>
       )}
       </div>
 
       <div className="mt-6">
-        {loading && !hasData ? <p className="text-sm text-ink-muted">Loading…</p> :
+        {tab === "wallet" ?
+        <WalletTab authedFetch={authedFetch} baseCurrency={financeSettings?.base_currency ?? "USD"} /> :
+
+        loading && !hasData ? <p className="text-sm text-ink-muted">Loading…</p> :
         !hasData && tab === "overview" ?
         <div className="rounded-3xl border border-sand-200 bg-white">
             <EmptyState icon={WalletIcon} title="Not enough data yet" body="Raise an invoice and record a payment — this page will assemble a real picture of your practice's money." />
@@ -193,15 +217,13 @@ export function FinanceOverviewPage() {
           recentInvoices={recentInvoices}
           recentExpenses={recentExpenses}
           patientName={patientName}
-          onGoInvoices={() => setTab("invoices")}
-          onGoPayments={() => setTab("payments")} /> :
+          onGoInvoices={() => switchTab("invoices")}
+          onGoPayments={() => switchTab("payments")} /> :
 
         tab === "invoices" ?
         <InvoicesTab
-          isOwner={isOwner}
           invoices={invoices}
-          patientName={patientName}
-          onCharge={setShowCharge} /> :
+          patientName={patientName} /> :
 
         <PaymentsTab
           isOwner={isOwner}
@@ -212,14 +234,6 @@ export function FinanceOverviewPage() {
           onDelete={removeExpense} />
         }
       </div>
-
-      {showCharge &&
-      <ChargeCardModal
-        invoice={showCharge}
-        patientName={patientName(showCharge.patient_id)}
-        onClose={() => setShowCharge(null)}
-        onPaid={markInvoicePaid}
-        authedFetch={authedFetch} />}
 
       {showAddExpense &&
       <AddExpenseModal
@@ -234,6 +248,13 @@ export function FinanceOverviewPage() {
         onCreate={createExpense}
         onRefresh={async () => { setOverview(await getFinanceOverview(authedFetch!)); }}
         onClose={() => setShowPaySalary(false)} />}
+
+      {showSettings && financeSettings &&
+      <FinanceSettingsModal
+        settings={financeSettings}
+        authedFetch={authedFetch}
+        onSaved={(s) => { setFinanceSettings(s); setShowSettings(false); }}
+        onClose={() => setShowSettings(false)} />}
     </>);
 
 }
@@ -255,15 +276,15 @@ function OverviewTab({
         <p className="text-sm text-ink-muted">No invoices yet.</p> :
         <div className="divide-y divide-sand-100">
             {recentInvoices.map((inv) =>
-          <div key={inv.id} className="flex items-center gap-3 py-2.5">
+          <Link key={inv.id} to={DASHBOARD_ROUTES.invoiceDetail(inv.id)} className="flex items-center gap-3 py-2.5 transition-colors hover:opacity-80">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-600/10 text-teal-600"><ReceiptIcon className="h-4 w-4" /></span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-ink">{patientName(inv.patient_id)}</p>
               <p className="text-xs text-ink-muted">{formatDate(inv.due_date)}</p>
             </div>
-            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${INVOICE_STATUS_CLASS[inv.status]}`}>{inv.status}</span>
-            <span className="text-sm font-semibold text-ink tabular-nums">{formatMoney(inv.total_amount)}</span>
-          </div>
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${INVOICE_STATUS_CLASS[inv.status]}`}>{INVOICE_STATUS_LABEL[inv.status] || inv.status}</span>
+            <span className="text-sm font-semibold text-ink tabular-nums">{formatMoney(inv.total_amount, inv.currency)}</span>
+          </Link>
         )}
           </div>
         }
@@ -301,10 +322,9 @@ function OverviewTab({
 }
 
 function InvoicesTab({
-  isOwner, invoices, patientName, onCharge
+  invoices, patientName
 }: {
-  isOwner: boolean; invoices: InvoiceResponse[]; patientName: (id: string) => string;
-  onCharge: (inv: InvoiceResponse) => void;
+  invoices: InvoiceResponse[]; patientName: (id: string) => string;
 }) {
   if (invoices.length === 0) {
     return (
@@ -320,9 +340,10 @@ function InvoicesTab({
             <tr className="border-b border-sand-200 bg-sand-50/60 text-xs font-semibold uppercase tracking-wide text-ink-muted">
               <th className="px-5 py-3.5">Patient</th>
               <th className="px-5 py-3.5">Total</th>
+              <th className="px-5 py-3.5">Balance due</th>
               <th className="px-5 py-3.5">Status</th>
               <th className="px-5 py-3.5">Due</th>
-              {isOwner && <th className="px-5 py-3.5 text-right">Action</th>}
+              <th className="px-5 py-3.5 text-right">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-sand-100">
@@ -331,20 +352,15 @@ function InvoicesTab({
             <td className="px-5 py-3.5 font-medium text-ink">
               <Link to={DASHBOARD_ROUTES.invoiceDetail(inv.id)} className="hover:underline">{patientName(inv.patient_id)}</Link>
             </td>
-            <td className="px-5 py-3.5 font-semibold text-ink tabular-nums">{formatMoney(inv.total_amount)}</td>
-            <td className="px-5 py-3.5"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${INVOICE_STATUS_CLASS[inv.status]}`}>{inv.status}</span></td>
+            <td className="px-5 py-3.5 font-semibold text-ink tabular-nums">{formatMoney(inv.total_amount, inv.currency)}</td>
+            <td className="px-5 py-3.5 text-ink-soft tabular-nums">{inv.balance_due > 0 ? formatMoney(inv.balance_due, inv.currency) : "—"}</td>
+            <td className="px-5 py-3.5"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${INVOICE_STATUS_CLASS[inv.status]}`}>{INVOICE_STATUS_LABEL[inv.status] || inv.status}</span></td>
             <td className="px-5 py-3.5 text-ink-soft">{formatDate(inv.due_date)}</td>
-            {isOwner &&
-        <td className="px-5 py-3.5 text-right">
-              {inv.status === "pending" ?
-          <button type="button" onClick={() => onCharge(inv)} className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-teal-700">
-                <CreditCardIcon className="h-3.5 w-3.5" /> Charge card
-              </button> :
-          <Link to={DASHBOARD_ROUTES.invoiceDetail(inv.id)} className="inline-flex items-center gap-1 rounded-lg border border-sand-200 px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-teal-600/40 hover:text-teal-600">
-                <FileTextIcon className="h-3.5 w-3.5" /> Receipt
-              </Link>}
+            <td className="px-5 py-3.5 text-right">
+              <Link to={DASHBOARD_ROUTES.invoiceDetail(inv.id)} className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-teal-700">
+                <CreditCardIcon className="h-3.5 w-3.5" /> {inv.balance_due > 0 ? "Collect" : "View"}
+              </Link>
             </td>
-            }
           </tr>
         )}
           </tbody>
@@ -448,6 +464,198 @@ function ExpenseRow({
 
 }
 
+/* ---------------- Wallet / practice credits ---------------- */
+
+function WalletTab({ authedFetch, baseCurrency }: { authedFetch: AuthedFetch; baseCurrency: string }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [balance, setBalance] = useState<WalletBalanceResponse | null>(null);
+  const [transactions, setTransactions] = useState<WalletTransactionResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showTopup, setShowTopup] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function refresh() {
+    if (!authedFetch) return;
+    try {
+      const [b, t] = await Promise.all([getWalletBalance(authedFetch), listWalletTransactions(authedFetch)]);
+      setBalance(b);
+      setTransactions(t);
+    } catch {
+      setBalance(null);
+      setTransactions([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, [authedFetch]);
+
+  useEffect(() => {
+    const checkout = searchParams.get("checkout");
+    const sessionId = searchParams.get("session_id");
+    if (checkout !== "success" || !sessionId || !authedFetch) return;
+    setConfirming(true);
+    confirmWalletCheckoutSession(authedFetch, sessionId)
+      .then(async () => { await refresh(); })
+      .catch((err: unknown) => setError(err instanceof Error && err.message ? err.message : "Couldn't confirm top-up."))
+      .finally(() => {
+        setConfirming(false);
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("checkout");
+          next.delete("session_id");
+          return next;
+        }, { replace: true });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (loading) return <p className="text-sm text-ink-muted">Loading…</p>;
+
+  return (
+    <div className="space-y-6">
+      {confirming && <p className="rounded-2xl border border-teal-600/20 bg-teal-600/5 px-4 py-3 text-sm font-medium text-teal-700">Confirming your top-up…</p>}
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
+
+      <div className="overflow-hidden rounded-3xl border border-teal-600/15 bg-gradient-to-br from-[#0D9488] to-[#0F766E] p-6 text-white shadow-[0_10px_30px_rgba(13,148,136,0.25)]">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-white/70"><CoinsIcon className="h-3.5 w-3.5" /> Practice credits</p>
+            <p className="mt-1.5 font-display text-4xl font-bold tabular-nums">{formatMoney(balance?.balance ?? 0, balance?.currency ?? baseCurrency)}</p>
+            <p className="mt-1 text-xs text-white/70">Top up your account with a real card — funded via Stripe.</p>
+          </div>
+          <button
+          type="button"
+          onClick={() => setShowTopup(true)}
+          className="flex items-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-teal-700 shadow-lg transition-transform hover:-translate-y-0.5">
+            <PlusIcon className="h-4 w-4" /> Add credits
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-sand-200 bg-white p-5">
+        <p className="mb-3 text-sm font-bold text-ink">Top-up history</p>
+        {transactions.length === 0 ?
+        <p className="text-sm text-ink-muted">No top-ups yet.</p> :
+        <div className="divide-y divide-sand-100">
+            {transactions.map((t) =>
+          <div key={t.id} className="flex items-center justify-between gap-3 py-2.5">
+              <div>
+                <p className="text-sm font-medium text-ink">{t.description || "Top-up"}</p>
+                <p className="text-xs text-ink-muted">{formatDate(t.created_at)}</p>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${t.status === "completed" ? "bg-success/10 text-success" : t.status === "failed" ? "bg-danger/10 text-danger" : "bg-sand-100 text-ink-soft"}`}>{t.status}</span>
+                <span className="text-sm font-semibold text-ink tabular-nums">+{formatMoney(t.amount, t.currency)}</span>
+              </div>
+            </div>
+          )}
+          </div>
+        }
+      </div>
+
+      {showTopup &&
+      <TopupModal authedFetch={authedFetch} currency={balance?.currency ?? baseCurrency} onClose={() => setShowTopup(false)} />}
+    </div>);
+
+}
+
+function TopupModal({ authedFetch, currency, onClose }: { authedFetch: AuthedFetch; currency: string; onClose: () => void }) {
+  const [amount, setAmount] = useState("50");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!authedFetch || !amount) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const session = await createWalletCheckoutSession(authedFetch, Number(amount));
+      window.location.href = session.url;
+    } catch (err: unknown) {
+      setError(err instanceof Error && err.message ? err.message : "Couldn't start checkout — try again.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Add credits" subtitle="Top up your practice's account via Stripe" onClose={onClose}>
+      <form onSubmit={submit}>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Amount ({currency}) *</span>
+          <input required type="number" min="1" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+        <div className="mt-3 flex gap-2">
+          {[25, 50, 100, 250].map((v) =>
+        <button key={v} type="button" onClick={() => setAmount(String(v))} className="flex-1 rounded-xl border border-sand-200 py-2 text-xs font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">
+              {formatMoney(v, currency)}
+            </button>
+        )}
+        </div>
+        {error && <p className="mt-3 text-sm font-medium text-danger">{error}</p>}
+        <button type="submit" disabled={saving || !amount} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-40">
+          <CreditCardIcon className="h-4 w-4" /> {saving ? "Starting…" : "Continue to Stripe"}
+        </button>
+      </form>
+    </Modal>);
+
+}
+
+/* ---------------- Finance settings (owner) ---------------- */
+
+function FinanceSettingsModal({
+  settings, authedFetch, onSaved, onClose
+}: {
+  settings: FinanceSettingsResponse; authedFetch: AuthedFetch; onSaved: (s: FinanceSettingsResponse) => void; onClose: () => void;
+}) {
+  const [baseCurrency, setBaseCurrency] = useState(settings.base_currency);
+  const [rate, setRate] = useState(settings.usd_to_pkr_rate != null ? String(settings.usd_to_pkr_rate) : "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!authedFetch) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await updateFinanceSettings(authedFetch, {
+        base_currency: baseCurrency,
+        ...(rate ? { usd_to_pkr_rate: Number(rate) } : {})
+      });
+      onSaved(updated);
+    } catch (err: unknown) {
+      setError(err instanceof Error && err.message ? err.message : "Couldn't save — try again.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Finance settings" subtitle="Base currency and manual exchange rate for multi-currency billing" onClose={onClose}>
+      <form onSubmit={submit}>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Base currency</span>
+          <select value={baseCurrency} onChange={(e) => setBaseCurrency(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40">
+            <option value="USD">USD</option>
+            <option value="PKR">PKR</option>
+          </select>
+        </label>
+        <label className="mt-3 block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">1 USD = ? PKR</span>
+          <input type="number" min="0" step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="e.g. 280" className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+          <p className="mt-1.5 text-xs text-ink-muted">Set manually — no external rate feed. Invoices in the non-base currency use this rate at the moment they're raised.</p>
+        </label>
+        {error && <p className="mt-3 text-sm font-medium text-danger">{error}</p>}
+        <button type="submit" disabled={saving} className="mt-5 w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-40">
+          {saving ? "Saving…" : "Save settings"}
+        </button>
+      </form>
+    </Modal>);
+
+}
+
 /* ---------------- Modal wrapper ---------------- */
 
 function Modal({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode }) {
@@ -464,116 +672,6 @@ function Modal({ title, subtitle, onClose, children }: { title: string; subtitle
         {children}
       </div>
     </div>);
-
-}
-
-/* ---------------- Charge card + receipt (demo) ---------------- */
-
-function ChargeCardModal({
-  invoice, patientName, onClose, onPaid, authedFetch
-}: {
-  invoice: InvoiceResponse; patientName: string; onClose: () => void;
-  onPaid: (id: string) => Promise<void>; authedFetch: AuthedFetch | null;
-}) {
-  const [card, setCard] = useState("4242 4242 4242 4242");
-  const [expiry, setExpiry] = useState("12/27");
-  const [cvc, setCvc] = useState("123");
-  const [processing, setProcessing] = useState(false);
-  const [done, setDone] = useState(false);
-  const [sendTarget, setSendTarget] = useState<string>("");
-  const [sentConversationId, setSentConversationId] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [contacts, setContacts] = useState<StaffContactResponse[]>([]);
-
-  useEffect(() => {
-    if (!authedFetch) return;
-    listStaffContacts(authedFetch).then(setContacts).catch(() => setContacts([]));
-  }, [authedFetch]);
-
-  async function pay() {
-    setProcessing(true);
-    await new Promise((r) => setTimeout(r, 1400)); // demo processing
-    await onPaid(invoice.id);
-    setProcessing(false);
-    setDone(true);
-  }
-
-  const receiptText = `🧾 Receipt — ${patientName}\nInvoice #${invoice.id.slice(0, 8)}\nTotal: ${formatMoney(invoice.total_amount)}\nStatus: Paid (card) · ${new Date().toLocaleString()}`;
-
-  async function share() {
-    if (!sendTarget || !authedFetch) return;
-    setSending(true);
-    try {
-      const conversation = await startStaffConversation(authedFetch, { recipient_user_id: sendTarget, body: receiptText });
-      setSentConversationId(conversation.conversation_id);
-      setSent(true);
-    } finally {
-      setSending(false);
-    }
-  }
-
-  if (done) {
-    return (
-      <Modal title="Payment successful" subtitle="Receipt generated" onClose={onClose}>
-        <div className="rounded-2xl border border-sand-200 bg-sand-50/60 p-4 font-mono text-xs leading-relaxed text-ink-soft">
-          {receiptText.split("\n").map((l, i) => <p key={i}>{l}</p>)}
-        </div>
-
-        <div className="mt-4 rounded-2xl border border-sand-200 p-4">
-          <p className="mb-2 text-sm font-bold text-ink">Share this receipt</p>
-          <p className="mb-3 text-xs text-ink-muted">Send it straight into a staff conversation — receptionist or doctor.</p>
-          {sent ?
-          <div className="flex items-center gap-2 rounded-xl bg-success/10 px-3.5 py-2.5 text-sm font-semibold text-success"><CheckIcon className="h-4 w-4" /> Sent to their Messages thread</div> :
-          <div className="flex gap-2">
-            <select value={sendTarget} onChange={(e) => setSendTarget(e.target.value)} className="flex-1 rounded-xl border border-sand-200 bg-canvas px-3 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40">
-              <option value="">Choose receptionist / doctor…</option>
-              {contacts.map((c) => <option key={c.id} value={c.id}>{c.name || "Unnamed"} ({c.role})</option>)}
-            </select>
-            <button type="button" onClick={share} disabled={!sendTarget || sending} className="flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-40">
-              <SendIcon className="h-4 w-4" /> {sending ? "Sending…" : "Send"}
-            </button>
-          </div>
-          }
-{sendTarget && sent && sentConversationId &&
-        <Link to={DASHBOARD_ROUTES.messageThread(sentConversationId)} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-teal-600 hover:underline">
-            Open conversation <ArrowUpRightIcon className="h-3 w-3" />
-          </Link>
-        }
-        </div>
-
-        <button type="button" onClick={onClose} className="mt-5 w-full rounded-xl bg-ink px-4 py-3 text-sm font-semibold text-white hover:bg-ink-soft">Done</button>
-      </Modal>);
-
-  }
-
-  return (
-    <Modal title="Charge card" subtitle={`${patientName} · ${formatMoney(invoice.total_amount)}`} onClose={onClose}>
-      <p className="mb-3 text-xs text-ink-muted">Demo checkout — no real charge is made.</p>
-      <label className="block">
-        <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Card number</span>
-        <input value={card} onChange={(e) => setCard(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
-      </label>
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Expiry</span>
-          <input value={expiry} onChange={(e) => setExpiry(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
-        </label>
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">CVC</span>
-          <input value={cvc} onChange={(e) => setCvc(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
-        </label>
-      </div>
-      <div className="mt-5 flex items-center gap-2.5">
-        <div className="rounded-xl bg-sand-100 px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Charging</p>
-          <p className="text-lg font-bold text-ink tabular-nums">{formatMoney(invoice.total_amount)}</p>
-        </div>
-        <button type="button" onClick={pay} disabled={processing} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:opacity-60">
-          <CreditCardIcon className="h-4 w-4" /> {processing ? "Processing…" : "Pay now"}
-        </button>
-      </div>
-    </Modal>);
 
 }
 

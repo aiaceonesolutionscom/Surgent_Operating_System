@@ -6,12 +6,13 @@ from src.models.doctor import Doctor, DoctorProcedure, DoctorAvailability, Docto
 from src.models.appointment import Appointment
 from src.models.review_request import ReviewRequest
 from src.models.pending_doctor_request import PendingDoctorRequest
+from src.models.pending_staff_request import PendingStaffRequest
 from src.models.attendance_record import AttendanceRecord
 from src.models.conversation import Conversation
 from src.models.message import Message
 from src.models.agent_config import AgentConfig
 from src.models.agent_log import AgentLog
-from src.models.invoice import Invoice, InvoiceLineItem
+from src.models.invoice import Invoice, InvoiceLineItem, Payment
 from src.models.expense import Expense
 from src.models.inventory_item import InventoryItem
 from src.models.inventory_batch import InventoryBatch
@@ -35,6 +36,7 @@ from src.models.notification import Notification
 from src.models.inventory_adjustment import InventoryAdjustment
 from src.models.supplier import Supplier
 from src.models.purchase_order import PurchaseOrder, PurchaseOrderItem
+from src.models.wallet_transaction import WalletTransaction
 
 __all__ = [
     "Practice",
@@ -48,6 +50,7 @@ __all__ = [
     "Appointment",
     "ReviewRequest",
     "PendingDoctorRequest",
+    "PendingStaffRequest",
     "AttendanceRecord",
     "Conversation",
     "Message",
@@ -55,6 +58,7 @@ __all__ = [
     "AgentLog",
     "Invoice",
     "InvoiceLineItem",
+    "Payment",
     "Expense",
     "InventoryItem",
     "InventoryBatch",
@@ -82,4 +86,5 @@ __all__ = [
     "Supplier",
     "PurchaseOrder",
     "PurchaseOrderItem",
+    "WalletTransaction",
 ]

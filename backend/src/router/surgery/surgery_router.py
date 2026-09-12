@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -21,6 +22,9 @@ controller = SurgeryController()
 # Clinical/surgical planning — Owner/Doctor only, same boundary as
 # clinical.py's consultation notes and patient_photos_router.py.
 _ROLES = (UserRole.OWNER, UserRole.DOCTOR)
+# Listing/viewing is widened to Receptionist (read-only front-desk context);
+# every mutation stays Owner/Doctor.
+_READ_ROLES = (UserRole.OWNER, UserRole.DOCTOR, UserRole.RECEPTIONIST)
 
 
 @router.post("", response_model=SurgeryResponse)
@@ -35,18 +39,24 @@ async def create_surgery(
 @router.get("", response_model=list[SurgeryResponse])
 async def list_surgeries(
     patient_id: UUID | None = Query(default=None),
-    user: User = Depends(require_role(*_ROLES)),
+    scope: Literal["all", "mine"] | None = Query(default=None),
+    user: User = Depends(require_role(*_READ_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     if patient_id is not None:
         return await controller.list_for_patient(db, user, patient_id)
+    # A Doctor's "Meri Surgeries" dashboard — their own surgeries as surgeon.
+    # Meaningless for Owner/Receptionist (no roster doctor row), so it is
+    # only honored for the DOCTOR role.
+    if scope == "mine" and user.role == UserRole.DOCTOR:
+        return await controller.list_for_doctor(db, user)
     return await controller.list_for_practice(db, user)
 
 
 @router.get("/{surgery_id}", response_model=SurgeryResponse)
 async def get_surgery(
     surgery_id: UUID,
-    user: User = Depends(require_role(*_ROLES)),
+    user: User = Depends(require_role(*_READ_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.get_surgery(db, user, surgery_id)

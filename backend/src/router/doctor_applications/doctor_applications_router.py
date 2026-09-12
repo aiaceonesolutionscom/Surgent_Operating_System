@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
-from src.server.dependencies import get_current_user_record, get_current_practice_user, require_role
+from src.server.dependencies import (
+    get_current_user_record,
+    get_current_practice_user,
+    require_role,
+    resolve_self_apply_practice_id,
+)
 from src.models.user import User, UserRole
 from src.schemas.doctor_application import (
     SubmitDoctorApplicationRequest,
@@ -36,7 +41,13 @@ async def submit_my_application(
     user: User = Depends(get_current_user_record),
     db: AsyncSession = Depends(get_db),
 ):
-    return await controller.submit_application(db, user.clerk_id, user.practice_id, data)
+    # The applicant's own User row can hold a stale practice_id (from an
+    # earlier relink bug) that hidden the application from the intended
+    # Owner's Doctor Requests list. Re-resolve from Clerk metadata and heal
+    # at submit time so the request lands on the practice that approved their
+    # signup code.
+    practice_id = await resolve_self_apply_practice_id(db, user)
+    return await controller.submit_application(db, user.clerk_id, practice_id, data)
 
 
 @router.get("/me", response_model=DoctorApplicationResponse)
@@ -83,3 +94,12 @@ async def reject_application(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.reject_application(db, user, request_id, data)
+
+
+@router.delete("/{request_id}", status_code=204)
+async def delete_application(
+    request_id: UUID,
+    user: User = Depends(require_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    await controller.delete_application(db, user, request_id)

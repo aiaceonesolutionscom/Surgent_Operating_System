@@ -71,6 +71,23 @@ export function validateDoctorCode(code: string) {
   return apiFetch<ValidateDoctorCodeResponse>(`/api/v1/practice/validate-doctor-code?code=${encodeURIComponent(code)}`);
 }
 
+// --- staff/receptionist signup code (owner-only) ----------------------------
+// Receptionists self-register through the SAME share-link mechanism as
+// doctors now (see app/dashboard/staff/StaffSignupLinkCard.tsx and
+// app/auth/StaffApplyPage.tsx) — link + Owner approval, instead of the old
+// Clerk email invite. Same response shape as the doctor code above.
+export function getStaffSignupCode(authedFetch: AuthedFetch) {
+  return authedFetch<DoctorSignupCodeResponse>("/api/v1/practice/staff-signup-code");
+}
+
+export function regenerateStaffSignupCode(authedFetch: AuthedFetch) {
+  return authedFetch<DoctorSignupCodeResponse>("/api/v1/practice/staff-signup-code/regenerate", { method: "POST" });
+}
+
+export function validateStaffCode(code: string) {
+  return apiFetch<ValidateDoctorCodeResponse>(`/api/v1/practice/validate-staff-code?code=${encodeURIComponent(code)}`);
+}
+
 // --- health -----------------------------------------------------------------
 export interface HealthResponse {
   status: string;

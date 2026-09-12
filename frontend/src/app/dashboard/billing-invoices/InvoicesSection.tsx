@@ -4,18 +4,22 @@ import { ReceiptIcon, PlusIcon, ArrowRightIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
 import { useInvoices } from "./useInvoices";
 import { DASHBOARD_ROUTES } from "../constants/routes";
+import { formatMoney } from "../finance/money";
 
 const STATUS_CLASS: Record<string, string> = {
   pending: "bg-sand-100 text-ink-soft",
+  partially_paid: "bg-[#7C3AED]/10 text-[#7C3AED]",
   paid: "bg-success/10 text-success",
   overdue: "bg-danger/10 text-danger",
   cancelled: "bg-ink-muted/10 text-ink-muted",
   refunded: "bg-warning/10 text-warning"
 };
 
-// Viewing is open to Owner/Doctor/Receptionist (matches billing_router.py's
-// _VIEW_ROLES); only Owner/Receptionist get the "New invoice" action, same
-// split as ConsentDocumentsList's manage-vs-view roles.
+const STATUS_LABEL: Record<string, string> = { partially_paid: "Partially paid" };
+
+// Only rendered on Owner/Receptionist patient-detail views (Doctor's own
+// detail page has no billing tab) — matches billing_router.py's _VIEW_ROLES
+// exactly (Owner + Receptionist only, Doctor excluded even from viewing).
 export function InvoicesSection({ patientId }: { patientId: string }) {
   const { authedFetch, role } = usePlan();
   const { invoices, loading } = useInvoices(authedFetch, patientId);
@@ -42,10 +46,10 @@ export function InvoicesSection({ patientId }: { patientId: string }) {
           {invoices.map((inv) =>
         <Link key={inv.id} to={DASHBOARD_ROUTES.invoiceDetail(inv.id)} className="flex items-center justify-between gap-2 px-5 py-3.5 transition-colors hover:bg-sand-50">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-ink">${inv.total_amount.toLocaleString()}</p>
+                <p className="truncate text-sm font-medium text-ink">{formatMoney(inv.total_amount, inv.currency)}</p>
                 <p className="mt-0.5 text-xs text-ink-muted">{inv.line_items.length} item{inv.line_items.length === 1 ? "" : "s"}</p>
               </div>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${STATUS_CLASS[inv.status]}`}>{inv.status}</span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_CLASS[inv.status]}`}>{STATUS_LABEL[inv.status] || inv.status}</span>
               <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
             </Link>
         )}

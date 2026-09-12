@@ -8,6 +8,7 @@ from src.database import get_db
 from src.server.dependencies import require_role
 from src.models.user import User, UserRole
 from src.schemas.finance import CreateExpenseRequest, UpdateExpenseRequest, ExpenseResponse, FinanceOverviewResponse
+from src.schemas.billing import FinanceSettingsResponse, UpdateFinanceSettingsRequest
 from src.controller.finance.finance_controllers import FinanceController
 
 router = APIRouter(prefix="/finance", tags=["Finance"])
@@ -18,6 +19,9 @@ controller = FinanceController()
 # billing. The aggregate overview (revenue vs. expenses) is Owner-only —
 # a step up from expense-line visibility, not just an alias for it.
 _EXPENSE_ROLES = (UserRole.OWNER, UserRole.RECEPTIONIST)
+# Currency/exchange-rate config is a business decision, not an operational
+# one — Owner-only, per the user's own explicit decision for this phase.
+_OWNER_ONLY = (UserRole.OWNER,)
 
 
 @router.post("/expenses", response_model=ExpenseResponse)
@@ -71,3 +75,20 @@ async def get_overview(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.get_overview(db, user)
+
+
+@router.get("/settings", response_model=FinanceSettingsResponse)
+async def get_settings(
+    user: User = Depends(require_role(*_OWNER_ONLY)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.get_settings(db, user)
+
+
+@router.patch("/settings", response_model=FinanceSettingsResponse)
+async def update_settings(
+    data: UpdateFinanceSettingsRequest,
+    user: User = Depends(require_role(*_OWNER_ONLY)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.update_settings(db, user, data)

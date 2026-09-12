@@ -68,13 +68,33 @@ class ConsultationService:
             raise NotFoundException("Patient not found")
 
         context = f"Chief complaint on file: {patient.chief_complaint or 'none recorded'}\n\nDoctor's raw notes:\n{raw_notes}"
-        try:
+
+        # tier="low" (free Mistral, Groq/OpenAI fallback on rate-limit) is a
+        # deliberate choice, not an oversight — a real tier="high" call goes
+        # straight to OpenAI with no fallback (see LLMService._client_and_model's
+        # own comment), and OPENAI_API_KEY is still a placeholder in this
+        # environment; forcing "high" would break this feature outright
+        # rather than improve it. Revisit once a real OpenAI key is set.
+        async def _call_and_parse() -> dict:
             raw = await self.llm.chat(
                 messages=[{"role": "user", "content": context}],
                 system_prompt=_AI_DRAFT_SYSTEM_PROMPT,
                 tier="low",
+                json_mode=True,
             )
-            data = json.loads(raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip())
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            return json.loads(cleaned)
+
+        try:
+            try:
+                data = await _call_and_parse()
+            except (json.JSONDecodeError, ValueError):
+                # One retry — a malformed response from a free-tier model is
+                # an occasional real hiccup, not necessarily worth failing
+                # the doctor's whole draft attempt over.
+                logger.warning("Consultation AI draft returned malformed JSON for patient %s, retrying once", patient_id)
+                data = await _call_and_parse()
+
             return AIConsultationDraftResponse(
                 subjective=str(data.get("subjective") or ""),
                 objective=str(data.get("objective") or ""),

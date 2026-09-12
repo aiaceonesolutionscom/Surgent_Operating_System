@@ -38,6 +38,10 @@ class SurgeryController:
         surgeries = await self.service.list_for_practice(db, user.practice_id)
         return [self._to_response(s) for s in surgeries]
 
+    async def list_for_doctor(self, db: AsyncSession, user: User) -> list[SurgeryResponse]:
+        surgeries = await self.service.list_for_doctor(db, user.practice_id, user.id)
+        return [self._to_response(s) for s in surgeries]
+
     async def list_for_patient(self, db: AsyncSession, user: User, patient_id: UUID) -> list[SurgeryResponse]:
         surgeries = await self.service.list_for_patient(db, user.practice_id, patient_id)
         return [self._to_response(s) for s in surgeries]

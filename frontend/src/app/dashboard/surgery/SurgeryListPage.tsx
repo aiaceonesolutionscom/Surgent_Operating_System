@@ -1,4 +1,4 @@
-import React from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ScissorsIcon, PlusIcon, ClockIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
@@ -18,8 +18,14 @@ function formatDateTime(iso: string) {
 }
 
 export function SurgeryListPage() {
-  const { authedFetch } = usePlan();
-  const { surgeries, loading } = useSurgeries(authedFetch);
+  const { authedFetch, role } = usePlan();
+  const isDoctor = role === "doctor";
+  const canManage = role === "owner" || role === "doctor";
+  // Doctors default to "Mine" (their own surgeries as surgeon); "All" stays
+  // available when they have practice-wide visibility. Owner/Receptionist
+  // always see the whole practice's list.
+  const [scope, setScope] = useState<"all" | "mine">(isDoctor ? "mine" : "all");
+  const { surgeries, loading } = useSurgeries(authedFetch, undefined, isDoctor ? scope : undefined);
 
   const upcoming = surgeries.filter((s) => s.status === "planned");
   const past = surgeries.filter((s) => s.status !== "planned");
@@ -27,13 +33,35 @@ export function SurgeryListPage() {
   return (
     <>
       <div className="mb-6 flex items-start justify-between gap-4">
-        <PageHeader title="Surgery" subtitle="Every planned, completed, and cancelled surgery across the practice." />
+        <PageHeader
+          title="Surgery"
+          subtitle={isDoctor ? "Your surgeries across the practice." : "Every planned, completed, and cancelled surgery across the practice."}
+        />
+        {canManage &&
         <Link
           to={DASHBOARD_ROUTES.surgeryNew()}
           className="flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700">
           <PlusIcon className="h-4 w-4" /> Schedule surgery
         </Link>
+        }
       </div>
+
+      {isDoctor &&
+      <div className="mb-6 inline-flex rounded-xl border border-sand-200 bg-white p-1">
+        <button
+          type="button"
+          onClick={() => setScope("mine")}
+          className={`rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors ${scope === "mine" ? "bg-accent-500 text-white" : "text-ink-soft hover:text-ink"}`}>
+          Mine
+        </button>
+        <button
+          type="button"
+          onClick={() => setScope("all")}
+          className={`rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors ${scope === "all" ? "bg-accent-500 text-white" : "text-ink-soft hover:text-ink"}`}>
+          All
+        </button>
+      </div>
+      }
 
       {loading ?
       <p className="text-sm text-ink-muted">Loading…</p> :

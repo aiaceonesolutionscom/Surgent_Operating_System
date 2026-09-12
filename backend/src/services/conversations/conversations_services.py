@@ -12,6 +12,14 @@ from src.models.practice import Practice
 from src.server.exceptions import NotFoundException
 from src.services.channels.whatsapp_green_api import WhatsAppGreenAPI
 
+# Conversations created by a patient messaging their own doctor through the
+# Patient Portal (patient_portal_services.py uses exactly this agent_type).
+# They're deliberately NOT part of the unified Agent Sessions inbox — they
+# read as "a message to your doctor", not AI-receptionist chatter — and get
+# their own inbox (GET /conversations/patient-messages) plus the per-patient
+# Communication tab instead.
+PATIENT_DOCTOR_AGENT = "patient_doctor_message"
+
 
 class ConversationsService:
     """Backs the dashboard's unified Agent Sessions inbox
@@ -50,6 +58,13 @@ class ConversationsService:
         )
         if patient_id is not None:
             query = query.where(Conversation.patient_id == patient_id)
+        else:
+            # Page-wide "Agent Sessions" inbox: portal patient messages
+            # ("a message to your doctor") don't belong here — they have
+            # their own Patient Messages inbox and the doctor's per-patient
+            # Communication tab. The per-patient filter above keeps them, so
+            # the Communication tab still lists them.
+            query = query.where(Conversation.agent_type != PATIENT_DOCTOR_AGENT)
         if status is not None:
             query = query.where(Conversation.status == status)
         if channel is not None:
@@ -65,6 +80,42 @@ class ConversationsService:
                 or_(Patient.first_name.ilike(pattern), Patient.last_name.ilike(pattern))
             )
 
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    def __init__(self):
+        self.patient_doctor_agent = PATIENT_DOCTOR_AGENT
+
+    async def list_patient_messages(
+        self,
+        db: AsyncSession,
+        practice_id: UUID,
+        doctor_id: UUID | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Conversation]:
+        """The dedicated Patient Messages inbox (frontend
+        MessagesPage's "Patient messages" tab). Polls only conversations a
+        patient sent their doctor through the portal
+        (agent_type == patient_doctor_message). A Doctor sees only their own
+        assigned patients' messages — `doctor_id` is their Doctor row (from
+        patient_access.resolve_doctor_id), never a client-supplied value;
+        Owner/Receptionist pass doctor_id=None and see every patient's
+        portal messages (Owner read-only, decided at controller level)."""
+        query = (
+            select(Conversation)
+            .where(
+                Conversation.practice_id == practice_id,
+                Conversation.agent_type == PATIENT_DOCTOR_AGENT,
+            )
+            .join(Conversation.patient)
+            .options(selectinload(Conversation.patient), selectinload(Conversation.messages))
+            .order_by(desc(Conversation.updated_at))
+            .limit(limit)
+            .offset(offset)
+        )
+        if doctor_id is not None:
+            query = query.where(Patient.assigned_doctor_id == doctor_id)
         result = await db.execute(query)
         return list(result.scalars().all())
 

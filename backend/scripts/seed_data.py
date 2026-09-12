@@ -14,17 +14,10 @@ from src.models.agent_config import AgentConfig
 
 
 AGENT_TYPES = [
-    "receptionist", "appointment_booking", "reschedule_cancellation",
-    "appointment_reminder", "multilingual_translation", "ai_consultation",
-    "photo_analysis", "video_consultation", "medical_history_intake",
-    "risk_assessment", "procedure_recommendation", "pre_surgery_preparation",
-    "surgery_scheduling", "surgeon_calendar", "operating_room_scheduler",
-    "equipment_checklist", "implant_inventory", "surgical_documentation",
-    "recovery_followup", "healing_monitoring", "emergency_triage",
-    "medication_reminder", "wound_care_guidance", "recovery_dashboard",
-    "cost_estimation", "payment_invoice", "insurance_verification",
-    "analytics_dashboard", "patient_feedback", "marketing_followup",
-    "lead_nurturing",
+    "receptionist", "appointment_reminder",
+    "lead_qualification", "patient_intake", "consultation_assistant",
+    "post_op_recovery", "marketing_retention",
+    "finance_agent", "main_agent",
 ]
 
 

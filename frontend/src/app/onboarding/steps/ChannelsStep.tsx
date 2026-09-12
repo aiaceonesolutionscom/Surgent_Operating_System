@@ -1,7 +1,10 @@
 import React from "react";
+import { Link } from "react-router-dom";
+import { ArrowUpRightIcon } from "lucide-react";
 import { CHANNELS } from "../../dashboard/data/channels";
 import { useConnectedChannels } from "../../dashboard/settings/useConnectedChannels";
 import { usePlanTier } from "../../dashboard/plan/plan";
+import { DASHBOARD_ROUTES } from "../../dashboard/constants/routes";
 
 interface StepProps {
   onNext: () => void;
@@ -44,9 +47,17 @@ export function ChannelsStep({ onNext, onSkip }: StepProps) {
         })}
       </div>
 
-      <p className="mt-3 text-xs text-ink-muted">
-        Real OAuth connection (Twilio/Meta/etc.) is a later phase — this just records your choice for now.
-      </p>
+      {channels.includes("whatsapp") ? (
+        <Link
+          to={DASHBOARD_ROUTES.settingsIntegrations}
+          className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-teal-600 hover:underline">
+          Connect your real WhatsApp account now <ArrowUpRightIcon className="h-3 w-3" />
+        </Link>
+      ) : (
+        <p className="mt-3 text-xs text-ink-muted">
+          WhatsApp connects for real from Settings → Integrations once you pick it here. Other channels are a later phase.
+        </p>
+      )}
 
       <div className="mt-6 flex gap-3">
         <button

@@ -41,6 +41,7 @@ _ACTION_LABELS = {
     "whatsapp_ai_escalated": "Escalated to staff",
     "whatsapp_message_received": "WhatsApp message received",
     "whatsapp_message_received_ai_paused": "Received while AI paused",
+    "whatsapp_message_received_ai_disabled": "Received while AI off",
     "reminder_sent": "Appointment reminder sent",
     "message_translated": "Message translated",
 }
@@ -51,6 +52,7 @@ _ACTION_CHANNEL = {
     "whatsapp_ai_escalated": "whatsapp",
     "whatsapp_message_received": "whatsapp",
     "whatsapp_message_received_ai_paused": "whatsapp",
+    "whatsapp_message_received_ai_disabled": "whatsapp",
     "reminder_sent": "whatsapp",
     "message_translated": "whatsapp",
 }

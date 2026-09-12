@@ -48,3 +48,56 @@ class ValidateDoctorCodeResponse(BaseModel):
     valid: bool
     practice_id: Optional[UUID] = None
     practice_name: Optional[str] = None
+
+
+class UpdateGreenApiSettingsRequest(BaseModel):
+    instance_id: str
+    api_token: str
+
+
+class GreenApiSettingsResponse(BaseModel):
+    connected: bool
+    instance_id: Optional[str] = None
+    state: Optional[str] = None  # Green API's own getStateInstance value (e.g. "authorized")
+    error: Optional[str] = None
+
+
+class MetaSettingsResponse(BaseModel):
+    configured: bool  # platform-level: is a real Facebook App set up at all
+    connected: bool  # practice-level: has THIS practice authorized it
+    page_id: Optional[str] = None
+    page_name: Optional[str] = None
+    ig_business_id: Optional[str] = None
+
+
+class MetaConnectUrlResponse(BaseModel):
+    url: str
+    state: str
+
+
+class MetaCallbackRequest(BaseModel):
+    code: str
+    state: str
+    redirect_uri: str
+
+
+class SubmitOrgRequestRequest(BaseModel):
+    org_name: str
+
+
+class OrgRequestResponse(BaseModel):
+    id: UUID
+    email: str
+    org_name: Optional[str] = None
+    status: str  # PendingSignup.request_status.value — "pending" | "approved" | "rejected"
+    rejected_reason: Optional[str] = None
+
+    @classmethod
+    def from_model(cls, pending) -> "OrgRequestResponse":
+        return cls(
+            id=pending.id,
+            email=pending.email,
+            org_name=pending.org_name,
+            status=pending.request_status.value if pending.request_status else "pending",
+            rejected_reason=pending.rejected_reason,
+        )

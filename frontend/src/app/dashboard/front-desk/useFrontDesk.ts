@@ -11,6 +11,11 @@ import {
 import { usePatients } from "../patients/usePatients";
 import { useDoctors } from "../doctors/useDoctors";
 
+// The AI Receptionist books appointments over WhatsApp with no push channel
+// to this page — polling is what keeps a freshly-scheduled appointment from
+// hiding until the receptionist manually reloads.
+const REFRESH_INTERVAL_MS = 30000;
+
 type AuthedFetch = (<T>(path: string, init?: RequestInit) => Promise<T>) | null;
 
 export interface FrontDeskAppointment extends AppointmentResponse {
@@ -50,6 +55,13 @@ export function useFrontDesk(authedFetch: AuthedFetch) {
 
   useEffect(() => {
     fetchAppointments();
+  }, [fetchAppointments]);
+
+  // Poll for new arrivals (AI Receptionist bookings, other staff, later
+  // same-day additions) so the queue stays live without websocket infra.
+  useEffect(() => {
+    const timer = setInterval(fetchAppointments, REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
   }, [fetchAppointments]);
 
   const checkIn = useCallback(

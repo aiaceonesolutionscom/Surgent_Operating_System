@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { MessageCircleIcon, PlusIcon } from "lucide-react";
+import { MessageCircleIcon, PlusIcon, UsersIcon, HeartIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
 import { useMessageThreads } from "./useMessageThreads";
 import { useStaffMessages } from "./useStaffMessages";
+import { usePatientMessages } from "./usePatientMessages";
 import { MessageThreadView } from "./MessageThreadView";
+import { PatientMessagesTab } from "./PatientMessagesTab";
 import { EmptyState } from "../components/EmptyState";
 import {
   listStaffContacts,
@@ -20,6 +22,16 @@ function initials(name: string | null) {
   return (name || "?")[0]?.toUpperCase() || "?";
 }
 
+// Several real accounts in this practice have no `name` set (Clerk profile
+// never filled in) — falling back to a bare "Unnamed"/"Team member" string
+// made every such person render identically (same header text, same "T"
+// avatar), which is exactly the "every conversation looks the same" bug
+// this was reported as. Email is always unique, so it's a real
+// distinguishing fallback instead of a generic placeholder.
+function displayName(name: string | null, email: string): string {
+  return name || email || "Unnamed";
+}
+
 // Two-pane team chat: conversations on the left, the active thread on the
 // right. Every practice user (owner, doctor, receptionist) reaches the same
 // conversation list; the active conversation lives in the URL (?thread=) so
@@ -27,6 +39,9 @@ function initials(name: string | null) {
 export function MessagesPage() {
   const [params, setParams] = useSearchParams();
   const { authedFetch } = usePlan();
+  const [view, setView] = useState<"team" | "patients">(
+    params.get("view") === "patients" ? "patients" : "team"
+  );
   const { threads, loading, refetch: refetchThreads } = useMessageThreads(authedFetch);
   const [contacts, setContacts] = useState<StaffContactResponse[]>([]);
   const [showNew, setShowNew] = useState(false);
@@ -34,6 +49,16 @@ export function MessagesPage() {
 
   const activeId = params.get("thread") || null;
   const active = threads.find((t) => t.conversation_id === activeId) || null;
+
+  const patientMessages = usePatientMessages(authedFetch);
+
+  function switchView(next: "team" | "patients") {
+    setView(next);
+    const p = new URLSearchParams(params);
+    if (next === "patients") p.set("view", "patients");
+    else p.delete("view");
+    setParams(p, { replace: true });
+  }
 
   useEffect(() => {
     if (!authedFetch) return;
@@ -64,11 +89,34 @@ export function MessagesPage() {
     }
   }
 
-  const { messages, loading: messagesLoading, send } = useStaffMessages(authedFetch, active?.conversation_id);
+  const { messages, loading: messagesLoading, send, sendFile } = useStaffMessages(authedFetch, active?.conversation_id);
 
   return (
-    <div className="h-[calc(100vh-190px)] overflow-hidden rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
-      <div className="grid h-full grid-cols-[340px_1fr]">
+    <div className="flex h-[calc(100vh-190px)] flex-col overflow-hidden rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
+      {/* View switcher: Team chat (staff 1:1) vs Patient Messages (portal
+          patients messaging their assigned doctor). Patient Messages is the
+          "team chat ke andar patient message sahi hoga" decision — a tab,
+          not a sidebar item. */}
+      <div className="flex items-center gap-1 border-b border-sand-200 px-4 pt-2.5">
+        <button
+          type="button"
+          onClick={() => switchView("team")}
+          className={`flex items-center gap-1.5 rounded-t-lg px-3.5 py-2.5 text-sm font-semibold transition-colors ${view === "team" ? "border-b-2 border-teal-600 text-teal-600" : "text-ink-muted hover:text-ink"}`}>
+          <UsersIcon className="h-4 w-4" /> Team chat
+        </button>
+        <button
+          type="button"
+          onClick={() => switchView("patients")}
+          className={`flex items-center gap-1.5 rounded-t-lg px-3.5 py-2.5 text-sm font-semibold transition-colors ${view === "patients" ? "border-b-2 border-teal-600 text-teal-600" : "text-ink-muted hover:text-ink"}`}>
+          <HeartIcon className="h-4 w-4" /> Patient messages
+          {patientMessages.conversations.some((c) => c.status === "needs_attention") &&
+          <span className="h-2 w-2 rounded-full bg-danger" />
+          }
+        </button>
+      </div>
+
+      {view === "team" ? (
+      <div className="grid min-h-0 flex-1 grid-cols-[340px_1fr]">
         {/* --- Left: conversation list --- */}
         <aside className="flex flex-col overflow-hidden border-r border-sand-200">
           <div className="flex items-center justify-between border-b border-sand-200 px-4 py-3.5">
@@ -87,7 +135,9 @@ export function MessagesPage() {
               {contacts.length === 0 ?
               <p className="px-1 text-xs text-ink-muted">No other team members yet — invite a doctor or receptionist first.</p> :
               <div className="max-h-44 space-y-1 overflow-y-auto">
-                {contacts.map((c) => (
+                {contacts.map((c) => {
+                  const name = displayName(c.name, c.email);
+                  return (
                   <button
                     key={c.id}
                     type="button"
@@ -95,14 +145,14 @@ export function MessagesPage() {
                     onClick={() => openConversationWith(c)}
                     className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors hover:bg-white disabled:opacity-50">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sand-200 text-xs font-bold text-ink-soft">
-                      {initials(c.name)}
+                      {initials(name)}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-ink">{c.name || "Unnamed"}</span>
+                      <span className="block truncate text-sm font-semibold text-ink">{name}</span>
                     </span>
                     <span className="shrink-0 rounded-full bg-sand-100 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-ink-muted">{c.role}</span>
-                  </button>
-                ))}
+                  </button>);
+                })}
               </div>
               }
             </div>
@@ -117,6 +167,7 @@ export function MessagesPage() {
             </div> :
             threads.map((t) => {
               const isActive = t.conversation_id === activeId;
+              const name = displayName(t.recipient_name, t.recipient_email);
               return (
                 <button
                   key={t.conversation_id}
@@ -124,11 +175,11 @@ export function MessagesPage() {
                   onClick={() => select(t.conversation_id)}
                   className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors ${isActive ? "bg-teal-600/[0.06]" : "hover:bg-sand-50"}`}>
                   <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${isActive ? "bg-teal-600/15 text-teal-600" : "bg-sand-200 text-ink-soft"}`}>
-                    {initials(t.recipient_name)}
+                    {initials(name)}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
-                      <span className="truncate text-sm font-semibold text-ink">{t.recipient_name || "Unnamed"}</span>
+                      <span className="truncate text-sm font-semibold text-ink">{name}</span>
                       <span className="shrink-0 rounded-full bg-sand-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{t.recipient_role}</span>
                     </span>
                     <span className="block truncate text-xs text-ink-muted">{t.last_message_preview || "No messages yet"}</span>
@@ -147,11 +198,12 @@ export function MessagesPage() {
         <main className="flex min-w-0 flex-col overflow-hidden">
           {active ?
           <MessageThreadView
-            title={active.recipient_name || "Team member"}
+            title={displayName(active.recipient_name, active.recipient_email)}
             subtitle={active.recipient_role}
             messages={messages}
             loading={messagesLoading}
-            onSend={send} /> :
+            onSend={send}
+            onSendFile={sendFile} /> :
           <div className="flex flex-1 items-center justify-center p-6">
             <div className="w-full max-w-sm text-center">
               <EmptyState
@@ -161,18 +213,20 @@ export function MessagesPage() {
               {contacts.length > 0 && (
                 <div className="mt-5 space-y-1.5">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Message someone</p>
-                  {contacts.map((c) => (
+                  {contacts.map((c) => {
+                    const name = displayName(c.name, c.email);
+                    return (
                     <button
                       key={c.id}
                       type="button"
                       disabled={starting}
                       onClick={() => openConversationWith(c)}
                       className="flex w-full items-center gap-3 rounded-2xl border border-sand-200 bg-white px-3.5 py-2.5 text-left transition-colors hover:border-teal-600/40 disabled:opacity-50">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sand-200 text-xs font-bold text-ink-soft">{initials(c.name)}</span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{c.name || "Unnamed"}</span>
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sand-200 text-xs font-bold text-ink-soft">{initials(name)}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{name}</span>
                       <span className="shrink-0 rounded-full bg-sand-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{c.role}</span>
-                    </button>
-                  ))}
+                    </button>);
+                  })}
                 </div>
               )}
             </div>
@@ -180,6 +234,19 @@ export function MessagesPage() {
           }
         </main>
       </div>
+      ) : (
+      <div className="min-h-0 flex-1">
+        <PatientMessagesTab
+          conversations={patientMessages.conversations}
+          active={patientMessages.active}
+          messages={patientMessages.messages}
+          canReply={patientMessages.canReply}
+          loading={patientMessages.loading}
+          onSelect={patientMessages.loadConversation}
+          onSend={patientMessages.send}
+          onResolve={patientMessages.resolve} />
+      </div>
+      )}
     </div>
   );
 }

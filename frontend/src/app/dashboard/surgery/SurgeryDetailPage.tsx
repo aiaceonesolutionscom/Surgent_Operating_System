@@ -18,10 +18,11 @@ function formatDateTime(iso: string) {
 
 export function SurgeryDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { authedFetch } = usePlan();
+  const { authedFetch, role } = usePlan();
   const { surgery, loading, error, update, complete, cancel } = useSurgery(authedFetch, id);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const canManage = role === "owner" || role === "doctor";
 
   async function toggleChecklistItem(idx: number) {
     if (!surgery) return;
@@ -106,8 +107,9 @@ export function SurgeryDetailPage() {
               <button
                 key={i}
                 type="button"
-                disabled={busy || surgery.status !== "planned"}
+                disabled={busy || surgery.status !== "planned" || !canManage}
                 onClick={() => toggleChecklistItem(i)}
+                title={canManage ? undefined : "Read-only"}
                 className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-sand-50 disabled:cursor-default disabled:hover:bg-transparent">
                     <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${item.checked ? "border-teal-600 bg-teal-600 text-white" : "border-sand-300"}`}>
                       {item.checked && <CheckIcon className="h-3.5 w-3.5" />}
@@ -142,7 +144,7 @@ export function SurgeryDetailPage() {
         </div>
 
         <div className="space-y-4">
-          {surgery.status === "planned" &&
+          {surgery.status === "planned" && canManage &&
           <CompleteCard onComplete={complete} onCancel={handleCancel} busy={busy} />
           }
           {actionError && <p className="text-sm font-medium text-danger">{actionError}</p>}

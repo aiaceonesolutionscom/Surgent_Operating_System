@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.pending_doctor_request import PendingDoctorRequest, DoctorRequestStatus
 from src.models.doctor import Doctor
-from src.models.user import User
+from src.models.user import User, UserRole
 from src.data.doctor_permissions import VALID_DOCTOR_PERMISSION_KEYS
 from src.schemas.doctor_application import SubmitDoctorApplicationRequest
 from src.server.exceptions import NotFoundException, AppException
@@ -28,7 +28,15 @@ class DoctorApplicationsService:
         self.agent_log = AgentLogService()
 
     async def upload_file(self, practice_id: UUID, file_bytes: bytes, filename: str) -> dict:
-        return await self.storage.upload(file_bytes, filename, folder=f"doctor_applications/{practice_id}")
+        # Cloudinary defaults to resource_type="image", which rejects PDFs and
+        # other non-image documents. Pick "raw" for everything that isn't a
+        # common image extension so license certs and diplomas upload cleanly.
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        image_exts = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif", "svg", "heic", "heif", "avif", "ico"}
+        resource_type = "image" if ext in image_exts else "raw"
+        return await self.storage.upload(
+            file_bytes, filename, folder=f"doctor_applications/{practice_id}", resource_type=resource_type
+        )
 
     async def submit_application(
         self, db: AsyncSession, clerk_id: str, practice_id: UUID, data: SubmitDoctorApplicationRequest
@@ -124,7 +132,13 @@ class DoctorApplicationsService:
         db.add(doctor)
         await db.flush()
 
+        # Heal the applicant's account to THIS practice and role on approval —
+        # a row that slipped through with a stale practice_id (older relink
+        # bug) could otherwise keep resolving to the wrong practice's context
+        # forever, so the approved doctor lands in the wrong dashboard.
         applicant_user.is_active = True
+        applicant_user.practice_id = practice_id
+        applicant_user.role = UserRole.DOCTOR
         application.status = DoctorRequestStatus.APPROVED
         application.doctor_id = doctor.id
         application.reviewed_at = datetime.now(timezone.utc)
@@ -154,3 +168,13 @@ class DoctorApplicationsService:
         await db.flush()
         await db.refresh(application)
         return application
+
+    async def delete_application(self, db: AsyncSession, practice_id: UUID, request_id: UUID) -> None:
+        # Deleting the request record never touches a Doctor row already
+        # created from an approved one — application.doctor_id is a plain
+        # reference, not a cascade — so this is safe to allow for any
+        # status (pending clutter, a mistaken/misfiled request, or just
+        # tidying up old decisions).
+        application = await self.get_application(db, practice_id, request_id)
+        await db.delete(application)
+        await db.flush()

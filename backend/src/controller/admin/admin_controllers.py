@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,12 +14,17 @@ from src.schemas.admin import (
     AdminPracticeDetailResponse,
     AgentCostBreakdownItem,
     UpdateSubscriptionRequest,
+    CreatePracticeRequest,
+    UpdatePracticeRequest,
     AdminUserResponse,
     UpdateAdminUserRequest,
     AdminMeResponse,
     AdminLoginRequest,
     AdminLoginResponse,
     SalesLeadResponse,
+    OrgRequestListItem,
+    RejectOrgRequestRequest,
+    ApproveOrgRequestRequest,
 )
 from src.schemas.plan import PlanResponse, PlanCreateRequest, PlanUpdateRequest
 from src.services.admin.admin_services import AdminService
@@ -67,6 +73,7 @@ class AdminController:
                 id=row["id"],
                 name=row["name"],
                 email=row["email"],
+                status=row["status"],
                 plan_tier=row["plan_tier"],
                 subscription_status=row["subscription_status"],
                 agents_enabled_count=row["agents_enabled_count"],
@@ -77,6 +84,14 @@ class AdminController:
             for row in rows
         ]
 
+    async def create_practice(self, db: AsyncSession, body: CreatePracticeRequest) -> AdminPracticeDetailResponse:
+        practice = await self.service.create_practice(db, body.name, body.email, body.plan_tier)
+        return await self.practice_detail(db, practice.id)
+
+    async def update_practice(self, db: AsyncSession, practice_id, body: UpdatePracticeRequest) -> AdminPracticeDetailResponse:
+        practice = await self.service.update_practice(db, practice_id, body.name, body.email, body.plan_tier)
+        return await self.practice_detail(db, practice.id)
+
     async def practice_detail(self, db: AsyncSession, practice_id) -> AdminPracticeDetailResponse:
         data = await self.service.practice_detail(db, practice_id)
         if data is None:
@@ -85,6 +100,7 @@ class AdminController:
             id=data["id"],
             name=data["name"],
             email=data["email"],
+            status=data["status"],
             phone=data["phone"],
             address=data["address"],
             plan_tier=data["plan_tier"],
@@ -188,3 +204,25 @@ class AdminController:
         user.is_platform_admin = body.is_platform_admin
         await db.flush()
         return AdminUserResponse.model_validate(user)
+
+    async def list_org_requests(self, db: AsyncSession) -> list[OrgRequestListItem]:
+        rows = await self.service.list_pending_org_requests(db)
+        return [
+            OrgRequestListItem(id=r.id, email=r.email, org_name=r.org_name, status=r.request_status.value, created_at=r.created_at)
+            for r in rows
+        ]
+
+    async def approve_org_request(self, db: AsyncSession, request_id: UUID, body: ApproveOrgRequestRequest) -> AdminPracticeDetailResponse:
+        practice = await self.service.approve_org_request(db, request_id, plan_tier=body.plan_tier)
+        return await self.practice_detail(db, practice.id)
+
+    async def reject_org_request(self, db: AsyncSession, request_id: UUID, body: RejectOrgRequestRequest) -> None:
+        await self.service.reject_org_request(db, request_id, body.reason)
+
+    async def suspend_practice(self, db: AsyncSession, practice_id: UUID) -> AdminPracticeDetailResponse:
+        await self.service.suspend_practice(db, practice_id)
+        return await self.practice_detail(db, practice_id)
+
+    async def reactivate_practice(self, db: AsyncSession, practice_id: UUID) -> AdminPracticeDetailResponse:
+        await self.service.reactivate_practice(db, practice_id)
+        return await self.practice_detail(db, practice_id)

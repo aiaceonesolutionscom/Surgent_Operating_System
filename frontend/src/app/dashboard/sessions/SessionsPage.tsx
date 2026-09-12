@@ -24,7 +24,7 @@ export function SessionsPage() {
         <PageHeader title="All conversations" subtitle="Every patient session, across every agent and channel, in one inbox." />
         <div className="rounded-3xl border border-sand-200 bg-white p-12 text-center">
           <p className="text-sm text-danger">{error}</p>
-          <button onClick={refetch} className="mt-3 text-sm text-teal-600 hover:underline">Retry</button>
+          <button onClick={() => refetch()} className="mt-3 text-sm text-teal-600 hover:underline">Retry</button>
         </div>
       </>
     );

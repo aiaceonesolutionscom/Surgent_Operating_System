@@ -6,6 +6,8 @@ export interface SessionMessage {
   id: string;
   from: "patient" | "agent" | "staff" | "system";
   text: string;
+  contentType: string;
+  extraData?: Record<string, unknown>;
   at: string; // ISO timestamp
 }
 
@@ -24,4 +26,6 @@ export interface Session {
   updatedAt: string; // ISO timestamp
   aiPaused: boolean;
   messages: SessionMessage[];
+  extraData?: Record<string, unknown>;
+  aiBookedAppointmentId?: string | null;
 }

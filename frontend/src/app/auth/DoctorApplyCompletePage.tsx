@@ -5,7 +5,7 @@ import { CameraIcon, FileTextIcon, UploadIcon, XIcon } from "lucide-react";
 import { AuthLayout } from "./AuthLayout";
 import { useAuthedFetch } from "../../api/authFetch";
 import { uploadApplicationFile, submitMyApplication, type DocumentEntry } from "../../api/entities";
-import { DOCTOR_APPLY_SESSION_KEY } from "./DoctorApplyPage";
+import { DOCTOR_APPLY_SESSION_KEY, clearDoctorApplyFlow } from "./DoctorApplyPage";
 
 // Reached right after Clerk sign-up (DoctorApplyPage's forceRedirectUrl) —
 // the applicant's User row already exists (inactive) by now, created by the
@@ -44,8 +44,9 @@ export function DoctorApplyCompletePage() {
     try {
       const result = await uploadApplicationFile(authedFetch, file);
       setPhotoUrl(result.url);
-    } catch {
-      setError("Couldn't upload photo — you can still submit without one.");
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : "Couldn't upload photo — you can still submit without one.";
+      setError(`Photo upload failed: ${message}`);
     } finally {
       setUploadingPhoto(false);
     }
@@ -59,8 +60,9 @@ export function DoctorApplyCompletePage() {
       try {
         const result = await uploadApplicationFile(authedFetch, file);
         setDocuments((prev) => [...prev, { name: file.name, url: result.url, uploaded_at: new Date().toISOString() }]);
-      } catch {
-        setError(`Couldn't upload ${file.name} — try again.`);
+      } catch (err) {
+        const message = err instanceof Error && err.message ? err.message : "try again.";
+        setError(`Couldn't upload ${file.name} — ${message}`);
       } finally {
         setUploadingDocs((n) => n - 1);
       }
@@ -91,15 +93,17 @@ export function DoctorApplyCompletePage() {
       // patch over (see DoctorApplyRecovery.tsx) — clearing it here means a
       // later, legitimately-approved doctor navigating their real dashboard
       // never gets yanked back here by a stale marker still sitting in
-      // sessionStorage from this same tab.
+      // sessionStorage from this same tab. The was-signed-in decision is
+      // reset too so the next visit to the apply page re-classifies fresh.
       try {
         sessionStorage.removeItem(DOCTOR_APPLY_SESSION_KEY);
       } catch {
         // private browsing / storage disabled — nothing to clear
       }
+      clearDoctorApplyFlow();
       navigate("/doctor/apply/pending");
-    } catch {
-      setError("Couldn't submit — try again.");
+    } catch (err) {
+      setError(err instanceof Error && err.message ? `Couldn't submit — ${err.message}` : "Couldn't submit — try again.");
       setSubmitting(false);
     }
   }

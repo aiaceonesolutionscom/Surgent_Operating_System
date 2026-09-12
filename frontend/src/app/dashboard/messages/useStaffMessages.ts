@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   listStaffMessages,
   sendStaffMessage,
+  sendStaffFile,
   type StaffMessageResponse
 } from "../../../api/entities";
 
@@ -45,5 +46,15 @@ export function useStaffMessages(authedFetch: AuthedFetch, conversationId?: stri
     [authedFetch, conversationId]
   );
 
-  return { messages, loading, refetch, send };
+  const sendFile = useCallback(
+    async (file: File) => {
+      if (!authedFetch || !conversationId) return null;
+      const message = await sendStaffFile(authedFetch, conversationId, file);
+      setMessages((prev) => [...prev, message]);
+      return message;
+    },
+    [authedFetch, conversationId]
+  );
+
+  return { messages, loading, refetch, send, sendFile };
 }

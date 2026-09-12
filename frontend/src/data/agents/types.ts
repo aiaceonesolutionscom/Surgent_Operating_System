@@ -6,6 +6,11 @@ export interface Agent {
   desc: string;
   icon: LucideIcon;
   categoryId: string;
+  tagline: string;
+  howItWorks: string;
+  capabilities: string[];
+  useCases: string[];
+  outcome: { stat: string; label: string };
 }
 
 export interface AgentCategory {

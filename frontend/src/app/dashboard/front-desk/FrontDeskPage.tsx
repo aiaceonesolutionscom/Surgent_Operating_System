@@ -1,9 +1,11 @@
-import React from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { usePlan } from "../plan/PlanContext";
 import { useFrontDesk } from "./useFrontDesk";
 import { ReceptionistFrontDesk } from "./ReceptionistFrontDesk";
 import { OwnerFrontDeskOverview } from "./OwnerFrontDeskOverview";
+import { getMyStaff } from "../../../api/entities";
+import { AttendanceCalendar } from "../attendance/AttendanceCalendar";
 
 // One route, one real data source (useFrontDesk), two different views —
 // Receptionist gets the operate-it workspace (check-in, waiting room,
@@ -14,16 +16,48 @@ import { OwnerFrontDeskOverview } from "./OwnerFrontDeskOverview";
 export function FrontDeskPage() {
   const { role, authedFetch } = usePlan();
   const frontDesk = useFrontDesk(authedFetch);
+  const [staffName, setStaffName] = useState<string | null>(null);
+  const [todayStats] = useState(() => new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }));
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (role !== "receptionist" || !authedFetch) return;
+      try {
+        const me = await getMyStaff(authedFetch);
+        if (!cancelled) setStaffName(me.name);
+      } catch {
+        // Greeting stays generic if the profile can't be fetched.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [role, authedFetch]);
 
   return (
     <>
-      <PageHeader
-        title="Front Desk"
-        subtitle={role === "owner" ? "Live view of every doctor's patient flow today." : "Check patients in, manage the waiting room, and see what's coming up."} />
-      {role === "owner" ? (
-        <OwnerFrontDeskOverview appointments={frontDesk.appointments} loading={frontDesk.loading} />
+      {role === "receptionist" ? (
+        <>
+          <div className="mb-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-500">Front desk</p>
+            <h1 className="mt-2 font-display text-[28px] font-600 tracking-tight text-ink sm:text-[32px]">
+              {staffName ? `Welcome receptionist ${staffName}` : "Welcome receptionist"}
+            </h1>
+            <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">{todayStats}</p>
+          </div>
+          <ReceptionistFrontDesk {...frontDesk} />
+          <div className="mt-6">
+            <AttendanceCalendar />
+          </div>
+        </>
       ) : (
-        <ReceptionistFrontDesk {...frontDesk} />
+        <>
+          <PageHeader
+            title="Front Desk"
+            subtitle="Live view of every doctor's patient flow today." />
+          <OwnerFrontDeskOverview appointments={frontDesk.appointments} loading={frontDesk.loading} />
+        </>
       )}
     </>);
 }

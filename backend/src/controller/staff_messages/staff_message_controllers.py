@@ -40,3 +40,17 @@ class StaffMessageController:
     ) -> StaffMessageResponse:
         message = await self.service.send_message(db, user.practice_id, user, conversation_id, data.body)
         return StaffMessageResponse.model_validate(message)
+
+    async def send_file(
+        self,
+        db: AsyncSession,
+        user: User,
+        conversation_id: UUID,
+        file_bytes: bytes,
+        filename: str,
+        content_type: str,
+    ) -> StaffMessageResponse:
+        message = await self.service.send_file(
+            db, user.practice_id, user, conversation_id, file_bytes, filename, content_type
+        )
+        return StaffMessageResponse.model_validate(message)

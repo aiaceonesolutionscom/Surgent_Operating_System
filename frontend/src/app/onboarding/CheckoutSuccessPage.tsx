@@ -25,7 +25,7 @@ const POLL_INTERVAL_MS = 1200;
 export function CheckoutSuccessPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const planTier = (params.get("plan_tier") as PlanTier) || "solo";
+  const planTier = (params.get("plan_tier") as PlanTier) || "practice";
   const email = params.get("email") || "";
   const sessionId = params.get("session_id") || "";
   const plan = planFor(planTier);

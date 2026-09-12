@@ -98,6 +98,23 @@ class ClerkService:
                 pass
             raise AppException(detail)
 
+    async def has_pending_invitation(self, email: str) -> bool:
+        """Checks Clerk for an already-outstanding (not yet accepted/revoked)
+        invitation to this email — used to stop invite_staff/invite_doctor
+        from firing a second invite email on a double-click or retry, since
+        Clerk itself has no idempotency here and happily sends duplicates."""
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{self.base_url}/invitations",
+                params=[("email_address", email), ("status", "pending")],
+                headers={"Authorization": f"Bearer {self.secret_key}"},
+            )
+            if resp.status_code == 200:
+                results = resp.json()
+                data = results.get("data") if isinstance(results, dict) else results
+                return bool(data)
+            return False
+
     async def invite_user(self, email: str, redirect_url: str, public_metadata: dict) -> dict:
         async with httpx.AsyncClient() as client:
             resp = await client.post(

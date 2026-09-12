@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from src.database import async_session_factory
 from src.models.practice import Practice
 from src.services.channels.inbound_service import InboundService
 from src.services.channels.whatsapp_green_api import WhatsAppGreenAPI
 from src.services.speech.speech_service import SpeechService
+from src.services.storage.storage_service import StorageService
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -108,14 +110,6 @@ class GreenAPIPoller:
     async def _process_notification(self, inbound: InboundService, instance_id: str, body: dict, wa: WhatsAppGreenAPI) -> None:
         webhook_type = body.get("typeWebhook")
         if webhook_type != "incomingMessageReceived":
-            # This used to be a silent early-return — every notification
-            # that wasn't a plain incoming message (delivery receipts,
-            # instance status changes, outgoing-message echoes, etc.)
-            # vanished with zero trace, making it impossible to tell "no
-            # message ever arrived" apart from "a message arrived in a
-            # shape we don't handle yet." Log it instead so a real send
-            # that Green API delivered under a webhook type we're not
-            # expecting is at least visible.
             logger.info("Received non-message webhook type: %s", webhook_type)
             return
 
@@ -123,28 +117,114 @@ class GreenAPIPoller:
         type_message = message_data.get("typeMessage")
 
         message_text = ""
+        content_type = "text"
+        extra_data = {}
+
         if type_message == "textMessage":
             message_text = message_data.get("textMessageData", {}).get("textMessage", "")
+
         elif type_message == "audioMessage":
-            # Voice notes: Green API gives a downloadUrl in fileMessageData
-            # (same shape documented for images/audio/video/documents), not
-            # the audio bytes inline. Transcribe via Groq Whisper and treat
-            # the result exactly like a typed message — same conversation,
-            # same AI-reply flow, patient never has to know it was voice.
             download_url = message_data.get("fileMessageData", {}).get("downloadUrl")
             if not download_url:
                 logger.info("Audio message with no downloadUrl, skipping")
                 return
             try:
                 audio_bytes = await wa.download_file(download_url)
+                # Upload audio to Cloudinary before transcription
+                storage = StorageService()
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                audio_filename = f"voice_note_{ts}"
+                upload_result = await storage.upload(
+                    audio_bytes, audio_filename,
+                    folder="voice_notes", resource_type="video"
+                )
+                audio_url = upload_result.get("url", "")
+                # Transcribe via Deepgram (primary) or Groq (fallback)
                 message_text = await SpeechService().transcribe(audio_bytes, filename="voice_note.ogg")
+                content_type = "audio"
+                extra_data = {
+                    "audio_url": audio_url,
+                    "transcription": message_text,
+                    "duration_seconds": 0,
+                }
             except Exception:
-                logger.exception("Failed to transcribe incoming voice note")
+                logger.exception("Failed to process incoming voice note")
                 return
             if not message_text.strip():
                 logger.info("Voice note transcribed to empty text, skipping")
                 return
             logger.info("Transcribed voice note: %s", message_text[:100])
+
+        elif type_message == "imageMessage":
+            download_url = message_data.get("fileMessageData", {}).get("downloadUrl")
+            if not download_url:
+                logger.info("Image message with no downloadUrl, skipping")
+                return
+            try:
+                image_bytes = await wa.download_file(download_url)
+                storage = StorageService()
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                ext = message_data.get("fileMessageData", {}).get("fileName", "image.jpg").rsplit(".", 1)[-1] or "jpg"
+                image_filename = f"whatsapp_image_{ts}.{ext}"
+                upload_result = await storage.upload(
+                    image_bytes, image_filename,
+                    folder="whatsapp_media", resource_type="image"
+                )
+                image_url = upload_result.get("url", "")
+                caption = message_data.get("fileMessageData", {}).get("caption", "")
+                message_text = caption or "[Image]"
+                content_type = "image"
+                extra_data = {"image_url": image_url, "filename": image_filename}
+            except Exception:
+                logger.exception("Failed to process incoming image")
+                return
+
+        elif type_message == "documentMessage":
+            download_url = message_data.get("fileMessageData", {}).get("downloadUrl")
+            if not download_url:
+                logger.info("Document message with no downloadUrl, skipping")
+                return
+            try:
+                doc_bytes = await wa.download_file(download_url)
+                storage = StorageService()
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                filename = message_data.get("fileMessageData", {}).get("fileName", f"document_{ts}")
+                upload_result = await storage.upload(
+                    doc_bytes, filename,
+                    folder="whatsapp_media", resource_type="raw"
+                )
+                doc_url = upload_result.get("url", "")
+                caption = message_data.get("fileMessageData", {}).get("caption", "")
+                message_text = caption or f"[Document: {filename}]"
+                content_type = "file"
+                extra_data = {"file_url": doc_url, "filename": filename}
+            except Exception:
+                logger.exception("Failed to process incoming document")
+                return
+
+        elif type_message == "videoMessage":
+            download_url = message_data.get("fileMessageData", {}).get("downloadUrl")
+            if not download_url:
+                logger.info("Video message with no downloadUrl, skipping")
+                return
+            try:
+                video_bytes = await wa.download_file(download_url)
+                storage = StorageService()
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                video_filename = f"whatsapp_video_{ts}.mp4"
+                upload_result = await storage.upload(
+                    video_bytes, video_filename,
+                    folder="whatsapp_media", resource_type="video"
+                )
+                video_url = upload_result.get("url", "")
+                caption = message_data.get("fileMessageData", {}).get("caption", "")
+                message_text = caption or "[Video]"
+                content_type = "video"
+                extra_data = {"video_url": video_url, "filename": video_filename}
+            except Exception:
+                logger.exception("Failed to process incoming video")
+                return
+
         else:
             logger.info("Ignoring unsupported message type: %s", type_message)
             return
@@ -180,6 +260,8 @@ class GreenAPIPoller:
                 sender_name=sender_name,
                 message_text=message_text,
                 instance_id=instance_id,
+                content_type=content_type,
+                extra_data=extra_data,
             )
             await db.commit()
             logger.info(

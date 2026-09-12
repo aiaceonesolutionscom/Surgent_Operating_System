@@ -15,7 +15,10 @@ import {
 import { SectionTeaser, CHANNELS } from "../components/features";
 import { CTA } from "../components/cta";
 import { BookConsultationSection } from "../components/book-consultation/BookConsultationSection";
-import { TOTAL_AGENTS } from "../data/agents";
+
+// Static constant — avoids importing all 9 agent definition files on the
+// landing page (they are only needed on the /agents pages).
+const TOTAL_AGENTS = 9;
 
 export function HomePage() {
   const [chatOpen, setChatOpen] = useState(false);

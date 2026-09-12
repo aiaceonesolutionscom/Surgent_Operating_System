@@ -7,7 +7,6 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.patient import Patient
-from src.models.practice import Practice
 from src.models.appointment import Appointment, AppointmentStatus
 from src.models.consent_document import ConsentDocument
 from src.models.invoice import Invoice, InvoiceStatus
@@ -27,9 +26,11 @@ from src.schemas.patient_portal import (
     PortalTreatmentPlan,
     PortalTreatmentPlanItem,
     PortalMessage,
+    UpdateMyProfileRequest,
+    RescheduleAppointmentRequest,
 )
-from src.services.channels.whatsapp_green_api import WhatsAppGreenAPI
-from src.server.exceptions import AppException
+from src.server.exceptions import AppException, NotFoundException
+from src.services.audit.audit_log_service import AuditLogService
 
 
 class PatientPortalService:
@@ -49,6 +50,7 @@ class PatientPortalService:
             last_name=patient.last_name,
             email=patient.email,
             phone=patient.phone,
+            additional_phones=patient.additional_phones,
             chief_complaint=patient.chief_complaint,
             consent_status=patient.consent_status,
             doctor=doctor,
@@ -60,6 +62,7 @@ class PatientPortalService:
             invoice_total_pending=pending,
             intake_completed=patient.intake_summary is not None,
             intake_summary=patient.intake_summary,
+            pin_set=patient.portal_pin_hash is not None,
         )
 
     async def book_appointment(self, db: AsyncSession, patient: Patient, data: PortalBookingRequest) -> Appointment:
@@ -83,19 +86,20 @@ class PatientPortalService:
         await db.refresh(appointment)
         return appointment
 
+    # Portal messaging is patient-to-their-own-doctor only — a dedicated
+    # agent_type, distinct from "ai_receptionist" (the AI-driven call/
+    # WhatsApp intake flow). Mixing the two made a portal message land in
+    # the same generic inbox as automated receptionist chatter instead of
+    # reading as "a message to your doctor."
+    _AGENT_TYPE = "patient_doctor_message"
+
     async def _find_or_create_conversation(self, db: AsyncSession, patient: Patient) -> Conversation:
-        # Reuses the exact same conversation the AI receptionist/WhatsApp
-        # flow already writes to (agent_type="ai_receptionist") so a
-        # patient's portal messages and WhatsApp messages are one continuous
-        # thread, not two disconnected inboxes — matches how staff already
-        # see everything in one Agent Sessions conversation regardless of
-        # which channel a given message came in on.
         result = await db.execute(
             select(Conversation)
             .where(
                 Conversation.practice_id == patient.practice_id,
                 Conversation.patient_id == patient.id,
-                Conversation.agent_type == "ai_receptionist",
+                Conversation.agent_type == self._AGENT_TYPE,
             )
             .order_by(desc(Conversation.updated_at))
             .limit(1)
@@ -107,7 +111,7 @@ class PatientPortalService:
         conversation = Conversation(
             practice_id=patient.practice_id,
             patient_id=patient.id,
-            agent_type="ai_receptionist",
+            agent_type=self._AGENT_TYPE,
             channel=ConversationChannel.WEB_CHAT,
         )
         db.add(conversation)
@@ -117,7 +121,7 @@ class PatientPortalService:
     async def get_messages(self, db: AsyncSession, patient: Patient) -> list[PortalMessage]:
         result = await db.execute(
             select(Conversation)
-            .where(Conversation.practice_id == patient.practice_id, Conversation.patient_id == patient.id, Conversation.agent_type == "ai_receptionist")
+            .where(Conversation.practice_id == patient.practice_id, Conversation.patient_id == patient.id, Conversation.agent_type == self._AGENT_TYPE)
             .order_by(desc(Conversation.updated_at))
             .limit(1)
         )
@@ -137,6 +141,12 @@ class PatientPortalService:
         content = content.strip()
         if not content:
             raise AppException("Message can't be empty")
+        # assigned_doctor_id (not the appointment/plan-inferred lookup used
+        # for the "My Doctor" display elsewhere) is the same field
+        # server/patient_access.py's Doctor hard-restriction checks — this
+        # is what actually determines who the message will reach.
+        if not patient.assigned_doctor_id:
+            raise AppException("You don't have a doctor assigned yet — please contact the clinic before sending a message.")
 
         conversation = await self._find_or_create_conversation(db, patient)
         message = Message(conversation_id=conversation.id, role=MessageRole.PATIENT, content=content, content_type="text")
@@ -149,27 +159,154 @@ class PatientPortalService:
         await db.flush()
         await db.refresh(message)
 
-        # Best-effort mirror to WhatsApp too, if that's how this patient
-        # normally reaches the clinic — keeps staff's single WhatsApp-based
-        # workflow from missing a portal-originated message entirely.
-        if conversation.channel == ConversationChannel.WHATSAPP and patient.phone:
-            practice_result = await db.execute(select(Practice).where(Practice.id == patient.practice_id))
-            practice = practice_result.scalar_one_or_none()
-            ga = WhatsAppGreenAPI.from_practice_settings((practice.settings if practice else None) or {})
-            if ga is not None:
-                try:
-                    await ga.send_text(patient.phone, f"[Portal message] {content}")
-                except Exception:
-                    pass
-
         return PortalMessage(id=message.id, role=message.role.value, content=message.content, created_at=message.created_at)
+
+    async def update_my_profile(self, db: AsyncSession, patient: Patient, data: UpdateMyProfileRequest) -> Patient:
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(patient, field, value)
+        await db.flush()
+        await db.refresh(patient)
+        return patient
+
+    # --- Appointment self-service (split upcoming/past views + cancel/
+    # reschedule — the portal previously only had the flat list in /me and
+    # the one-way POST booking, so a patient could never change (or even
+    # cleanly re-read) their own schedule.) ---
+
+    async def get_my_appointments(
+        self,
+        db: AsyncSession,
+        patient: Patient,
+        scope: str = "upcoming",
+        status: str | None = None,
+    ) -> list[PortalAppointment]:
+        now = datetime.now(timezone.utc)
+        conditions = [Appointment.patient_id == patient.id]
+        if scope not in ("upcoming", "past"):
+            raise AppException("scope must be 'upcoming' or 'past'")
+        if scope == "upcoming":
+            conditions.append(Appointment.start_time >= now)
+        else:
+            conditions.append(Appointment.start_time < now)
+        if status is not None:
+            try:
+                status_enum = AppointmentStatus(status)
+            except ValueError:
+                raise AppException(f"Invalid appointment status: {status}")
+            conditions.append(Appointment.status == status_enum)
+        result = await db.execute(
+            select(Appointment).where(*conditions).order_by(Appointment.start_time.asc())
+        )
+        return [
+            PortalAppointment(
+                id=a.id,
+                appointment_type=a.appointment_type,
+                status=a.status.value if hasattr(a.status, "value") else str(a.status),
+                start_time=a.start_time,
+                end_time=a.end_time,
+                notes=a.notes,
+            )
+            for a in result.scalars().all()
+        ]
+
+    async def cancel_my_appointment(self, db: AsyncSession, patient: Patient, appointment_id: UUID) -> Appointment:
+        appointment = await self._get_patient_appointment(db, patient, appointment_id)
+        if appointment.status not in (AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED):
+            raise AppException("Only scheduled or confirmed appointments can be cancelled")
+        appointment.status = AppointmentStatus.CANCELLED
+        await db.flush()
+        await AuditLogService().log(
+            db,
+            patient.practice_id,
+            "patient_portal",
+            "appointment.cancel",
+            actor_user_id=None,
+            resource_type="appointment",
+            resource_id=appointment.id,
+        )
+        return appointment
+
+    async def reschedule_my_appointment(
+        self,
+        db: AsyncSession,
+        patient: Patient,
+        appointment_id: UUID,
+        data: RescheduleAppointmentRequest,
+    ) -> Appointment:
+        appointment = await self._get_patient_appointment(db, patient, appointment_id)
+        if appointment.status in (AppointmentStatus.CANCELLED, AppointmentStatus.COMPLETED, AppointmentStatus.NO_SHOW):
+            raise AppException("This appointment can no longer be rescheduled")
+        if data.end_time <= data.start_time:
+            raise AppException("Appointment end time must be after start time")
+        if data.start_time < datetime.now(timezone.utc):
+            raise AppException("Appointment time must be in the future")
+        appointment.start_time = data.start_time
+        appointment.end_time = data.end_time
+        await db.flush()
+        await AuditLogService().log(
+            db,
+            patient.practice_id,
+            "patient_portal",
+            "appointment.reschedule",
+            actor_user_id=None,
+            resource_type="appointment",
+            resource_id=appointment.id,
+        )
+        return appointment
+
+    async def get_my_treatment_plan(
+        self, db: AsyncSession, patient: Patient, treatment_plan_id: UUID
+    ) -> PortalTreatmentPlan:
+        result = await db.execute(
+            select(TreatmentPlan)
+            .options(selectinload(TreatmentPlan.items).selectinload(TreatmentPlanItem.procedure))
+            .where(TreatmentPlan.id == treatment_plan_id, TreatmentPlan.patient_id == patient.id)
+        )
+        plan = result.scalar_one_or_none()
+        if plan is None:
+            raise NotFoundException("Treatment plan not found")
+        return PortalTreatmentPlan(
+            id=plan.id,
+            title=plan.title,
+            status=plan.status.value if hasattr(plan.status, "value") else str(plan.status),
+            items=[
+                PortalTreatmentPlanItem(
+                    id=item.id,
+                    procedure_name=item.procedure.name if item.procedure else "Procedure",
+                    status=item.status.value if hasattr(item.status, "value") else str(item.status),
+                    estimated_price=float(item.estimated_price) if item.estimated_price is not None else None,
+                    actual_price=float(item.actual_price) if item.actual_price is not None else None,
+                )
+                for item in plan.items
+            ],
+            created_at=plan.created_at,
+        )
 
     # --- Helpers ----------------------------------------------------------
 
+    async def _get_patient_appointment(self, db: AsyncSession, patient: Patient, appointment_id: UUID) -> Appointment:
+        result = await db.execute(
+            select(Appointment).where(Appointment.id == appointment_id, Appointment.patient_id == patient.id)
+        )
+        appointment = result.scalar_one_or_none()
+        if appointment is None:
+            raise NotFoundException("Appointment not found")
+        return appointment
+
     async def _resolve_assigned_doctor(self, db: AsyncSession, patient: Patient) -> PortalDoctorInfo | None:
-        # "Assigned doctor" = whoever the patient's most recent
-        # doctor-carrying appointment points at; falls back to the most
-        # recent treatment plan's doctor if no appointment has one yet.
+        # patient.assigned_doctor_id is the durable, staff-set link — the
+        # SAME field server/patient_access.py's Doctor hard-restriction
+        # checks, so this must be the primary source of truth: showing a
+        # different "your doctor" here than the one actually authorized to
+        # see this patient's messages would be genuinely confusing. Only
+        # falls back to inferring from appointments/treatment-plan history
+        # when no explicit assignment exists yet.
+        if patient.assigned_doctor_id:
+            assigned_result = await db.execute(select(Doctor).where(Doctor.id == patient.assigned_doctor_id))
+            assigned = assigned_result.scalar_one_or_none()
+            if assigned is not None:
+                return PortalDoctorInfo(id=assigned.id, name=assigned.name, specialty=assigned.specialty, bio=assigned.bio, photo_url=assigned.photo_url)
+
         apt_result = await db.execute(
             select(Doctor)
             .join(Appointment, Appointment.doctor_id == Doctor.id)

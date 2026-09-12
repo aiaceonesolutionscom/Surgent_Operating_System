@@ -65,7 +65,7 @@ export function AgentCategoryPage() {
       sessionsError ?
       <div className="rounded-3xl border border-sand-200 bg-white p-12 text-center">
           <p className="text-sm text-danger">{sessionsError}</p>
-          <button onClick={refetch} className="mt-3 text-sm text-teal-600 hover:underline">Retry</button>
+          <button onClick={() => refetch()} className="mt-3 text-sm text-teal-600 hover:underline">Retry</button>
         </div> :
 
       <SessionsView sessions={sessions} />

@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { apiFetch, ApiError } from "./client";
+import { apiFetch, apiFetchBlob, ApiError } from "./client";
 
 // Closes the gap app/auth/README.md documents — apiFetch() never attached a
 // Clerk session token, so every backend route expecting Depends(get_current_user)
@@ -33,5 +33,19 @@ export function useAuthedFetch() {
     [getToken, isSignedIn]
   );
 
-  return { authedFetch, isSignedIn, isLoaded };
+  // Sibling to authedFetch above, for endpoints that return a real file
+  // (invoice PDFs) instead of JSON — see apiFetchBlob's own comment.
+  const authedFetchBlob = useCallback(
+    async function authedFetchBlob(path: string, init?: RequestInit): Promise<Blob> {
+      if (!isSignedIn) throw new ApiError(401, "Not signed in");
+      const token = await getToken();
+      return apiFetchBlob(path, {
+        ...init,
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers }
+      });
+    },
+    [getToken, isSignedIn]
+  );
+
+  return { authedFetch, authedFetchBlob, isSignedIn, isLoaded };
 }

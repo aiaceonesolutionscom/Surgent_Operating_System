@@ -21,7 +21,7 @@ export function useLivePlans(): Plan[] {
     .then((rows) => {
       if (cancelled || rows.length === 0) return;
       const mapped: Plan[] = rows
-      .filter((r) => r.tier !== "custom")
+      .filter((r) => r.tier !== "custom" && r.tier !== "solo")
       .sort((a, b) => a.display_order - b.display_order)
       .map((r) => ({
         id: r.tier as Plan["id"],

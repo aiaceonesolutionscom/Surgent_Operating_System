@@ -40,6 +40,21 @@ class UpdateDoctorRequest(BaseModel):
     is_active: bool | None = None
 
 
+class UpdateMyDoctorRequest(BaseModel):
+    """A doctor updating their own profile. Name and photo are Owner-owned
+    (they must stay put on their own PATCH /doctors/{id}); contact info,
+    specialty, bio, education, and the weekly schedule are self-service."""
+
+    phone: str | None = None
+    email: str | None = None
+    specialty: str | None = None
+    bio: str | None = None
+    license_number: str | None = None
+    qualifications: list[QualificationEntry] | None = None
+    specializations: list[str] | None = None
+    working_hours: dict | None = None
+
+
 class DoctorResponse(BaseModel):
     id: UUID
     practice_id: UUID

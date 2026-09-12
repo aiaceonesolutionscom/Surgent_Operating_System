@@ -36,6 +36,51 @@ async def list_conversations(
     return await controller.list_conversations(db, user, status, channel, agent_type, search, patient_id, limit, offset)
 
 
+@router.get("/patient-messages", response_model=list[ConversationListItem])
+async def list_patient_messages(
+    limit: int = Query(default=100, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: User = Depends(get_current_practice_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Dedicated Patient Messages inbox (MessagesPage's "Patient messages"
+    # tab) — portal messages a patient sent their own doctor. A Doctor sees
+    # only their own assigned patients (service-level filter on their Doctor
+    # row); Owner sees everything read-only; Receptionist sees and answers
+    # everything. Never part of the generic Agent Sessions inbox.
+    return await controller.list_patient_messages(db, user, limit, offset)
+
+
+@router.get("/patient-messages/{conversation_id}", response_model=ConversationDetail)
+async def get_patient_message(
+    conversation_id: UUID,
+    user: User = Depends(get_current_practice_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.get_patient_message(db, user, conversation_id)
+
+
+@router.post("/patient-messages/{conversation_id}/messages", response_model=ConversationDetail)
+async def reply_patient_message(
+    conversation_id: UUID,
+    data: CreateMessageRequest,
+    user: User = Depends(get_current_practice_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Assigned doctor or receptionist only — the Owner is read-only here
+    # (enforced in the controller via _require_can_reply).
+    return await controller.reply_to_patient_message(db, user, conversation_id, data.body)
+
+
+@router.post("/patient-messages/{conversation_id}/resolve", response_model=ConversationDetail)
+async def resolve_patient_message(
+    conversation_id: UUID,
+    user: User = Depends(get_current_practice_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.resolve_patient_message(db, user, conversation_id)
+
+
 @router.get("/{conversation_id}", response_model=ConversationDetail)
 async def get_conversation(
     conversation_id: UUID,

@@ -27,6 +27,7 @@ async def list_appointments(
     scope: str = Query(default="me"),
     start: datetime | None = Query(default=None),
     end: datetime | None = Query(default=None),
+    patient_id: UUID | None = Query(default=None),
     user: User = Depends(get_current_practice_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -34,8 +35,8 @@ async def list_appointments(
     # desk view). Default stays "me" (the caller's own linked Doctor row) to
     # not change the Doctor Dashboard's existing behavior.
     if scope == "practice":
-        return await controller.list_practice_appointments(db, user, start, end)
-    return await controller.list_my_appointments(db, user)
+        return await controller.list_practice_appointments(db, user, start, end, patient_id)
+    return await controller.list_my_appointments(db, user, patient_id)
 
 
 @router.post("", response_model=AppointmentResponse)

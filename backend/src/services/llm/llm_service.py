@@ -84,7 +84,7 @@ class LLMService:
         return self.openai_client, self.openai_model
 
     async def chat(
-        self, messages: list[dict], system_prompt: str | None = None, tier: str = "high"
+        self, messages: list[dict], system_prompt: str | None = None, tier: str = "high", json_mode: bool = False, max_tokens: int = 1024
     ) -> str:
         full_messages = []
         if system_prompt:
@@ -92,11 +92,19 @@ class LLMService:
         full_messages.extend(messages)
 
         async def call(client, model):
+            kwargs = {}
+            if json_mode:
+                # Mistral, Groq, and OpenAI all support this OpenAI-shaped
+                # param — constrains the model to emit valid JSON instead of
+                # trusting a prompt instruction alone, which a small/free
+                # model can and does drift from under load.
+                kwargs["response_format"] = {"type": "json_object"}
             response = await client.chat.completions.create(
                 model=model,
                 messages=full_messages,
                 temperature=0.7,
-                max_tokens=1024,
+                max_tokens=max_tokens,
+                **kwargs,
             )
             return response.choices[0].message.content or ""
 
@@ -105,7 +113,7 @@ class LLMService:
         return await call(self.openai_client, self.openai_model)
 
     async def chat_with_tools(
-        self, messages: list[dict], tools: list[dict], system_prompt: str | None = None, tier: str = "high"
+        self, messages: list[dict], tools: list[dict], system_prompt: str | None = None, tier: str = "high", max_tokens: int = 1024
     ) -> dict:
         # Originally OpenAI-only (bookings/escalations are always high-stakes).
         # The Command Center orchestrator (services/command_center/) also
@@ -124,6 +132,7 @@ class LLMService:
                 messages=full_messages,
                 tools=tools,
                 temperature=0.7,
+                max_tokens=max_tokens,
             )
             choice = response.choices[0]
             return {

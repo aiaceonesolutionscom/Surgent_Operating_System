@@ -1,9 +1,0 @@
-from src.services.agents.medical_history_intake_agent.medical_history_intake_agent_services import MedicalHistoryIntakeService
-
-
-class MedicalHistoryIntakeController:
-    def __init__(self):
-        self.service = MedicalHistoryIntakeService()
-
-    async def get_status(self, user: dict) -> dict:
-        return await self.service.get_status(user)

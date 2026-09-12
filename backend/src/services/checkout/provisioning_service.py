@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.pending_signup import PendingSignup
-from src.models.practice import Practice
+from src.models.practice import Practice, PracticeStatus
 from src.models.user import User, UserRole
 from src.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
 from src.models.agent_config import AgentConfig
@@ -53,6 +53,50 @@ class ProvisioningService:
         pending.claimed_by_clerk_id = clerk_id
         await db.flush()
 
+        return practice
+
+    async def provision_from_org_request(self, db: AsyncSession, pending: PendingSignup, plan_tier: str | None = None) -> Practice:
+        """The approval-time counterpart to provision_from_pending_signup —
+        called by a Super Admin approving a free "new organization" request
+        (see org_request_service.py) instead of a paid checkout. Reuses the
+        exact same _get_or_create_* primitives so an approved org ends up
+        indistinguishable from a paid one, on the FREE trial tier of the
+        assigned plan (nothing was charged) and explicitly ACTIVE (this IS
+        the approval). `plan_tier` defaults to PRACTICE (the Solo plan was
+        retired) and lets the approving admin pick the org's plan."""
+        if pending.practice_id:
+            practice = await db.get(Practice, pending.practice_id)
+            if practice:
+                return practice
+
+        if not pending.clerk_id:
+            raise AppException("This request has no linked account yet.", status_code=400)
+
+        tier = plan_tier or SubscriptionTier.PRACTICE.value
+        if isinstance(tier, str) and tier == SubscriptionTier.SOLO.value:
+            tier = SubscriptionTier.PRACTICE.value
+
+        practice = await self._get_or_create_practice_for_org_request(db, pending)
+        await self._get_or_create_owner_user(db, practice, pending.clerk_id, pending.email, pending.email)
+        subscription = await self._get_or_create_subscription(db, practice, tier)
+        await self._seed_agent_configs(db, practice, subscription.tier)
+
+        pending.practice_id = practice.id
+        pending.claimed_at = datetime.now(timezone.utc)
+        pending.claimed_by_clerk_id = pending.clerk_id
+        await db.flush()
+        return practice
+
+    async def _get_or_create_practice_for_org_request(self, db: AsyncSession, pending: PendingSignup) -> Practice:
+        result = await db.execute(select(Practice).where(Practice.email == pending.email))
+        practice = result.scalar_one_or_none()
+        if practice:
+            return practice
+
+        name = pending.org_name or pending.email.split("@")[0].title()
+        practice = Practice(id=uuid.uuid4(), name=name, email=pending.email, status=PracticeStatus.ACTIVE)
+        db.add(practice)
+        await db.flush()
         return practice
 
     async def _get_or_create_practice(self, db: AsyncSession, pending: PendingSignup, clerk_name: str | None) -> Practice:

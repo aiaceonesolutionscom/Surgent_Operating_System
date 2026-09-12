@@ -20,6 +20,8 @@ class StaffMessageResponse(BaseModel):
     sender_name: str | None
     sender_role: str
     body: str
+    content_type: str = "text"
+    extra_data: dict | None = None
     created_at: datetime
     mine: bool
 
@@ -37,6 +39,7 @@ class StaffConversationResponse(BaseModel):
     conversation_id: UUID
     recipient_id: UUID
     recipient_name: str | None
+    recipient_email: str
     recipient_role: str
     last_message_preview: str | None
     last_message_at: datetime | None

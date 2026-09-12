@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
 
+    # LangSmith observability (extras user added to .env). pydantic-settings
+    # rejects unknown env keys, so these are declared fields — and they feed
+    # nothing until LLMService wires them in, they just stop a stray
+    # LANGSMITH_API_KEY/LANGCHAIN_API_KEY from crashing settings at boot.
+    langsmith_api_key: str = ""
+    langchain_api_key: str = ""
+    langchain_tracing_v2: bool = False
+    langchain_project: str = "aesthetixai"
+
     mistral_api_key: str = ""
     mistral_api_key_2: str = ""
     mistral_api_key_3: str = ""
@@ -37,7 +46,10 @@ class Settings(BaseSettings):
     # key isn't configured yet), since Groq's free tier is fast and has
     # generous limits. See LLMService._call_with_fallback.
     groq_api_key: str = ""
-    groq_model: str = "openai/gpt-oss-120b"
+    groq_model: str = "gpt-oss-120b"
+
+    deepgram_api_key: str = ""
+    deepgram_model: str = "nova-3"
 
     resend_api_key: str = ""
     resend_from_email: str = "onboarding@resend.dev"
@@ -57,6 +69,16 @@ class Settings(BaseSettings):
     green_api_token: str = ""
 
     instagram_api_token: str = ""
+
+    # Meta (Instagram/Facebook) OAuth — ONE registered Facebook App for the
+    # whole platform (Aiaceone team registers this once, like Stripe's
+    # secret key), not per-practice. Each practice then authorizes THIS app
+    # via OAuth to connect their own Page/IG Business account — see
+    # services/channels/meta_service.py. Placeholder until a real Facebook
+    # App exists; MetaService.is_configured() gates every code path on this,
+    # same pattern as CheckoutService._stripe_key_configured().
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
 
     sendgrid_api_key: str = ""
     email_from: str = "noreply@aesthetixai.com"

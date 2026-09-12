@@ -17,62 +17,46 @@ from src.models.subscription import SubscriptionTier
 
 # Mirrors frontend/src/data/agents/index.ts's AGENT_CATEGORIES groupings —
 # the backend has no separate "category" model, so this is the one place
-# that encodes which of the 31 agent slugs belong to which category.
+# that encodes which of the 9 clinic agent slugs belong to which category.
+# The product was consolidated from 31 scratch agents to 9 real ones:
+#   front-desk      — receptionist, appointment_reminder
+#   consultation    — lead_qualification, patient_intake, consultation_assistant
+#   post-care       — post_op_recovery, marketing_retention
+#   business        — finance_agent, main_agent
+# The old fold-ins (booking, surgery logistics, cost estimation, etc.) were
+# absorbed into these 9 or dropped; legacy slugs like "command_center" only
+# survive in existing Conversation rows, not in the catalog.
 AGENT_CATEGORIES: dict[str, list[str]] = {
     "front-desk": [
         "receptionist",
-        "appointment_booking",
-        "reschedule_cancellation",
         "appointment_reminder",
-        "multilingual_translation",
     ],
     "consultation": [
-        "ai_consultation",
-        "photo_analysis",
-        "video_consultation",
-        "medical_history_intake",
-        "risk_assessment",
-        "procedure_recommendation",
-        "pre_surgery_preparation",
-    ],
-    "surgery": [
-        "surgery_scheduling",
-        "surgeon_calendar",
-        "operating_room_scheduler",
-        "equipment_checklist",
-        "implant_inventory",
-        "surgical_documentation",
+        "lead_qualification",
+        "patient_intake",
+        "consultation_assistant",
     ],
     "post-care": [
-        "recovery_followup",
-        "healing_monitoring",
-        "emergency_triage",
-        "medication_reminder",
-        "wound_care_guidance",
-        "recovery_dashboard",
+        "post_op_recovery",
+        "marketing_retention",
     ],
     "business": [
-        "cost_estimation",
-        "payment_invoice",
-        "insurance_verification",
-        "analytics_dashboard",
-        "patient_feedback",
-        "marketing_followup",
-        "lead_nurturing",
+        "finance_agent",
+        "main_agent",
     ],
 }
 
 # Category ids unlocked per tier — same derivation as the frontend's
-# planCapabilities.ts (each line traceable to a data/plans.ts feature string).
+# planCapabilities.ts. Every clinic plan (Practice & up) includes the full
+# 9-agent suite; the tiers differentiate on location count, support level and
+# enterprise extras (EHR/custom integrations/BAA), not on agent access.
 TIER_CATEGORIES: dict[SubscriptionTier, list[str]] = {
-    SubscriptionTier.SOLO: ["front-desk"],
-    SubscriptionTier.PRACTICE: ["front-desk", "consultation", "surgery", "post-care"],
-    SubscriptionTier.ENTERPRISE: ["front-desk", "consultation", "surgery", "post-care", "business"],
-    SubscriptionTier.CUSTOM: ["front-desk", "consultation", "surgery", "post-care", "business"],
+    SubscriptionTier.PRACTICE: ["front-desk", "consultation", "post-care", "business"],
+    SubscriptionTier.ENTERPRISE: ["front-desk", "consultation", "post-care", "business"],
+    SubscriptionTier.CUSTOM: ["front-desk", "consultation", "post-care", "business"],
 }
 
 TIER_LIMITS: dict[SubscriptionTier, dict[str, float]] = {
-    SubscriptionTier.SOLO: {"max_doctors": 1, "max_social_channels": 1, "max_locations": 1},
     SubscriptionTier.PRACTICE: {"max_doctors": float("inf"), "max_social_channels": float("inf"), "max_locations": 1},
     SubscriptionTier.ENTERPRISE: {"max_doctors": float("inf"), "max_social_channels": float("inf"), "max_locations": float("inf")},
     SubscriptionTier.CUSTOM: {"max_doctors": float("inf"), "max_social_channels": float("inf"), "max_locations": float("inf")},
@@ -80,7 +64,10 @@ TIER_LIMITS: dict[SubscriptionTier, dict[str, float]] = {
 
 
 def allowed_categories(tier: SubscriptionTier) -> list[str]:
-    return TIER_CATEGORIES.get(tier, TIER_CATEGORIES[SubscriptionTier.SOLO])
+    # Legacy SOLO rows (pre-consolidation) map to the full Practice catalog —
+    # they were never sold multi-location, so the tier's only real limiter
+    # (max_locations=1) still binds them.
+    return TIER_CATEGORIES.get(tier, TIER_CATEGORIES[SubscriptionTier.PRACTICE])
 
 
 def allowed_agent_slugs(tier: SubscriptionTier) -> set[str]:
@@ -108,4 +95,5 @@ def has_analytics(tier: SubscriptionTier) -> bool:
 
 
 def limits_for(tier: SubscriptionTier) -> dict[str, float]:
-    return TIER_LIMITS.get(tier, TIER_LIMITS[SubscriptionTier.SOLO])
+    # Legacy SOLO rows resolve to the Practice limits (as with allowed_categories).
+    return TIER_LIMITS.get(tier, TIER_LIMITS[SubscriptionTier.PRACTICE])

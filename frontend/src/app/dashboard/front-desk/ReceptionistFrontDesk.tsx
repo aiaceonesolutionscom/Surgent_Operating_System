@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarIcon, ClockIcon, CheckIcon, PlusIcon, StethoscopeIcon, ReceiptIcon, XCircleIcon, ClipboardListIcon, UsersIcon, CalendarDaysIcon } from "lucide-react";
+import { CalendarIcon, ClockIcon, CheckIcon, PlusIcon, StethoscopeIcon, ReceiptIcon, XCircleIcon, ClipboardListIcon, UsersIcon, CalendarDaysIcon, ScissorsIcon } from "lucide-react";
 import { EmptyState } from "../components/EmptyState";
 import { usePlan } from "../plan/PlanContext";
 import type { FrontDeskAppointment } from "./useFrontDesk";
 import { AttendanceCalendar } from "../attendance/AttendanceCalendar";
+import { useSurgeries } from "../surgery/useSurgeries";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 import {
   listWaitlist,
@@ -107,6 +108,10 @@ export function ReceptionistFrontDesk({ appointments, loading, checkIn, startDoc
         <CalendarTab appointments={appointments} />
       )}
 
+      <div className="mt-6">
+        <UpcomingSurgeriesCard />
+      </div>
+
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <WaitlistSection />
         <div>
@@ -169,6 +174,12 @@ function TodaysQueueTab({
             <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${STATUS_CLASS[a.status] || "bg-sand-100 text-ink-soft"}`}>
               {a.status.replace(/_/g, " ")}
             </span>
+
+            <Link
+              to={`${DASHBOARD_ROUTES.surgeryNew()}?appointment_id=${a.id}`}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-sand-200 px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">
+              <ScissorsIcon className="h-3.5 w-3.5" /> Book surgery
+            </Link>
 
             <div className="flex shrink-0 items-center gap-1.5">
               {(a.status === "scheduled" || a.status === "confirmed") && (
@@ -455,6 +466,55 @@ function WaitlistSection() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function UpcomingSurgeriesCard() {
+  const { authedFetch } = usePlan();
+  const { surgeries, loading } = useSurgeries(authedFetch);
+
+  const now = new Date();
+  const upcoming = surgeries
+    .filter((s) => s.status === "planned" && new Date(s.scheduled_date).getTime() >= now.getTime())
+    .sort((a, b) => +new Date(a.scheduled_date) - +new Date(b.scheduled_date))
+    .slice(0, 6);
+
+  return (
+    <div className="rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
+      <div className="flex items-center justify-between border-b border-sand-100 px-5 py-4">
+        <p className="flex items-center gap-2 text-sm font-bold text-ink">
+          <ScissorsIcon className="h-4 w-4 text-teal-600" /> Upcoming surgeries
+        </p>
+        <Link to={DASHBOARD_ROUTES.surgeries} className="text-xs font-semibold text-teal-600 hover:underline">
+          View all
+        </Link>
+      </div>
+      {loading ?
+      <p className="px-5 py-6 text-sm text-ink-muted">Loading…</p> :
+      upcoming.length === 0 ?
+      <p className="px-5 py-6 text-sm text-ink-muted">No planned surgeries coming up.</p> :
+      <div className="divide-y divide-sand-100">
+          {upcoming.map((s) =>
+        <Link
+          key={s.id}
+          to={DASHBOARD_ROUTES.surgeryDetail(s.id)}
+          className="flex flex-wrap items-center gap-3 px-5 py-3.5 transition-colors hover:bg-sand-50">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-600/8 text-teal-600">
+              <ScissorsIcon className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-ink">{s.procedure_name || "Surgery"} — {s.patient_name || "Patient"}</p>
+              <p className="flex items-center gap-1 truncate text-xs text-ink-muted">
+                <ClockIcon className="h-3 w-3" /> {new Date(s.scheduled_date).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                {" · "}{s.doctor_name || "Doctor"}
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full bg-accent-500/10 px-2.5 py-1 text-[11px] font-semibold capitalize text-accent-700">{s.status}</span>
+          </Link>
+      )}
+        </div>
+      }
     </div>
   );
 }

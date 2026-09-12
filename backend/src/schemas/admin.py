@@ -20,6 +20,7 @@ class AdminPracticeListItem(BaseModel):
     id: UUID
     name: str
     email: str
+    status: str
     plan_tier: str
     subscription_status: str
     agents_enabled_count: int
@@ -39,6 +40,7 @@ class AdminPracticeDetailResponse(BaseModel):
     id: UUID
     name: str
     email: str
+    status: str
     phone: Optional[str] = None
     address: Optional[str] = None
     plan_tier: str
@@ -51,6 +53,37 @@ class AdminPracticeDetailResponse(BaseModel):
 
 class UpdateSubscriptionRequest(BaseModel):
     tier: str
+
+
+class CreatePracticeRequest(BaseModel):
+    name: str
+    email: str
+    # "practice" (default) or "enterprise" — retired "solo" is normalized away.
+    plan_tier: Optional[str] = None
+
+
+class UpdatePracticeRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    plan_tier: Optional[str] = None
+
+
+class OrgRequestListItem(BaseModel):
+    id: UUID
+    email: str
+    org_name: Optional[str] = None
+    status: str
+    created_at: datetime
+
+
+class RejectOrgRequestRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class ApproveOrgRequestRequest(BaseModel):
+    # Which plan the approved org starts on trial of — "practice" (default)
+    # or "enterprise". The retired "solo" value is rejected upstream.
+    plan_tier: Optional[str] = None
 
 
 class AdminUserResponse(BaseModel):

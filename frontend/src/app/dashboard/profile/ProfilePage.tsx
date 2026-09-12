@@ -3,6 +3,9 @@ import { useUser, UserButton } from "@clerk/clerk-react";
 import { BuildingIcon, ClockIcon, MapPinIcon, PhoneIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { usePracticeProfile } from "./usePracticeProfile";
+import { usePlan } from "../plan/PlanContext";
+import { DoctorProfilePage } from "./DoctorProfilePage";
+import { ReceptionistProfilePage } from "./ReceptionistProfilePage";
 
 const clerkEnabled = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 
@@ -40,6 +43,17 @@ function AccountCardWithUser() {
 }
 
 export function ProfilePage() {
+  const { role } = usePlan();
+  // Doctor and Receptionist get their own staff profile (roster details +
+  // self-editable weekly schedule + attendance); the Owner keeps the
+  // practice-level profile below.
+  if (role === "doctor") return <DoctorProfilePage />;
+  if (role === "receptionist") return <ReceptionistProfilePage />;
+
+  return <OwnerProfileContent />;
+}
+
+function OwnerProfileContent() {
   const { profile, update } = usePracticeProfile();
 
   return (

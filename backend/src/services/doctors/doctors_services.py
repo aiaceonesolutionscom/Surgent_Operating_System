@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import get_settings
 from src.models.doctor import Doctor
 from src.models.user import User
-from src.schemas.doctor import CreateDoctorRequest, UpdateDoctorRequest
+from src.schemas.doctor import CreateDoctorRequest, UpdateDoctorRequest, UpdateMyDoctorRequest
 from src.server.exceptions import NotFoundException
 from src.services.clerk.clerk_service import ClerkService
 
@@ -60,6 +60,25 @@ class DoctorsService:
         doctor = result.scalar_one_or_none()
         if doctor is None:
             raise NotFoundException("No doctor profile linked to this account")
+        return doctor
+
+    async def update_my_doctor(
+        self, db: AsyncSession, practice_id: UUID, user_id: UUID, data: UpdateMyDoctorRequest
+    ) -> Doctor:
+        """Doctor edits their own profile (contact, education, license,
+        weekly schedule — see UpdateMyDoctorRequest). name / photo_url /
+        signature_url / commission / is_active can never arrive here because
+        the self-service schema whitelists them out; those stay Owner-managed
+        via PATCH /doctors/{id}."""
+        doctor = await self.get_my_doctor(db, practice_id, user_id)
+        fields = data.model_dump(exclude_unset=True)
+        for field, value in fields.items():
+            if field == "qualifications" and value is not None:
+                doctor.qualifications = [q.model_dump() for q in value]
+            else:
+                setattr(doctor, field, value)
+        await db.flush()
+        await db.refresh(doctor)
         return doctor
 
     async def update_doctor(

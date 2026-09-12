@@ -10,7 +10,7 @@ from src.services.agent_log.agent_log_service import AgentLogService
 _SYSTEM_PROMPT = (
     "You are a warm, professional AI receptionist for an aesthetic medicine practice. "
     "Answer calls and messages politely, collect the patient's name and reason for contact, "
-    "and offer to book a consultation."
+    "and offer to book a consultation. Reply in 1-2 short sentences — be concise."
 )
 
 
@@ -34,6 +34,7 @@ class VoiceChatService:
             messages=[{"role": "user", "content": "A patient is calling. Greet them warmly."}],
             system_prompt=_SYSTEM_PROMPT,
             tier="low",
+            max_tokens=400,
         )
         twiml = self.twilio.generate_twiml_response(response_text)
         await self.agent_log.log(
@@ -47,6 +48,7 @@ class VoiceChatService:
             messages=[{"role": "user", "content": message}],
             system_prompt=_SYSTEM_PROMPT,
             tier="low",
+            max_tokens=400,
         )
         await self.agent_log.log(
             db, practice_id, agent_type="ai_receptionist", action="message_handled",

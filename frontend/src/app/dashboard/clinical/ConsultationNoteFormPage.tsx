@@ -60,8 +60,12 @@ export function ConsultationNoteFormPage() {
           if (!authedFetch) throw new Error("not signed in");
           const result = await transcribeDictation(authedFetch, blob, "dictation.webm");
           setRawNotes((prev) => (prev.trim() ? `${prev.trim()} ${result.text}` : result.text));
-        } catch {
-          setRecordError("Couldn't transcribe that recording — try again, or type your notes instead.");
+        } catch (err: unknown) {
+          setRecordError(
+            err instanceof Error && err.message
+              ? err.message
+              : "Couldn't transcribe that recording — try again, or type your notes instead."
+          );
         } finally {
           setTranscribing(false);
         }
@@ -92,8 +96,12 @@ export function ConsultationNoteFormPage() {
       setAssessment(draft.assessment);
       setPlan(draft.plan);
       setFollowUpTasks(draft.follow_up_tasks);
-    } catch {
-      setDraftError("Couldn't generate a draft — try again, or fill the fields in manually.");
+    } catch (err) {
+      setDraftError(
+        err instanceof Error && err.message ?
+        err.message :
+        "Couldn't generate a draft — try again, or fill the fields in manually."
+      );
     } finally {
       setDrafting(false);
     }
@@ -120,8 +128,10 @@ export function ConsultationNoteFormPage() {
       });
       if (!note) throw new Error("no note");
       navigate(DASHBOARD_ROUTES.patientDetail(patientId));
-    } catch {
-      setError("Couldn't save this note — try again.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error && err.message ? err.message : "Couldn't save this note — try again."
+      );
       setSaving(null);
     }
   }

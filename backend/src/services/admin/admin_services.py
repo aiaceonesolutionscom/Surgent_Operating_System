@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.practice import Practice
+from src.models.practice import Practice, PracticeStatus
 from src.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
 from src.models.agent_config import AgentConfig
 from src.models.agent_costing import AgentCosting
 from src.models.user import User
+from src.models.pending_signup import PendingSignup, OrgRequestStatus
+from src.services.checkout.provisioning_service import ProvisioningService
+from src.server.exceptions import NotFoundException, AppException
 
 # No real per-session usage telemetry exists yet — nothing persists
 # Conversation/Message rows today (see models/conversation.py), and
@@ -97,7 +102,8 @@ class AdminService:
                 "id": practice.id,
                 "name": practice.name,
                 "email": practice.email,
-                "plan_tier": sub.tier.value if sub else SubscriptionTier.SOLO.value,
+                "status": practice.status.value,
+                "plan_tier": sub.tier.value if sub else SubscriptionTier.PRACTICE.value,
                 "subscription_status": sub.status.value if sub else "none",
                 "agents_enabled_count": enabled_counts.get(practice.id, 0),
                 "estimated_monthly_cost": cost,
@@ -105,6 +111,59 @@ class AdminService:
                 "joined_at": practice.created_at,
             })
         return rows
+
+    async def create_practice(
+        self, db: AsyncSession, name: str, email: str, plan_tier: str | None = None
+    ) -> Practice:
+        """Super-Admin manual practice creation (no approx: from the /admin
+        Clinics tab, not the paid checkout flow). Creates the Practice row +
+        an active-trial Subscription on the chosen plan + the 9 agent config
+        rows, so the practice is immediately visible and gated correctly."""
+        name = (name or "").strip()
+        email = (email or "").strip().lower()
+        if not name or not email:
+            raise AppException("Name and email are required.")
+        existing = (await db.execute(select(Practice).where(Practice.email == email))).scalar_one_or_none()
+        if existing:
+            raise AppException("A practice with this email already exists.")
+
+        tier = plan_tier or SubscriptionTier.PRACTICE.value
+        if tier == SubscriptionTier.SOLO.value:
+            tier = SubscriptionTier.PRACTICE.value
+
+        practice = Practice(id=UUID(str(uuid4())), name=name, email=email, status=PracticeStatus.ACTIVE)
+        db.add(practice)
+        await db.flush()
+
+        provisioning = ProvisioningService()
+        subscription = await provisioning._get_or_create_subscription(db, practice, tier)
+        await provisioning._seed_agent_configs(db, practice, subscription.tier)
+        await db.refresh(practice)
+        return practice
+
+    async def update_practice(
+        self, db: AsyncSession, practice_id, name: str | None = None, email: str | None = None, plan_tier: str | None = None
+    ) -> Practice:
+        practice = await db.get(Practice, practice_id)
+        if practice is None:
+            raise NotFoundException("Practice not found.")
+
+        if name is not None and name.strip():
+            practice.name = name.strip()
+        if email is not None and email.strip():
+            practice.email = email.strip().lower()
+
+        if plan_tier:
+            tier = SubscriptionTier.PRACTICE if plan_tier == SubscriptionTier.SOLO.value else SubscriptionTier(plan_tier)
+            provisioning = ProvisioningService()
+            subscription = await provisioning._get_or_create_subscription(db, practice, tier.value)
+            if subscription.tier != tier:
+                subscription.tier = tier
+            await db.flush()
+
+        await db.flush()
+        await db.refresh(practice)
+        return practice
 
     async def practice_detail(self, db: AsyncSession, practice_id) -> dict | None:
         practice = (await db.execute(select(Practice).where(Practice.id == practice_id))).scalar_one_or_none()
@@ -138,9 +197,10 @@ class AdminService:
             "id": practice.id,
             "name": practice.name,
             "email": practice.email,
+            "status": practice.status.value,
             "phone": practice.phone,
             "address": practice.address,
-            "plan_tier": sub.tier.value if sub else SubscriptionTier.SOLO.value,
+            "plan_tier": sub.tier.value if sub else SubscriptionTier.PRACTICE.value,
             "subscription_status": sub.status.value if sub else "none",
             "estimated_monthly_revenue": sub.price if (sub and sub.price is not None) else Decimal("0"),
             "estimated_monthly_cost": self.estimated_monthly_cost_for_configs(configs, costing_map),
@@ -182,3 +242,72 @@ class AdminService:
     async def get_user(self, db: AsyncSession, user_id) -> User | None:
         result = await db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
+
+    # --- New-organization approval queue (Super Admin) ----------------------
+    # These act on the SAME PendingSignup rows the free /sign-up org-request
+    # path writes (see org_request_service.py) — a Super Admin reviewing
+    # `request_status == PENDING` rows is the actual gate that turns a
+    # genuinely new signup into a real, isolated Practice.
+
+    async def list_pending_org_requests(self, db: AsyncSession) -> list[PendingSignup]:
+        result = await db.execute(
+            select(PendingSignup)
+            .where(PendingSignup.request_status == OrgRequestStatus.PENDING)
+            .order_by(PendingSignup.created_at.asc())
+        )
+        return list(result.scalars().all())
+
+    async def _get_org_request(self, db: AsyncSession, request_id: UUID) -> PendingSignup:
+        result = await db.execute(select(PendingSignup).where(PendingSignup.id == request_id))
+        pending = result.scalar_one_or_none()
+        if pending is None or pending.request_status is None:
+            raise NotFoundException("Organization request not found.")
+        return pending
+
+    async def approve_org_request(self, db: AsyncSession, request_id: UUID, plan_tier: str | None = None) -> Practice:
+        pending = await self._get_org_request(db, request_id)
+        if pending.request_status != OrgRequestStatus.PENDING:
+            raise AppException(f"This request is already {pending.request_status.value}.")
+
+        practice = await ProvisioningService().provision_from_org_request(db, pending, plan_tier=plan_tier)
+        pending.request_status = OrgRequestStatus.APPROVED
+        pending.reviewed_at = datetime.now(timezone.utc)
+        await db.flush()
+        return practice
+
+    async def reject_org_request(self, db: AsyncSession, request_id: UUID, reason: str | None) -> PendingSignup:
+        pending = await self._get_org_request(db, request_id)
+        if pending.request_status != OrgRequestStatus.PENDING:
+            raise AppException(f"This request is already {pending.request_status.value}.")
+
+        pending.request_status = OrgRequestStatus.REJECTED
+        pending.rejected_reason = reason
+        pending.reviewed_at = datetime.now(timezone.utc)
+        await db.flush()
+        await db.refresh(pending)
+        return pending
+
+    # --- Soft suspend/reactivate (Super Admin's "delete an organization") --
+    # Deliberately soft (per product decision — patient medical data cascades
+    # off Practice, see models/practice.py's relationships) — suspend flips
+    # status only, data stays intact, and get_current_practice_context
+    # (server/dependencies.py) is the actual enforcement point that locks
+    # every practice-scoped endpoint out the moment this flips.
+
+    async def suspend_practice(self, db: AsyncSession, practice_id: UUID) -> Practice:
+        practice = (await db.execute(select(Practice).where(Practice.id == practice_id))).scalar_one_or_none()
+        if practice is None:
+            raise NotFoundException("Practice not found.")
+        practice.status = PracticeStatus.SUSPENDED
+        await db.flush()
+        await db.refresh(practice)
+        return practice
+
+    async def reactivate_practice(self, db: AsyncSession, practice_id: UUID) -> Practice:
+        practice = (await db.execute(select(Practice).where(Practice.id == practice_id))).scalar_one_or_none()
+        if practice is None:
+            raise NotFoundException("Practice not found.")
+        practice.status = PracticeStatus.ACTIVE
+        await db.flush()
+        await db.refresh(practice)
+        return practice

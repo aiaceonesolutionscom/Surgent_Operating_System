@@ -25,9 +25,8 @@ COMMAND_CENTER_AGENT_TYPE = "command_center"
 # and frontend/src/data/agents/index.ts exactly, on purpose.
 CATEGORIES: list[tuple[str, str, str]] = [
     ("front-desk", "Front Desk & Intake", "patients on file, intake status, and conversations needing staff attention"),
-    ("consultation", "Consultation & Screening", "chief complaints and consultation/screening status"),
-    ("surgery", "Surgery Management", "patients flagged as needing surgery and upcoming scheduled appointments"),
-    ("post-care", "Post-Surgery Care", "recovery journals and healing progress for patients post-surgery"),
+    ("consultation", "Consultation & Screening", "chief complaints, surgery-flagged patients, and upcoming appointments"),
+    ("post-care", "Post-Op Care & Retention", "recovery journals and healing progress for patients post-surgery"),
     ("business", "Business & Operations", "pending and overdue invoices"),
 ]
 CATEGORY_LABELS = {cid: label for cid, label, _ in CATEGORIES}
@@ -48,13 +47,14 @@ ORCHESTRATOR_SYSTEM_PROMPT = (
     "if the question spans categories. If a tool result says a category "
     "isn't included in the practice's plan, relay that honestly in your "
     "final answer instead of guessing — never invent data a tool didn't "
-    "give you."
+    "give you. Final answers must be short and direct (under 150 words), "
+    "plain language, no filler."
 )
 
 
 class CommandCenterService:
     """Orchestrates the doctor-facing 'AI Command Center': a Main agent
-    (LLM with function-calling) delegates to one of 5 category sub-agents,
+    (LLM with function-calling) delegates to one of 4 category sub-agents,
     each of which runs a real, practice-scoped DB query — never LLM-generated
     SQL, for safety. Category access follows the practice's plan tier via
     plan_capabilities.allows_category(), the same enforcement mirror
@@ -108,6 +108,7 @@ class CommandCenterService:
                 tools=self._tools(),
                 system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
                 tier="low",
+                max_tokens=400,
             )
         except Exception as exc:  # LLM outage/misconfig shouldn't 500 the whole page
             raise AppException(f"The AI Command Center is temporarily unavailable: {exc}", status_code=503)
@@ -151,6 +152,7 @@ class CommandCenterService:
                 messages=[{"role": "user", "content": question}, assistant_message, *tool_result_messages],
                 system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
                 tier="low",
+                max_tokens=400,
             )
         except Exception as exc:
             raise AppException(f"The AI Command Center is temporarily unavailable: {exc}", status_code=503)
@@ -171,7 +173,6 @@ class CommandCenterService:
         handler = {
             "front-desk": self._handle_front_desk,
             "consultation": self._handle_consultation,
-            "surgery": self._handle_surgery,
             "post-care": self._handle_post_care,
             "business": self._handle_business,
         }[category_id]
@@ -194,6 +195,7 @@ class CommandCenterService:
         return f"{len(patients)} most recent patients: {names}. {attention_count} conversations currently need staff attention."
 
     async def _handle_consultation(self, db: AsyncSession, practice_id: UUID) -> str:
+        now = datetime.now(timezone.utc)
         result = await db.execute(
             select(Patient)
             .where(Patient.practice_id == practice_id, Patient.chief_complaint.isnot(None))
@@ -201,13 +203,6 @@ class CommandCenterService:
             .limit(5)
         )
         patients = list(result.scalars().all())
-        if not patients:
-            return "No consultation records (chief complaints) on file yet."
-        lines = "; ".join(f"{p.first_name} {p.last_name}: {p.chief_complaint}" for p in patients)
-        return f"Recent chief complaints on file: {lines}."
-
-    async def _handle_surgery(self, db: AsyncSession, practice_id: UUID) -> str:
-        now = datetime.now(timezone.utc)
         appt_result = await db.execute(
             select(Appointment)
             .where(
@@ -223,9 +218,16 @@ class CommandCenterService:
             select(func.count()).select_from(Patient).where(Patient.practice_id == practice_id, Patient.needs_surgery.is_(True))
         )
         surgery_count = surgery_count_result.scalar_one()
-        if not appointments and not surgery_count:
-            return "No upcoming appointments or surgery-flagged patients on file yet."
-        return f"{surgery_count} patients flagged as needing surgery. {len(appointments)} upcoming appointments scheduled."
+
+        parts = []
+        if patients:
+            lines = "; ".join(f"{p.first_name} {p.last_name}: {p.chief_complaint}" for p in patients)
+            parts.append(f"Recent chief complaints on file: {lines}")
+        if appointments:
+            parts.append(f"{len(appointments)} upcoming appointments scheduled.")
+        if surgery_count:
+            parts.append(f"{surgery_count} patients flagged as needing surgery.")
+        return " ".join(parts) if parts else "No consultation records (chief complaints), upcoming appointments, or surgery-flagged patients on file yet."
 
     async def _handle_post_care(self, db: AsyncSession, practice_id: UUID) -> str:
         result = await db.execute(

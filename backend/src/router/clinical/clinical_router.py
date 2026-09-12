@@ -25,16 +25,18 @@ from src.controller.clinical.clinical_controllers import ClinicalController
 router = APIRouter(prefix="/clinical", tags=["Clinical"])
 controller = ClinicalController()
 
-# Clinical documentation is Owner/Doctor only — deliberately excludes
-# Receptionist, unlike most other practice-scoped endpoints (see the
-# roadmap's decision #3 on Receptionist's otherwise-broad visibility).
+# Clinical documentation — Owner and Doctor can read and write notes and use
+# the Consultation Assistant (transcribe / AI draft), so the Owner can test the
+# same workflow the Doctor sees. Deliberately excludes Receptionist (roadmap
+# decision #3) and keeps treatment-plan *writes* Doctor-only below.
 _VIEW_ROLES = (UserRole.OWNER, UserRole.DOCTOR)
+_WRITE_ROLES = (UserRole.OWNER, UserRole.DOCTOR)
 
 
 @router.post("/notes", response_model=ConsultationNoteResponse)
 async def create_note(
     data: CreateConsultationNoteRequest,
-    user: User = Depends(require_role(UserRole.DOCTOR)),
+    user: User = Depends(require_role(*_WRITE_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.create_note(db, user, data)
@@ -62,7 +64,7 @@ async def get_note(
 async def update_note(
     note_id: UUID,
     data: UpdateConsultationNoteRequest,
-    user: User = Depends(require_role(UserRole.DOCTOR)),
+    user: User = Depends(require_role(*_WRITE_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.update_note(db, user, note_id, data)
@@ -71,7 +73,7 @@ async def update_note(
 @router.post("/notes/transcribe", response_model=TranscriptionResponse)
 async def transcribe_dictation(
     file: UploadFile = File(...),
-    user: User = Depends(require_role(UserRole.DOCTOR)),
+    user: User = Depends(require_role(*_WRITE_ROLES)),
 ):
     """Voice dictation for the Consultation Assistant — transcribes an
     uploaded audio clip (webm/wav/m4a/etc.) via Groq Whisper. No DB access,
@@ -83,7 +85,7 @@ async def transcribe_dictation(
 @router.post("/notes/ai-draft", response_model=AIConsultationDraftResponse)
 async def ai_draft_note(
     data: AIConsultationDraftRequest,
-    user: User = Depends(require_role(UserRole.DOCTOR)),
+    user: User = Depends(require_role(*_WRITE_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
     """Consultation Assistant — drafts a SOAP note + follow-up tasks from

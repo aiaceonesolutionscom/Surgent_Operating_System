@@ -3,6 +3,7 @@ import json
 import logging
 import re
 from datetime import datetime, date as date_cls, timedelta, timezone
+from zoneinfo import ZoneInfo
 from uuid import UUID
 
 from sqlalchemy import select, desc
@@ -14,6 +15,7 @@ from src.models.patient import Patient
 from src.models.practice import Practice
 from src.models.doctor import Doctor
 from src.models.appointment import Appointment, AppointmentStatus
+from src.models.agent_config import AgentConfig
 from src.services.llm.llm_service import LLMService
 from src.services.agent_log.agent_log_service import AgentLogService
 from src.services.appointments.appointments_services import AppointmentsService
@@ -203,6 +205,8 @@ class InboundService:
         sender_name: str,
         message_text: str,
         instance_id: str,
+        content_type: str = "text",
+        extra_data: dict | None = None,
     ) -> dict:
         """Full inbound flow for a WhatsApp message."""
 
@@ -228,7 +232,8 @@ class InboundService:
             conversation_id=conversation.id,
             role=MessageRole.PATIENT,
             content=message_text,
-            content_type="text",
+            content_type=content_type,
+            extra_data=extra_data or {},
         )
         db.add(patient_msg)
 
@@ -239,6 +244,12 @@ class InboundService:
         # one to hand it back, not have the AI silently reassert control.
         ai_paused = bool((conversation.extra_data or {}).get("ai_paused"))
         conversation.status = ConversationStatus.NEEDS_ATTENTION if ai_paused else ConversationStatus.ACTIVE
+        # Touch the conversation so the inbox sorts/previews by this new
+        # inbound message. `updated_at` is server_default/onupdate now() —
+        # with an unchanged status (e.g. already NEEDS_ATTENTION) no UPDATE
+        # would fire and the session would sit stale at the bottom with the
+        # old preview, looking like the message never arrived.
+        conversation.updated_at = datetime.now(timezone.utc)
         await db.flush()
         # Commit the incoming message on its own, before ever attempting an
         # AI reply. Previously everything below this point ran in the same
@@ -266,6 +277,38 @@ class InboundService:
                 "reply": None,
                 "sent": False,
                 "ai_paused": True,
+            }
+
+        # The Agent Settings "AI Receptionist" toggle writes an AgentConfig
+        # row for the "receptionist" slug (see AgentSettingsPage.tsx) — honor
+        # it so switching the agent off practice-wide actually stops the
+        # WhatsApp auto-replies. Missing row = not disabled (default on), the
+        # same behavior as the settings page's DEFAULT_AGENT_SETTING.
+        cfg_result = await db.execute(
+            select(AgentConfig).where(
+                AgentConfig.practice_id == practice.id,
+                AgentConfig.agent_type == "receptionist",
+            )
+        )
+        cfg = cfg_result.scalar_one_or_none()
+        if cfg is not None and not cfg.enabled:
+            conversation.status = ConversationStatus.NEEDS_ATTENTION
+            await self.agent_log.log(
+                db,
+                practice.id,
+                agent_type="ai_receptionist",
+                action="whatsapp_message_received_ai_disabled",
+                details={"patient_phone": phone_number, "incoming_preview": message_text[:200]},
+                performed_by="system",
+            )
+            return {
+                "handled": True,
+                "practice_id": str(practice.id),
+                "patient_id": str(patient.id),
+                "conversation_id": str(conversation.id),
+                "reply": None,
+                "sent": False,
+                "ai_disabled": True,
             }
 
         # 5. Generate AI reply using conversation history + real booking/
@@ -555,8 +598,17 @@ class InboundService:
                 )
 
             try:
-                when = datetime.strptime(f"{draft['date']} {draft['time']}", "%Y-%m-%d %H:%M")
-                when = when.replace(tzinfo=timezone.utc)
+                when_local = datetime.strptime(f"{draft['date']} {draft['time']}", "%Y-%m-%d %H:%M")
+                # The patient means *their* clinic's local time when they say
+                # "tomorrow at 2pm". practice.timezone (default UTC) tells us
+                # what that local wall-clock actually is in absolute terms —
+                # before, this was stamped as naive UTC, shifting every
+                # non-UTC clinic's bookings by their timezone offset.
+                try:
+                    tz = ZoneInfo(practice.timezone or "UTC")
+                except Exception:
+                    tz = timezone.utc
+                when = when_local.replace(tzinfo=tz).astimezone(timezone.utc)
             except (KeyError, ValueError):
                 if conversation_id is not None:
                     await self.booking_drafts.clear_field(conversation_id, "date")
@@ -594,6 +646,9 @@ class InboundService:
                 when,
                 when + timedelta(minutes=_APPOINTMENT_DURATION_MINUTES),
                 notes="Booked by AI Receptionist via WhatsApp",
+                # The AI's own reply below IS the confirmation — an automated
+                # generic message right behind it would double-message them.
+                notify_patient=False,
             )
             await self.agent_log.log(
                 db,
@@ -611,6 +666,22 @@ class InboundService:
             )
             if conversation_id is not None:
                 await self.booking_drafts.clear(conversation_id)
+
+            # Flag the conversation so the dashboard's sessions view can
+            # distinguish "booking just completed" from a plain Q&A exchange —
+            # this is what lets the human receptionist notice a WhatsApp
+            # booking happened without wading through the transcript.
+            if conversation_id is not None:
+                conv_result = await db.execute(
+                    select(Conversation).where(Conversation.id == conversation_id)
+                )
+                conv = conv_result.scalar_one_or_none()
+                if conv is not None:
+                    conv.extra_data = {
+                        **(conv.extra_data or {}),
+                        "ai_booked_appointment_id": str(appointment.id),
+                        "ai_booked_at": datetime.now(timezone.utc).isoformat(),
+                    }
 
             # First real booking is the natural moment to get this patient
             # onto the portal — best-effort, must never affect the booking
@@ -673,6 +744,10 @@ class InboundService:
         llm_messages.append({"role": "user", "content": new_message})
 
         today = datetime.now(timezone.utc).date()
+        try:
+            today = datetime.now(ZoneInfo(practice.timezone or "UTC")).date()
+        except Exception:
+            pass
         hints = _extract_booking_hints(new_message, today)
         if hints:
             draft = await self.booking_drafts.merge(conversation.id, **hints)

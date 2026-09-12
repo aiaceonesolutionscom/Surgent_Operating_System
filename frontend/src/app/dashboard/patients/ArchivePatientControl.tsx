@@ -3,10 +3,11 @@ import { ArchiveIcon, ArchiveRestoreIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
 import { archivePatient, restorePatient } from "../../../api/entities";
 
-// Owner-only (see patients_router.py's require_role(OWNER) on both
-// endpoints) — there is deliberately no hard-delete for patients. Archiving
-// hides the record from the default list, disables portal login, and
-// blocks new appointments; nothing here destroys medical/financial data.
+// Owner + Receptionist (see patients_router.py's require_role(OWNER,
+// RECEPTIONIST) on both endpoints) — there is deliberately no hard-delete
+// for patients. Archiving hides the record from the default list, disables
+// portal login, and blocks new appointments; nothing here destroys
+// medical/financial data.
 export function ArchivePatientControl({
   patientId,
   isArchived,

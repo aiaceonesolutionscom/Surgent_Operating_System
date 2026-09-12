@@ -29,6 +29,10 @@ class Patient(Base):
     last_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=True)
     phone: Mapped[str] = mapped_column(String(50), nullable=True)
+    # A patient can have more than one reachable number (home, work, a
+    # relative's) beyond the one primary `phone` above (used for portal OTP
+    # delivery, WhatsApp receipts, etc.) — list of {number, label}.
+    additional_phones: Mapped[list] = mapped_column(JSONB, default=list)
     date_of_birth: Mapped[date] = mapped_column(Date, nullable=True)
     medical_history: Mapped[dict] = mapped_column(JSONB, default=dict)
     consent_status: Mapped[bool] = mapped_column(default=False)
@@ -57,6 +61,24 @@ class Patient(Base):
     # controls. portal_enabled still gates access on/off.
     portal_id: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
     portal_enabled: Mapped[bool] = mapped_column(default=False)
+    # Patient-chosen login PIN — stored ONLY as a salted PBKDF2-HMAC-SHA256
+    # hash ("pbkdf2_sha256$iterations$salt$hash"), never plaintext, staff can
+    # never see or set it. Null until the patient sets their own PIN during
+    # first-time OTP login; once set, phone + PIN is the cheap daily login
+    # (README: OTP costs money on every send, so OTP stays only as the
+    # first-time / forgot-PIN recovery path). See
+    # patient_portal_auth_service.py for hashing + verification.
+    portal_pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pin_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Clinic one-time (disposable) login PIN — deliberately staff-visible, so
+    # front desk can hand a patient a PIN on the spot and the patient logs in
+    # with phone + this PIN (no OTP). Short-lived and single-use: valid only
+    # until portal_temp_pin_expires_at and cleared on first successful login,
+    # so a handed-over PIN can't be reused. It is NOT the patient's permanent
+    # PIN (portal_pin_hash); after a one-time-PIN login the portal prompts the
+    # patient to set their own PIN, exactly like the OTP first-login flow.
+    portal_temp_pin: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    portal_temp_pin_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # --- Patient profile depth (Week 2) ---------------------------------
     gender: Mapped[str] = mapped_column(String(30), nullable=True)

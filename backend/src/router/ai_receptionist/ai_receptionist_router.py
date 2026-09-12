@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
-from src.server.dependencies import get_current_practice_user, require_role
+from src.server.dependencies import get_current_practice_user, require_role, require_agent, PracticeContext
 from src.models.user import User, UserRole
 from src.schemas.ai_receptionist import (
     ChatMessageRequest,
@@ -27,6 +27,7 @@ controller = AIReceptionistController()
 @router.post("/handle-call", response_model=HandleCallResponse)
 async def handle_call(
     user: User = Depends(get_current_practice_user),
+    _agent: PracticeContext = Depends(require_agent("receptionist")),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.handle_call(db, user)
@@ -36,6 +37,7 @@ async def handle_call(
 async def process_message(
     data: ChatMessageRequest,
     user: User = Depends(get_current_practice_user),
+    _agent: PracticeContext = Depends(require_agent("receptionist")),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.process_message(db, user, data.message)
@@ -45,6 +47,7 @@ async def process_message(
 async def translate(
     data: TranslateRequest,
     user: User = Depends(get_current_practice_user),
+    _agent: PracticeContext = Depends(require_agent("receptionist")),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.translate(db, user, data.text, data.target_language)
@@ -54,6 +57,7 @@ async def translate(
 async def send_reminder(
     appointment_id: UUID,
     user: User = Depends(get_current_practice_user),
+    _agent: PracticeContext = Depends(require_agent("receptionist")),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.send_reminder(db, user, appointment_id)
@@ -65,6 +69,7 @@ async def send_reminder(
 @router.get("/overview", response_model=AIReceptionistOverviewResponse)
 async def get_overview(
     user: User = Depends(require_role(UserRole.OWNER, UserRole.DOCTOR, UserRole.RECEPTIONIST)),
+    _agent: PracticeContext = Depends(require_agent("receptionist")),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.get_overview(db, user)
@@ -75,6 +80,7 @@ async def get_overview(
 @router.get("/system-prompt", response_model=SystemPromptResponse)
 async def get_system_prompt(
     user: User = Depends(require_role(UserRole.OWNER, UserRole.DOCTOR, UserRole.RECEPTIONIST)),
+    _agent: PracticeContext = Depends(require_agent("receptionist")),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.get_system_prompt(db, user)
@@ -87,3 +93,4 @@ async def update_system_prompt(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.update_system_prompt(db, user, body.custom_instructions)
+

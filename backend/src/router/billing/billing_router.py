@@ -1,13 +1,13 @@
 from __future__ import annotations
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
 from src.server.dependencies import require_role
 from src.models.user import User, UserRole
-from src.schemas.billing import CreateInvoiceRequest, UpdateInvoiceRequest, InvoiceResponse
+from src.schemas.billing import CreateInvoiceRequest, UpdateInvoiceRequest, InvoiceResponse, RecordPaymentRequest, PaymentResponse
 from src.controller.billing.billing_controllers import BillingController
 
 router = APIRouter(prefix="/invoices", tags=["Billing"])
@@ -62,3 +62,55 @@ async def update_invoice(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.update_invoice(db, user, invoice_id, data)
+
+
+@router.post("/{invoice_id}/payments", response_model=InvoiceResponse)
+async def record_payment(
+    invoice_id: UUID,
+    data: RecordPaymentRequest,
+    user: User = Depends(require_role(*_MANAGE_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.record_payment(db, user, invoice_id, data)
+
+
+@router.get("/{invoice_id}/payments", response_model=list[PaymentResponse])
+async def list_payments(
+    invoice_id: UUID,
+    user: User = Depends(require_role(*_VIEW_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.list_payments(db, user, invoice_id)
+
+
+@router.get("/{invoice_id}/pdf")
+async def get_invoice_pdf(
+    invoice_id: UUID,
+    user: User = Depends(require_role(*_VIEW_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    pdf_bytes = await controller.get_invoice_pdf(db, user, invoice_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="invoice-{str(invoice_id)[:8]}.pdf"'},
+    )
+
+
+@router.post("/{invoice_id}/checkout-session")
+async def create_checkout_session(
+    invoice_id: UUID,
+    user: User = Depends(require_role(*_MANAGE_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.create_checkout_session(db, user, invoice_id)
+
+
+@router.post("/{invoice_id}/checkout-session/{session_id}/confirm", response_model=InvoiceResponse)
+async def confirm_checkout_session(
+    invoice_id: UUID,
+    session_id: str,
+    user: User = Depends(require_role(*_MANAGE_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.confirm_checkout_session(db, user, invoice_id, session_id)

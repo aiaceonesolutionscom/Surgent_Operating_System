@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { KpiCard } from "../components/KpiCard";
+import { useUser } from "@clerk/clerk-react";
 import { usePlan } from "../plan/PlanContext";
 import {
   getMyDoctor,
@@ -29,6 +30,7 @@ import { DASHBOARD_ROUTES } from "../constants/routes";
 import { TodayAgenda } from "./TodayAgenda";
 import { PatientQuickSearch } from "./PatientQuickSearch";
 import { AttendanceCalendar } from "../attendance/AttendanceCalendar";
+import { useSurgeries } from "../surgery/useSurgeries";
 
 function isToday(iso: string) {
   const d = new Date(iso);
@@ -46,6 +48,8 @@ function isSurgery(type: string) {
 
 export function DoctorOverviewPage() {
   const { authedFetch } = usePlan();
+  const { user } = useUser();
+  const clerkName = `${user?.firstName || ""} ${user?.lastName || ""}`.trim();
   const [doctorName, setDoctorName] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<AppointmentResponse[]>([]);
   const [today, setToday] = useState<DoctorTodayResponse | null>(null);
@@ -98,13 +102,24 @@ export function DoctorOverviewPage() {
     .sort((a, b) => +new Date(a.start_time) - +new Date(b.start_time))
     .slice(0, 5);
 
+  // "Meri Surgeries" — the doctor's own surgeries as surgeon (scope=mine).
+  const mySurgeries = useSurgeries(authedFetch, undefined, "mine");
+  const myUpcomingSurgeries = useMemo(
+    () =>
+      mySurgeries.surgeries
+        .filter((s) => s.status === "planned" && isUpcoming(s.scheduled_date))
+        .sort((a, b) => +new Date(a.scheduled_date) - +new Date(b.scheduled_date))
+        .slice(0, 5),
+    [mySurgeries.surgeries]
+  );
+
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-500">My day</p>
           <h1 className="mt-2 font-display text-[28px] font-600 tracking-tight text-ink sm:text-[32px]">
-            {doctorName ? `Good morning, ${doctorName}` : "Good morning"}
+            {doctorName ? `Welcome doctor ${doctorName}` : clerkName ? `Welcome, ${clerkName}` : "Welcome"}
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">
             {new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
@@ -163,6 +178,37 @@ export function DoctorOverviewPage() {
       <div className="mt-6">
         <AttendanceCalendar />
       </div>
+
+      {myUpcomingSurgeries.length > 0 &&
+      <div className="mt-6 rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
+          <div className="flex items-center justify-between border-b border-sand-100 px-5 py-4">
+            <p className="text-sm font-bold text-ink">Meri Surgeries</p>
+            <Link to={DASHBOARD_ROUTES.surgeries} className="text-xs font-semibold text-teal-600 hover:underline">
+              All surgeries
+            </Link>
+          </div>
+          <div className="divide-y divide-sand-100">
+            {myUpcomingSurgeries.map((s) =>
+          <Link
+            key={s.id}
+            to={DASHBOARD_ROUTES.surgeryDetail(s.id)}
+            className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-sand-50">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-600/8 text-teal-600">
+                <ScissorsIcon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-ink">{s.procedure_name || "Surgery"} — {s.patient_name || "Patient"}</p>
+                <p className="truncate text-xs text-ink-muted">
+                  {new Date(s.scheduled_date).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  {" · "}{s.assistant_doctor_name ? `+ ${s.assistant_doctor_name}` : "No assistant"}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-accent-500/10 px-2.5 py-1 text-[11px] font-semibold capitalize text-accent-700">{s.status}</span>
+            </Link>
+        )}
+          </div>
+        </div>
+      }
 
       {upcoming.length > 0 && !isToday(upcoming[0].start_time) &&
       <div className="mt-6 rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">

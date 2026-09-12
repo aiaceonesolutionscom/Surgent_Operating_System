@@ -67,7 +67,9 @@ export function MessagesBell() {
         <p className="px-4 py-6 text-center text-sm text-ink-muted">No staff yet — invite a doctor or receptionist to start messaging.</p> :
 
         <div className="max-h-80 divide-y divide-sand-100 overflow-y-auto">
-              {threads.map((t) =>
+              {threads.map((t) => {
+          const name = t.recipient_name || t.recipient_email || "Unnamed";
+          return (
           <button
             key={t.conversation_id}
             type="button"
@@ -77,11 +79,11 @@ export function MessagesBell() {
             }}
             className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-sand-50">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sand-200 text-xs font-bold text-ink-soft">
-                    {(t.recipient_name || "?")[0]?.toUpperCase()}
+                    {name[0]?.toUpperCase()}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
-                      <span className="truncate text-sm font-semibold text-ink">{t.recipient_name || "Unnamed"}</span>
+                      <span className="truncate text-sm font-semibold text-ink">{name}</span>
                       <span className="shrink-0 rounded-full bg-sand-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-ink-muted">{t.recipient_role}</span>
                     </span>
                     <span className="block truncate text-xs text-ink-muted">{t.last_message_preview || "No messages yet"}</span>
@@ -89,8 +91,8 @@ export function MessagesBell() {
                   {t.last_message_at &&
             <span className="shrink-0 text-[10px] text-ink-muted">{formatTime(t.last_message_at)}</span>
             }
-                </button>
-          )}
+                </button>);
+          })}
             </div>
         }
 

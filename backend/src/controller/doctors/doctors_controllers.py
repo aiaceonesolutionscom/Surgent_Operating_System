@@ -7,6 +7,7 @@ from src.models.user import User
 from src.schemas.doctor import (
     CreateDoctorRequest,
     UpdateDoctorRequest,
+    UpdateMyDoctorRequest,
     DoctorResponse,
     CreateDoctorProcedureRequest,
     UpdateDoctorProcedureRequest,
@@ -17,11 +18,13 @@ from src.schemas.doctor import (
     CreateDoctorTimeBlockRequest,
     DoctorTimeBlockResponse,
 )
+from src.schemas.availability import DoctorSlotsResponse
 from src.services.doctors.doctors_services import DoctorsService
 from src.services.doctors.doctor_procedures_services import DoctorProceduresService
 from src.services.doctors.doctor_availability_services import DoctorAvailabilityService
 from src.services.doctors.doctor_dashboard_services import DoctorDashboardService
 from src.services.doctors.doctor_time_block_services import DoctorTimeBlockService
+from src.services.availability.availability_services import AvailabilitySlotService
 
 
 class DoctorsController:
@@ -31,6 +34,7 @@ class DoctorsController:
         self.availability = DoctorAvailabilityService()
         self.dashboard = DoctorDashboardService()
         self.time_blocks = DoctorTimeBlockService()
+        self.slots = AvailabilitySlotService()
 
     async def create_doctor(self, db: AsyncSession, user: User, data: CreateDoctorRequest) -> DoctorResponse:
         doctor = await self.service.create_doctor(db, user.practice_id, data)
@@ -51,6 +55,10 @@ class DoctorsController:
     async def get_my_today(self, db: AsyncSession, user: User) -> DoctorTodayResponse:
         snapshot = await self.dashboard.get_today_snapshot(db, user.practice_id, user.id)
         return DoctorTodayResponse(**snapshot)
+
+    async def update_my_doctor(self, db: AsyncSession, user: User, data: UpdateMyDoctorRequest) -> DoctorResponse:
+        doctor = await self.service.update_my_doctor(db, user.practice_id, user.id, data)
+        return DoctorResponse.model_validate(doctor)
 
     async def update_doctor(
         self, db: AsyncSession, user: User, doctor_id: UUID, data: UpdateDoctorRequest
@@ -104,3 +112,27 @@ class DoctorsController:
 
     async def delete_my_time_block(self, db: AsyncSession, user: User, block_id: UUID) -> None:
         await self.time_blocks.delete_block(db, user.practice_id, user.id, block_id)
+
+    # --- Bookable time slots ---
+
+    async def get_my_slots(
+        self,
+        db: AsyncSession,
+        user: User,
+        date,
+        days: int,
+        duration_minutes: int,
+    ) -> list[DoctorSlotsResponse]:
+        doctor = await self.service.get_my_doctor(db, user.practice_id, user.id)
+        return await self.slots.get_slots(db, user.practice_id, doctor.id, date, days, duration_minutes)
+
+    async def get_doctor_slots(
+        self,
+        db: AsyncSession,
+        user: User,
+        doctor_id: UUID,
+        date,
+        days: int,
+        duration_minutes: int,
+    ) -> list[DoctorSlotsResponse]:
+        return await self.slots.get_slots(db, user.practice_id, doctor_id, date, days, duration_minutes)

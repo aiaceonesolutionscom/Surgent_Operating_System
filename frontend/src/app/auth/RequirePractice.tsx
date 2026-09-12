@@ -4,7 +4,7 @@ import { SparklesIcon } from "lucide-react";
 import { readPlanOverride } from "../dashboard/plan/plan";
 import { useAuthedFetch } from "../../api/authFetch";
 import { getMyPractice } from "../../api/practice";
-import { getMyApplication } from "../../api/entities";
+import { getMyApplication, getMyStaffApplication, getMyOrgRequest } from "../../api/entities";
 
 const clerkEnabled = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 
@@ -24,7 +24,7 @@ export function RequirePractice({ children }: { children: React.ReactNode }) {
   return <RealPracticeGate>{children}</RealPracticeGate>;
 }
 
-type CheckState = "loading" | "ok" | "pending-doctor" | "no-practice";
+type CheckState = "loading" | "ok" | "pending-doctor" | "pending-staff" | "org-request" | "no-practice";
 
 function RealPracticeGate({ children }: { children: React.ReactNode }) {
   const { authedFetch, isSignedIn, isLoaded } = useAuthedFetch();
@@ -55,6 +55,20 @@ function RealPracticeGate({ children }: { children: React.ReactNode }) {
       try {
         const application = await getMyApplication(authedFetch);
         if (!cancelled) setState(application.status === "pending" ? "pending-doctor" : "no-practice");
+        return;
+      } catch {
+        // no doctor application — check the receptionist path before giving up
+      }
+      try {
+        const staffApplication = await getMyStaffApplication(authedFetch);
+        if (!cancelled) setState(staffApplication.status === "pending" ? "pending-staff" : "no-practice");
+        return;
+      } catch {
+        // no staff application — check the org-request path before giving up
+      }
+      try {
+        await getMyOrgRequest(authedFetch);
+        if (!cancelled) setState("org-request");
       } catch {
         if (!cancelled) setState(readPlanOverride() ? "ok" : "no-practice");
       }
@@ -67,6 +81,8 @@ function RealPracticeGate({ children }: { children: React.ReactNode }) {
   if (state === "loading") return null;
   if (state === "ok") return <>{children}</>;
   if (state === "pending-doctor") return <Navigate to="/doctor/apply/pending" replace />;
+  if (state === "pending-staff") return <Navigate to="/staff/apply/pending" replace />;
+  if (state === "org-request") return <Navigate to="/org/apply" replace />;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-6">

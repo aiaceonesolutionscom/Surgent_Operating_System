@@ -10,6 +10,7 @@ from src.models.staff_message import StaffConversation, StaffMessage
 from src.models.user import User
 from src.schemas.staff_message import StaffContactResponse, StaffConversationResponse
 from src.server.exceptions import NotFoundException, ForbiddenException
+from src.services.cloudinary.cloudinary_service import CloudinaryService
 
 
 class StaffMessageService:
@@ -18,6 +19,9 @@ class StaffMessageService:
     team — owner, doctor, receptionist — can message anyone else. Every
     method is practice-scoped; participants are the only people who can read
     or write a conversation."""
+
+    def __init__(self):
+        self.cloudinary = CloudinaryService()
 
     async def _resolve_user(self, db: AsyncSession, practice_id: UUID, user_id: UUID) -> User:
         result = await db.execute(
@@ -67,6 +71,7 @@ class StaffMessageService:
     ) -> list[StaffConversationResponse]:
         result = await db.execute(
             select(StaffConversation).where(
+                StaffConversation.practice_id == practice_id,
                 or_(
                     StaffConversation.user_a_id == user.id,
                     StaffConversation.user_b_id == user.id,
@@ -83,19 +88,19 @@ class StaffMessageService:
             participant_ids.add(c.user_a_id)
             participant_ids.add(c.user_b_id)
 
-        users_result = await db.execute(select(User).where(User.id.in_(participant_ids)))
+        users_result = await db.execute(select(User).where(User.id.in_(participant_ids), User.practice_id == practice_id))
         users = {u.id: u for u in users_result.scalars().all()}
 
         counts_result = await db.execute(
             select(StaffMessage.conversation_id, func.count())
-            .where(StaffMessage.conversation_id.in_(ids))
+            .where(StaffMessage.conversation_id.in_(ids), StaffMessage.practice_id == practice_id)
             .group_by(StaffMessage.conversation_id)
         )
         counts = dict(counts_result.all())
 
         last_result = await db.execute(
             select(StaffMessage)
-            .where(StaffMessage.conversation_id.in_(ids))
+            .where(StaffMessage.conversation_id.in_(ids), StaffMessage.practice_id == practice_id)
             .order_by(StaffMessage.created_at.desc())
         )
         last_by_conversation: dict[UUID, StaffMessage] = {}
@@ -113,6 +118,7 @@ class StaffMessageService:
                     conversation_id=c.id,
                     recipient_id=other_id,
                     recipient_name=(other.name if other else None),
+                    recipient_email=(other.email if other else ""),
                     recipient_role=(other.role.value if other else "staff"),
                     last_message_preview=(last.body[:120] if last else None),
                     last_message_at=(last.created_at if last else None),
@@ -188,6 +194,7 @@ class StaffMessageService:
             conversation_id=conversation.id,
             recipient_id=recipient.id,
             recipient_name=recipient.name,
+            recipient_email=recipient.email,
             recipient_role=recipient.role.value,
             last_message_preview=(last.body[:120] if last else None),
             last_message_at=(last.created_at if last else None),
@@ -200,6 +207,53 @@ class StaffMessageService:
         conversation = await self._get_participant_conversation(db, practice_id, user, conversation_id)
 
         message = StaffMessage(practice_id=practice_id, conversation_id=conversation.id, sender_id=user.id, body=body)
+        db.add(message)
+        await db.flush()
+        await db.refresh(message)
+        message.sender_name = user.name
+        message.sender_role = user.role.value
+        message.mine = True
+        return message
+
+    async def send_file(
+        self,
+        db: AsyncSession,
+        practice_id: UUID,
+        user: User,
+        conversation_id: UUID,
+        file_bytes: bytes,
+        filename: str,
+        content_type: str,
+    ) -> StaffMessage:
+        conversation = await self._get_participant_conversation(db, practice_id, user, conversation_id)
+
+        # Determine Cloudinary resource type
+        if content_type.startswith("image/"):
+            resource_type = "image"
+        elif content_type.startswith("video/"):
+            resource_type = "video"
+        elif content_type.startswith("audio/"):
+            resource_type = "video"
+        else:
+            resource_type = "raw"
+
+        upload_result = await self.cloudinary.upload_from_bytes(
+            file_bytes, filename, folder="staff_messages", resource_type=resource_type
+        )
+
+        extra_data = {"url": upload_result["url"], "filename": filename, "mime_type": content_type}
+
+        # Body shown in conversation preview
+        body = f"📎 {filename}"
+
+        message = StaffMessage(
+            practice_id=practice_id,
+            conversation_id=conversation.id,
+            sender_id=user.id,
+            body=body,
+            content_type=content_type if content_type.startswith(("image/", "video/", "audio/")) else "file",
+            extra_data=extra_data,
+        )
         db.add(message)
         await db.flush()
         await db.refresh(message)

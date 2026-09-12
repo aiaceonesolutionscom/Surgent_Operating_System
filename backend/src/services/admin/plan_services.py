@@ -21,10 +21,17 @@ from src.services.practice.plan_capabilities import (
 
 
 class PlanService:
+    @staticmethod
+    def _normalize(tier: SubscriptionTier) -> SubscriptionTier:
+        # Solo was retired (migration b1a2c3d4e5f6): every solo subscription
+        # became practice. A stale solo tier must resolve to the Practice plan,
+        # NOT the deactivated SOLO Plan row still in the table.
+        return SubscriptionTier.PRACTICE if tier == SubscriptionTier.SOLO else tier
+
     async def get_plan_by_tier(self, db: AsyncSession, tier: SubscriptionTier | str) -> Plan | None:
         if isinstance(tier, str):
             tier = SubscriptionTier(tier)
-        result = await db.execute(select(Plan).where(Plan.tier == tier))
+        result = await db.execute(select(Plan).where(Plan.tier == self._normalize(tier)))
         return result.scalar_one_or_none()
 
     async def list_plans(self, db: AsyncSession, include_inactive: bool = True) -> list[Plan]:
@@ -62,7 +69,7 @@ class PlanService:
         plan = await self.get_plan_by_tier(db, tier)
         if plan is not None:
             return plan.agent_categories
-        return TIER_CATEGORIES.get(tier, TIER_CATEGORIES[SubscriptionTier.SOLO])
+        return TIER_CATEGORIES.get(tier, TIER_CATEGORIES[SubscriptionTier.PRACTICE])
 
     async def allowed_agent_slugs(self, db: AsyncSession, tier: SubscriptionTier) -> set[str]:
         categories = await self.allowed_categories(db, tier)
@@ -88,4 +95,4 @@ class PlanService:
                 "max_social_channels": plan.max_social_channels if plan.max_social_channels is not None else float("inf"),
                 "max_locations": plan.max_locations if plan.max_locations is not None else float("inf"),
             }
-        return TIER_LIMITS.get(tier, TIER_LIMITS[SubscriptionTier.SOLO])
+        return TIER_LIMITS.get(tier, TIER_LIMITS[SubscriptionTier.PRACTICE])

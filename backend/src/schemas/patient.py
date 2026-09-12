@@ -9,7 +9,9 @@ class CreatePatientRequest(BaseModel):
     last_name: str
     email: str | None = None
     phone: str | None = None
+    additional_phones: list[dict] | None = None
     date_of_birth: date | None = None
+    gender: str | None = None
     chief_complaint: str | None = None
     needs_surgery: bool = False
     # Set by the frontend's classifyPatient() before the request is sent —
@@ -23,6 +25,11 @@ class CreatePatientRequest(BaseModel):
 # here is optional to fill in over time, not required at intake.
 class PatientProfileFields(BaseModel):
     gender: str | None = None
+    # A patient can have more than one reachable number — list of
+    # {number, label} (e.g. {"number": "+1...", "label": "Home"}). The
+    # primary `phone` field above/below stays the main one (used for portal
+    # OTP delivery, WhatsApp receipts); this is the extras.
+    additional_phones: list[dict] | None = None
     emergency_contact_name: str | None = None
     emergency_contact_phone: str | None = None
     allergies: list[dict] | None = None
@@ -87,6 +94,7 @@ class PatientResponse(BaseModel):
     last_name: str
     email: str | None
     phone: str | None
+    additional_phones: list[dict] = []
     date_of_birth: date | None
     chief_complaint: str | None
     needs_surgery: bool

@@ -14,4 +14,26 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // Split heavy vendor libraries into their own chunks so the browser
+    // caches them independently from app code (version bumps don't bust
+    // the vendor cache).
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React core — rarely changes, max cache benefit
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          // Clerk auth — heavy (~80-100 KB gz), only needed on auth/dashboard
+          "vendor-clerk": ["@clerk/clerk-react"],
+          // framer-motion — heavy animation lib (~42-60 KB gz)
+          "vendor-framer": ["framer-motion"],
+          // OGL — WebGL library (~60 KB gz), only used on landing page
+          "vendor-ogl": ["ogl"],
+        },
+      },
+    },
+    // esbuild is the default Vite minifier — much faster than terser
+    target: "es2020",
+    minify: "esbuild",
+  },
 })

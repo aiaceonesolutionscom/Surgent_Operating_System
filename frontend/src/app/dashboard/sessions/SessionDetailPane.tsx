@@ -1,10 +1,13 @@
-import React, { useState } from "react";
+import React from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2Icon, RefreshCwIcon, SendIcon, SparklesIcon, PauseIcon, PlayIcon } from "lucide-react";
+import { CheckCircle2Icon, DownloadIcon, FileTextIcon, PlayIcon, PauseIcon } from "lucide-react";
 import type { Session } from "./types";
+import type { SessionMessage } from "./types";
 import { ChannelIcon } from "./ChannelIcon";
 import { CHANNELS } from "../data/channels";
 import { DASHBOARD_ROUTES } from "../constants/routes";
+import { MessageInput } from "./MessageInput";
+import { Toggle } from "../components/Toggle";
 
 const STATUS_LABEL: Record<Session["status"], string> = {
   active: "Active",
@@ -18,56 +21,126 @@ const STATUS_CLASS: Record<Session["status"], string> = {
   resolved: "bg-success/10 text-success"
 };
 
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+function AudioPlayer({ url }: { url: string }) {
+  const [playing, setPlaying] = React.useState(false);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
+
+  const toggle = () => {
+    if (!audioRef.current) return;
+    if (playing) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setPlaying(!playing);
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={toggle}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/30"
+      >
+        {playing ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
+      </button>
+      <audio ref={audioRef} src={url} onEnded={() => setPlaying(false)} className="hidden" />
+      <div className="h-1 w-24 rounded-full bg-white/30">
+        <div className="h-full w-0 rounded-full bg-white transition-all" />
+      </div>
+    </div>
+  );
 }
 
-interface SessionDetailPaneProps {
+function MessageContent({ message }: { message: SessionMessage }) {
+  const { contentType, extraData, text } = message;
+
+  if (contentType === "audio" && extraData?.audio_url) {
+    return (
+      <div className="space-y-1">
+        <p className="text-xs opacity-70">Voice message</p>
+        <AudioPlayer url={extraData.audio_url as string} />
+        {extraData.transcription ? (
+          <p className="mt-1 text-xs opacity-70 italic">"{String(extraData.transcription)}"</p>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (contentType === "image" && extraData?.image_url) {
+    return (
+      <div className="space-y-1">
+        <img
+          src={extraData.image_url as string}
+          alt="Shared image"
+          className="max-h-48 rounded-lg object-cover"
+          loading="lazy"
+        />
+        {text && text !== "[Image]" && <p className="text-sm">{text}</p>}
+      </div>
+    );
+  }
+
+  if (contentType === "file" && extraData?.file_url) {
+    return (
+      <a
+        href={extraData.file_url as string}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2 underline-offset-2 hover:underline"
+      >
+        <FileTextIcon className="h-4 w-4 shrink-0" />
+        <span className="text-sm">{(extraData.filename as string) || "Download file"}</span>
+        <DownloadIcon className="h-3 w-3 shrink-0 opacity-60" />
+      </a>
+    );
+  }
+
+  if (contentType === "video" && extraData?.video_url) {
+    return (
+      <div className="space-y-1">
+        <video
+          src={extraData.video_url as string}
+          controls
+          className="max-h-48 rounded-lg"
+        />
+        {text && text !== "[Video]" && <p className="text-sm">{text}</p>}
+      </div>
+    );
+  }
+
+  return <>{text}</>;
+}
+
+const SELF_ROLES: Array<SessionMessage["from"]> = ["agent", "staff", "system"];
+
+export function SessionDetailPane({
+  session,
+  onResolve,
+  onSendMessage,
+  onToggleAi,
+}: {
   session: Session;
   onResolve?: (sessionId: string) => void;
   onSendMessage?: (sessionId: string, body: string) => Promise<void>;
+  // Accepted for interface-compatibility with SessionsView's callbacks. For
+  // WhatsApp sessions it powers the per-conversation "AI replying" toggle
+  // (the AI Receptionist pauses auto-reply once a human replies — this is
+  // how staff hand control back, and is the manual half of the AI-pause
+  // mechanism in ConversationsService). Portal/other channels have no AI
+  // auto-reply to pause, so the toggle is hidden there.
   onToggleAi?: (sessionId: string, paused: boolean) => Promise<void>;
-}
-
-export function SessionDetailPane({ session, onResolve, onSendMessage, onToggleAi }: SessionDetailPaneProps) {
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-  const [togglingAi, setTogglingAi] = useState(false);
-  const canReply = session.channel === "whatsapp" && !!onSendMessage;
-
-  async function handleSend(e: React.FormEvent) {
-    e.preventDefault();
-    if (!draft.trim() || !onSendMessage) return;
-    setSending(true);
-    try {
-      await onSendMessage(session.id, draft.trim());
-      setDraft("");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  async function handleToggleAi() {
-    if (!onToggleAi) return;
-    setTogglingAi(true);
-    try {
-      await onToggleAi(session.id, !session.aiPaused);
-    } finally {
-      setTogglingAi(false);
-    }
-  }
-
+}) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-sand-200 px-6 py-4">
         <Link to={DASHBOARD_ROUTES.patientDetail(session.patientId)} className="group flex items-center gap-3">
-          {session.avatarUrl ?
-          <img src={session.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" /> :
-
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-sand-200 text-sm font-bold text-ink-soft">
+          {session.avatarUrl ? (
+            <img src={session.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
+          ) : (
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-sand-200 text-sm font-bold text-ink-soft">
               {session.patientInitial}
             </span>
-          }
+          )}
           <div>
             <p className="text-sm font-bold text-ink group-hover:text-teal-600">{session.patientName}</p>
             <div className="flex items-center gap-1.5">
@@ -78,88 +151,55 @@ export function SessionDetailPane({ session, onResolve, onSendMessage, onToggleA
             </div>
           </div>
         </Link>
+        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_CLASS[session.status]}`}>
+          {STATUS_LABEL[session.status]}
+        </span>
+        {session.channel === "whatsapp" && onToggleAi &&
         <div className="flex items-center gap-2">
-          {canReply && onToggleAi &&
-          <button
-            type="button"
-            onClick={handleToggleAi}
-            disabled={togglingAi}
-            title={session.aiPaused ? "Resume AI auto-reply" : "Pause AI and take over"}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
-            session.aiPaused ? "bg-warning/10 text-warning hover:bg-warning/15" : "bg-teal-600/10 text-teal-600 hover:bg-teal-600/15"}`
-            }>
-              {session.aiPaused ? <PlayIcon className="h-3 w-3" /> : <PauseIcon className="h-3 w-3" />}
-              {session.aiPaused ? "AI paused" : "AI replying"}
-            </button>
-          }
-          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_CLASS[session.status]}`}>
-            {STATUS_LABEL[session.status]}
-          </span>
-        </div>
+            <span className={`text-xs font-semibold ${session.aiPaused ? "text-ink-muted" : "text-success"}`}>
+              AI replying
+            </span>
+            <Toggle
+              checked={!session.aiPaused}
+              onChange={(on) => onToggleAi(session.id, !on)}
+              label="AI replying"
+            />
+          </div>
+        }
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
-        {session.messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <RefreshCwIcon className="h-5 w-5 text-ink-muted mb-2 animate-spin" />
-            <p className="text-sm text-ink-muted">Loading messages...</p>
-          </div>
-        ) : (
-          session.messages.map((m) =>
-            m.from === "system" ? (
-              <div key={m.id} className="flex items-center justify-center gap-2 text-xs font-medium text-ink-muted">
-                <CheckCircle2Icon className="h-3.5 w-3.5" />
-                {m.text}
-              </div>
-            ) : (
-              <div key={m.id} className={`flex flex-col ${m.from === "patient" ? "items-start" : "items-end"}`}>
-                <div
-                  className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                  m.from === "agent" ? "bg-teal-600 text-white" :
-                  m.from === "staff" ? "bg-accent-500 text-white" :
-                  "bg-sand-100 text-ink"}`
-                  }>
+        {session.messages.map((m) =>
+        m.from === "system" ?
+        <div key={m.id} className="flex items-center justify-center gap-2 text-xs font-medium text-ink-muted">
+              <CheckCircle2Icon className="h-3.5 w-3.5" />
+              {m.text}
+            </div> :
 
-                  {m.text}
-                </div>
-                <div className="mt-1 flex items-center gap-1.5 px-1 text-[10px] text-ink-muted">
-                  {m.from === "agent" && <SparklesIcon className="h-2.5 w-2.5" />}
-                  {m.from === "agent" ? "AI Receptionist" : m.from === "staff" ? "You" : session.patientName}
-                  {" · "}{formatTime(m.at)}
-                </div>
+        <div key={m.id} className={`flex ${SELF_ROLES.includes(m.from) ? "justify-end" : "justify-start"}`}>
+              <div
+            className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+            SELF_ROLES.includes(m.from) ? "bg-teal-600 text-white" : "bg-sand-100 text-ink"}`
+            }>
+
+                <MessageContent message={m} />
               </div>
-            )
-          )
+            </div>
+
         )}
       </div>
 
-      {canReply &&
-      <form onSubmit={handleSend} className="flex items-center gap-2.5 border-t border-sand-200 px-4 py-3.5">
-          <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Reply over WhatsApp…"
-          className="flex-1 rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
-
-          <button
-          type="submit"
-          disabled={sending || !draft.trim()}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40">
-
-            <SendIcon className="h-4 w-4" />
-          </button>
-        </form>
-      }
-
-      {session.status === "needs_attention" && onResolve && (
-        <div className="border-t border-sand-200 px-6 py-4">
+      {session.status === "needs_attention" && onResolve &&
+      <div className="border-b border-sand-200 px-6 py-3">
           <button
             onClick={() => onResolve(session.id)}
-            className="w-full rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700">
-            Mark as resolved
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700">
+            <CheckCircle2Icon className="h-4 w-4" /> Mark as resolved
           </button>
         </div>
-      )}
-    </div>
-  );
+      }
+
+      {onSendMessage && <MessageInput onSendText={(text) => onSendMessage(session.id, text)} />}
+    </div>);
+
 }

@@ -10,6 +10,7 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     content_type: str
+    extra_data: dict = {}
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -47,10 +48,18 @@ class ConversationListItem(BaseModel):
     # hasn't been fetched yet.
     avatar_url: str | None = None
     # True once a staff member has sent a manual reply in this conversation —
-    # the AI Receptionist stops auto-replying until a staff member (or the
+    # the AI Receptionist stops auto-replaying until a staff member (or the
     # patient re-engaging) explicitly resumes it, so a human and the AI never
     # talk over each other. See services/conversations/conversations_services.py.
     ai_paused: bool = False
+    # Set when the AI Receptionist books an appointment mid-conversation —
+    # lets the dashboard badge a conversation as "just booked" without
+    # reading the transcript.
+    ai_booked_appointment_id: UUID | None = None
+    # Whether the requesting user may reply to this conversation. False for
+    # the Owner on portal Patient Messages (read-only); a Doctor/Receptionist
+    # can always reply. The general Agent Sessions inbox leaves this True.
+    can_reply: bool = True
 
 
 class ConversationDetail(ConversationListItem):

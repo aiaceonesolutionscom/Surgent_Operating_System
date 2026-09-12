@@ -26,7 +26,7 @@ export function ClaimPlanPage() {
 function ClaimWithoutClerk() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const planTier = (params.get("plan_tier") as PlanTier) || "solo";
+  const planTier = (params.get("plan_tier") as PlanTier) || "practice";
 
   useEffect(() => {
     writePlanOverride(planTier);
@@ -45,7 +45,7 @@ function ClaimWithClerk() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { authedFetch, isSignedIn } = useAuthedFetch();
-  const planTier = (params.get("plan_tier") as PlanTier) || "solo";
+  const planTier = (params.get("plan_tier") as PlanTier) || "practice";
   const sessionId = params.get("session_id") || "";
   const [attempted, setAttempted] = useState(false);
 

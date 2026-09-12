@@ -21,10 +21,7 @@ export function SessionListItem({
   session,
   active,
   onClick
-
-
-
-}: {session: Session;active: boolean;onClick: () => void;}) {
+}: { session: Session; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -50,6 +47,11 @@ export function SessionListItem({
         <span className="mt-0.5 flex items-center gap-1.5">
           <ChannelIcon channel={session.channel} size={10} />
           <span className="text-xs text-ink-muted">{session.agentName}</span>
+{session.aiBookedAppointmentId &&
+  <span className="inline-flex items-center gap-0.5 rounded-full bg-teal-600/10 px-1.5 py-0.5 text-[10px] font-semibold text-teal-600">
+    Booked
+  </span>
+}
         </span>
         <span className="mt-1 block truncate text-xs text-ink-muted">{session.lastMessagePreview}</span>
       </span>

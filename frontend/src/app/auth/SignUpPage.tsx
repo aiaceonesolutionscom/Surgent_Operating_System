@@ -30,6 +30,13 @@ export function SignUpPage() {
         routing="path"
         path="/sign-up"
         signInUrl="/sign-in"
+        // Deterministically marks this as a genuinely new organization
+        // request (mirrors DoctorApplyPage/StaffApplyPage's own
+        // unsafeMetadata pattern) — the user.created webhook reads this to
+        // file a PendingSignup for Super Admin review instead of granting
+        // any practice access. See webhook_router.py's user.created handler
+        // and org_request_service.py.
+        unsafeMetadata={{ invite_type: "org_request" }}
         appearance={clerkAppearance} /> :
 
       <ClerkNotConfigured />

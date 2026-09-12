@@ -41,3 +41,14 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
   return res.json() as Promise<T>;
 }
+
+// For endpoints that return a real file (invoice PDFs, etc.) rather than
+// JSON — apiFetch() above always calls res.json(), which would throw on a
+// binary body.
+export async function apiFetchBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const res = await fetch(`${BASE_URL}${path}`, init);
+  if (!res.ok) {
+    throw new ApiError(res.status, `${init?.method || "GET"} ${path} failed with ${res.status}`);
+  }
+  return res.blob();
+}

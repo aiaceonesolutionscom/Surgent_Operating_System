@@ -29,6 +29,11 @@ body {
   background-color: #0E7C7B;
   color: #ffffff;
 }
+/* Loading spinner animation for lazy-loaded routes */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* subtle scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: #F0EDE7; }

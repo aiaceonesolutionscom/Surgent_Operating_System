@@ -10,34 +10,23 @@ export interface Plan {
   features: string[];
 }
 
+// Two plans today — Practice $999/mo (unicorn, fully configured) and Enterprise
+// (custom-priced, multi-location). The old "Solo $690" plan was removed; any
+// stale solo tier normalizes to practice (data/planTiers.ts).
 export const PLANS: Plan[] = [
-{
-  id: "solo",
-  name: "Solo",
-  tagline: "For single-surgeon practices",
-  price: "$690",
-  period: "/mo",
-  highlight: false,
-  features: [
-  "Front desk & intake agents",
-  "Booking, reminders & rescheduling",
-  "1 connected social channel",
-  "Multilingual support",
-  "Email support"]
-
-},
 {
   id: "practice",
   name: "Practice",
-  tagline: "For growing multi-surgeon clinics",
-  price: "$1,690",
+  tagline: "The whole AI front office for a growing clinic",
+  price: "$999",
   period: "/mo",
   highlight: true,
   features: [
-  "Everything in Solo",
-  "Full consultation & surgery agents",
-  "Post-surgery care & recovery suite",
-  "All social channels connected",
+  "All 9 agents pre-configured",
+  "Front desk, consultation, recovery & retention agents",
+  "Finance agent — monthly revenue, outstanding and agent cost",
+  "WhatsApp, Instagram & website chat channels",
+  "Multilingual support",
   "Analytics dashboard",
   "Priority onboarding & support"]
 
@@ -51,7 +40,7 @@ export const PLANS: Plan[] = [
   highlight: false,
   features: [
   "Everything in Practice",
-  "All 31 agents, fully configured",
+  "Custom plan — priced for your operation",
   "Multi-location orchestration",
   "Custom integrations & EHR",
   "BAA & dedicated success manager"]

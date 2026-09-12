@@ -10,6 +10,7 @@ from src.models.surgery import Surgery, SurgeryStatus
 from src.models.patient import Patient
 from src.models.doctor import Doctor
 from src.models.procedure import Procedure
+from src.models.appointment import Appointment
 from src.server.exceptions import NotFoundException, AppException
 from src.services.inventory.inventory_services import InventoryService
 
@@ -62,6 +63,21 @@ class SurgeryService:
             if result.scalar_one_or_none() is None:
                 raise NotFoundException("Procedure not found")
 
+        # An appointment link must be real, practice-local, and for the same
+        # patient — you can't pin a surgery for Furqan onto Salma's check-up.
+        if scheduled_appointment_id is not None:
+            appointment_result = await db.execute(
+                select(Appointment).where(
+                    Appointment.id == scheduled_appointment_id,
+                    Appointment.practice_id == practice_id,
+                )
+            )
+            appointment = appointment_result.scalar_one_or_none()
+            if appointment is None:
+                raise NotFoundException("Appointment not found")
+            if appointment.patient_id != patient_id:
+                raise AppException("Appointment belongs to a different patient")
+
         surgery = Surgery(
             practice_id=practice_id,
             patient_id=patient_id,
@@ -99,6 +115,23 @@ class SurgeryService:
     async def list_for_practice(self, db: AsyncSession, practice_id: UUID) -> list[Surgery]:
         result = await db.execute(
             self._base_query().where(Surgery.practice_id == practice_id).order_by(Surgery.scheduled_date.desc())
+        )
+        return list(result.scalars().all())
+
+    async def list_for_doctor(self, db: AsyncSession, practice_id: UUID, user_id: UUID) -> list[Surgery]:
+        """The surgeries where the calling user's roster row is the surgeon —
+        a Doctor's own "Meri Surgeries" list. A doctor whose roster row is
+        missing (never approved / unlinked) simply has no surgeries."""
+        doctor_result = await db.execute(
+            select(Doctor).where(Doctor.practice_id == practice_id, Doctor.user_id == user_id)
+        )
+        doctor = doctor_result.scalar_one_or_none()
+        if doctor is None:
+            return []
+        result = await db.execute(
+            self._base_query()
+            .where(Surgery.practice_id == practice_id, Surgery.doctor_id == doctor.id)
+            .order_by(Surgery.scheduled_date.desc())
         )
         return list(result.scalars().all())
 

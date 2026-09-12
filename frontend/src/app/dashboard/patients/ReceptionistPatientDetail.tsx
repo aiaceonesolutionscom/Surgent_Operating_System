@@ -8,6 +8,7 @@ import { PatientTabShell, type PatientTab } from "./PatientTabShell";
 import { PatientOverviewTab } from "./PatientOverviewTab";
 import { PatientAppointmentsTab } from "./PatientAppointmentsTab";
 import { DoctorAssignmentControl } from "./DoctorAssignmentControl";
+import { ArchivePatientControl } from "./ArchivePatientControl";
 import { ConsentDocumentsList } from "../clinical/ConsentDocumentsList";
 import { InvoicesSection } from "../billing-invoices/InvoicesSection";
 import { usePlan } from "../plan/PlanContext";
@@ -75,6 +76,10 @@ export function ReceptionistPatientDetail({ patient: initialPatient }: { patient
           className="flex items-center gap-1.5 rounded-xl border border-sand-200 px-3.5 py-2 text-xs font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600 disabled:opacity-50">
           <SendIcon className="h-3.5 w-3.5" /> {patient.portalEnabled ? "Resend portal invite" : "Send portal invite"}
         </button>
+        <ArchivePatientControl
+          patientId={patient.id}
+          isArchived={!!patient.isArchived}
+          onChanged={(archived) => setPatient((p) => ({ ...p, isArchived: archived }))} />
       </PatientHeaderCard>
       {inviteStatus && <p className="-mt-4 mb-4 text-xs text-ink-muted">{inviteStatus}</p>}
 

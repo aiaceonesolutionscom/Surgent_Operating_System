@@ -9,9 +9,9 @@ class StorageService:
         self.backend = settings.storage_backend
         self.cloudinary = CloudinaryService()
 
-    async def upload(self, file_bytes: bytes, filename: str, folder: str = "uploads") -> dict:
+    async def upload(self, file_bytes: bytes, filename: str, folder: str = "uploads", resource_type: str = "image") -> dict:
         if self.backend == "cloudinary":
-            return await self.cloudinary.upload_from_bytes(file_bytes, filename, folder)
+            return await self.cloudinary.upload_from_bytes(file_bytes, filename, folder, resource_type)
         raise ValueError(f"Unsupported storage backend: {self.backend}")
 
     async def delete(self, public_id: str):

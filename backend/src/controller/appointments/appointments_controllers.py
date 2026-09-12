@@ -20,14 +20,21 @@ class AppointmentsController:
         self.service = AppointmentsService()
         self.agent_log = AgentLogService()
 
-    async def list_my_appointments(self, db: AsyncSession, user: User) -> list[AppointmentResponse]:
-        appointments = await self.service.list_for_doctor_user(db, user.practice_id, user.id)
+    async def list_my_appointments(
+        self, db: AsyncSession, user: User, patient_id: UUID | None = None
+    ) -> list[AppointmentResponse]:
+        appointments = await self.service.list_for_doctor_user(db, user.practice_id, user.id, patient_id)
         return [AppointmentResponse.model_validate(a) for a in appointments]
 
     async def list_practice_appointments(
-        self, db: AsyncSession, user: User, start: datetime | None, end: datetime | None
+        self,
+        db: AsyncSession,
+        user: User,
+        start: datetime | None,
+        end: datetime | None,
+        patient_id: UUID | None = None,
     ) -> list[AppointmentResponse]:
-        appointments = await self.service.list_for_practice(db, user.practice_id, start, end)
+        appointments = await self.service.list_for_practice(db, user.practice_id, start, end, patient_id)
         return [AppointmentResponse.model_validate(a) for a in appointments]
 
     async def create_appointment(self, db: AsyncSession, user: User, data: CreateAppointmentRequest) -> AppointmentResponse:

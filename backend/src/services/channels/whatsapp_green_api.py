@@ -44,6 +44,25 @@ class WhatsAppGreenAPI:
             )
             return resp.json()
 
+    async def send_file_by_url(self, phone_number: str, file_url: str, filename: str, caption: str | None = None) -> dict:
+        """Send a document (PDF receipt/invoice, etc.) by public URL —
+        Green API's sendFileByUrl, sibling to send_text above. The file has
+        to already be hosted somewhere Green API's servers can fetch it
+        (Cloudinary, via StorageService) — there's no raw-bytes upload
+        endpoint on the free/basic Green API tier."""
+        chat_id = f"{phone_number}@c.us" if "@c.us" not in phone_number else phone_number
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{self.base_url}/sendFileByUrl/{self.api_token}",
+                json={
+                    "chatId": chat_id,
+                    "urlFile": file_url,
+                    "fileName": filename,
+                    "caption": caption or "",
+                },
+            )
+            return resp.json()
+
     async def get_state(self) -> dict:
         """Check instance connection status (authorized / notAuthorized / etc.)."""
         async with httpx.AsyncClient(timeout=15) as client:

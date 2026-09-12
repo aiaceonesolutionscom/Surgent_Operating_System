@@ -23,20 +23,27 @@ import {
   MessageCircleIcon,
   UserIcon,
   SendIcon,
-  ArrowRightIcon
+  ArrowRightIcon,
+  XIcon,
+  EyeIcon,
+  EyeOffIcon
 } from "lucide-react";
 import { Logo } from "../../components/ui";
 import {
   portalRequestOtp,
   portalVerifyOtp,
+  portalLoginWithPin,
+  portalSetPin,
   getMyPortalData,
   portalBookAppointment,
   portalSubmitIntake,
   getMyPortalMessages,
   sendMyPortalMessage,
+  updateMyPortalProfile,
   type PortalPatientResponse,
   type PatientIntakeRequest,
-  type PortalMessage
+  type PortalMessage,
+  type PortalDoctorInfo
 } from "../../api/entities";
 
 type Tab = "overview" | "book" | "appointments" | "doctor" | "treatment" | "intake" | "photos" | "consent" | "invoices" | "messages" | "profile";
@@ -79,7 +86,7 @@ const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [
   {
     label: null,
     items: [
-      { tab: "messages", label: () => "Messages", icon: MessageCircleIcon },
+      { tab: "messages", label: (d) => (d.doctor ? `Message ${d.doctor.name}` : "Message my doctor"), icon: MessageCircleIcon },
       { tab: "profile", label: () => "Profile", icon: UserIcon }
     ]
   }
@@ -319,8 +326,8 @@ export function PortalPage() {
             {tab === "photos" && <PhotosTab photos={data.photos} />}
             {tab === "consent" && <ConsentTab documents={data.consent_documents} />}
             {tab === "invoices" && <InvoicesTab invoices={data.invoices} />}
-            {tab === "messages" && token && <MessagesSection token={token} />}
-            {tab === "profile" && <ProfileSection data={data} />}
+            {tab === "messages" && token && <MessagesSection token={token} doctor={data.doctor} />}
+            {tab === "profile" && token && <ProfileSection data={data} token={token} onSaved={(fresh) => setData(fresh)} />}
           </div>
         </div>
       }
@@ -328,16 +335,58 @@ export function PortalPage() {
 }
 
 function LoginForm({ error, onLoggedIn }: { error: string | null; onLoggedIn: (token: string) => void }) {
-  const [step, setStep] = useState<"phone" | "code">("phone");
+  const [step, setStep] = useState<"phone" | "pin" | "code" | "set-pin">("phone");
   const [phone, setPhone] = useState("");
+  const [pin, setPin] = useState("");
   const [code, setCode] = useState("");
   const [deliveredVia, setDeliveredVia] = useState<"whatsapp" | "email" | null>(null);
+  const [setupToken, setSetupToken] = useState<string | null>(null);
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [showPin, setShowPin] = useState(false);
+  const [showNewPin, setShowNewPin] = useState(false);
+  const [showConfirmPin, setShowConfirmPin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  function pinDigitsOk(value: string) {
+    return /^\d{4,6}$/.test(value);
+  }
 
   async function submitPhone(e: React.FormEvent) {
     e.preventDefault();
     if (!phone.trim()) return;
+    setFormError(null);
+    setStep("pin");
+  }
+
+  async function submitPin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pin.trim()) return;
+    setBusy(true);
+    setFormError(null);
+    try {
+      // The OTP-free login: phone + your own PIN (0 cost per login vs. a code
+      // being sent every time). First-timers and anyone who forgot their PIN
+      // use "Get a code" below — that's the one-time code that then sets a PIN.
+      const res = await portalLoginWithPin(phone.trim(), pin.trim());
+      if (res.requires_pin_setup) {
+        // A clinic-issued one-time PIN just proved ownership — this patient
+        // still hasn't set their own PIN, so force it now (same as the OTP
+        // first-login path) so daily logins stop needing a fresh PIN.
+        setSetupToken(res.access_token);
+        setStep("set-pin");
+        return;
+      }
+      onLoggedIn(res.access_token);
+    } catch (err: unknown) {
+      setFormError(err instanceof Error && err.message ? err.message : "That PIN didn't work — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startCode() {
     setBusy(true);
     setFormError(null);
     try {
@@ -362,9 +411,39 @@ function LoginForm({ error, onLoggedIn }: { error: string | null; onLoggedIn: (t
     setFormError(null);
     try {
       const res = await portalVerifyOtp(phone.trim(), code.trim());
+      if (res.requires_pin_setup) {
+        // First-time login: the code proves you own this phone, but no PIN is
+        // set yet — force it now so daily logins cost nothing from here on.
+        setSetupToken(res.access_token);
+        setStep("set-pin");
+        return;
+      }
       onLoggedIn(res.access_token);
     } catch (err: unknown) {
       setFormError(err instanceof Error && err.message ? err.message : "That code didn't work — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitSetPin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!setupToken) return;
+    if (!pinDigitsOk(newPin)) {
+      setFormError("Your PIN must be 4-6 digits.");
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setFormError("The two PINs don't match.");
+      return;
+    }
+    setBusy(true);
+    setFormError(null);
+    try {
+      await portalSetPin(setupToken, newPin.trim());
+      onLoggedIn(setupToken);
+    } catch (err: unknown) {
+      setFormError(err instanceof Error && err.message ? err.message : "Couldn't set your PIN — try again.");
     } finally {
       setBusy(false);
     }
@@ -379,7 +458,7 @@ function LoginForm({ error, onLoggedIn }: { error: string | null; onLoggedIn: (t
 
       {step === "phone" &&
       <>
-          <p className="mt-1 text-sm text-ink-muted">Enter your mobile number — we'll send you a verification code.</p>
+          <p className="mt-1 text-sm text-ink-muted">Enter your mobile number to log in.</p>
           <form onSubmit={submitPhone} className="mt-6 space-y-4">
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Mobile number</span>
@@ -397,10 +476,86 @@ function LoginForm({ error, onLoggedIn }: { error: string | null; onLoggedIn: (t
 
             <button
               type="submit"
-              disabled={busy || !phone.trim()}
+              disabled={!phone.trim()}
               className="w-full rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40">
-              {busy ? "Sending…" : "Continue"}
+              Continue
             </button>
+          </form>
+        </>
+      }
+
+      {step === "pin" &&
+      <>
+          <p className="mt-1 text-sm text-ink-muted">Enter your PIN to log in.</p>
+          <form onSubmit={submitPin} className="mt-6 space-y-4">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Phone</span>
+              <span className="relative block">
+                <input
+                  value={phone}
+                  readOnly
+                  className="w-full rounded-xl border border-sand-200 bg-sand-50 px-3.5 py-2.5 pr-20 text-sm text-ink-soft outline-none" />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => { setStep("phone"); setPin(""); setFormError(null); }}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs font-semibold text-teal-600 transition-colors hover:bg-teal-600/10">
+                  Change
+                </button>
+              </span>
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">PIN</span>
+              <span className="relative block">
+                <input
+                  required
+                  autoFocus
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={6}
+                  type={showPin ? "text" : "password"}
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  placeholder="••••••"
+                  className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 pr-10 text-center text-lg tracking-[0.5em] text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white" />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={showPin ? "Hide PIN" : "Show PIN"}
+                  onClick={() => setShowPin((v) => !v)}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-ink-muted transition-colors hover:text-teal-600">
+                  {showPin ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+                </button>
+              </span>
+              <span className="mt-1.5 block text-xs text-ink-muted">
+                Use the 6-digit PIN the clinic gave you — the AP-… reference ID isn't a PIN.
+              </span>
+            </label>
+
+            {(formError || error) && <p className="text-sm font-medium text-danger">{formError || error}</p>}
+
+            <button
+              type="submit"
+              disabled={busy || !pin.trim()}
+              className="w-full rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40">
+              {busy ? "Logging in…" : "Log in"}
+            </button>
+
+            <div className="space-y-2 text-center">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={startCode}
+                className="w-full text-xs font-medium text-teal-600 transition-colors hover:underline disabled:opacity-50">
+                First time, or forgot your PIN? Get a login code.
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStep("phone"); setPin(""); setFormError(null); }}
+                className="w-full text-center text-xs font-medium text-ink-muted transition-colors hover:text-teal-600">
+                Use a different number
+              </button>
+            </div>
           </form>
         </>
       }
@@ -434,9 +589,73 @@ function LoginForm({ error, onLoggedIn }: { error: string | null; onLoggedIn: (t
             </button>
             <button
               type="button"
-              onClick={() => { setStep("phone"); setCode(""); setFormError(null); }}
+              onClick={() => { setStep("phone"); setCode(""); setPin(""); setFormError(null); }}
               className="w-full text-center text-xs font-medium text-ink-muted transition-colors hover:text-teal-600">
               Use a different number
+            </button>
+          </form>
+        </>
+      }
+
+      {step === "set-pin" &&
+      <>
+          <p className="mt-1 text-sm text-ink-muted">
+            One last step: set a 4-6 digit PIN so you can log in quickly next time — no code needed.
+          </p>
+          <form onSubmit={submitSetPin} className="mt-6 space-y-4">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">New PIN</span>
+              <span className="relative block">
+                <input
+                  required
+                  autoFocus
+                  inputMode="numeric"
+                  maxLength={6}
+                  type={showNewPin ? "text" : "password"}
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value)}
+                  placeholder="••••••"
+                  className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 pr-10 text-center text-lg tracking-[0.5em] text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white" />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={showNewPin ? "Hide new PIN" : "Show new PIN"}
+                  onClick={() => setShowNewPin((v) => !v)}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-ink-muted transition-colors hover:text-teal-600">
+                  {showNewPin ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+                </button>
+              </span>
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Confirm PIN</span>
+              <span className="relative block">
+                <input
+                  required
+                  inputMode="numeric"
+                  maxLength={6}
+                  type={showConfirmPin ? "text" : "password"}
+                  value={confirmPin}
+                  onChange={(e) => setConfirmPin(e.target.value)}
+                  placeholder="••••••"
+                  className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 pr-10 text-center text-lg tracking-[0.5em] text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white" />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={showConfirmPin ? "Hide confirm PIN" : "Show confirm PIN"}
+                  onClick={() => setShowConfirmPin((v) => !v)}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-ink-muted transition-colors hover:text-teal-600">
+                  {showConfirmPin ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+                </button>
+              </span>
+            </label>
+
+            {(formError || error) && <p className="text-sm font-medium text-danger">{formError || error}</p>}
+
+            <button
+              type="submit"
+              disabled={busy || !newPin.trim() || !confirmPin.trim()}
+              className="w-full rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40">
+              {busy ? "Saving…" : "Set my PIN"}
             </button>
           </form>
         </>
@@ -827,7 +1046,7 @@ function OverviewSection({
             <CalendarPlusIcon className="h-4 w-4" /> Book appointment
           </button>
           <button type="button" onClick={() => onNavigate("messages")} className="flex items-center gap-1.5 rounded-xl border border-sand-200 px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">
-            <MessageCircleIcon className="h-4 w-4" /> Message clinic
+            <MessageCircleIcon className="h-4 w-4" /> {data.doctor ? `Message ${data.doctor.name}` : "Message my doctor"}
           </button>
           <button type="button" onClick={() => onNavigate("invoices")} className="flex items-center gap-1.5 rounded-xl border border-sand-200 px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">
             <ReceiptIcon className="h-4 w-4" /> View invoices
@@ -842,7 +1061,7 @@ function OverviewSection({
 
 // --- Messages ---------------------------------------------------------------
 
-function MessagesSection({ token }: { token: string }) {
+function MessagesSection({ token, doctor }: { token: string; doctor: PortalDoctorInfo | null }) {
   const [messages, setMessages] = useState<PortalMessage[] | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -858,7 +1077,7 @@ function MessagesSection({ token }: { token: string }) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!draft.trim()) return;
+    if (!draft.trim() || !doctor) return;
     setSending(true);
     setError(null);
     try {
@@ -875,8 +1094,10 @@ function MessagesSection({ token }: { token: string }) {
   return (
     <div className="rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
       <div className="border-b border-sand-100 px-5 py-4">
-        <p className="text-sm font-bold text-ink">Messages</p>
-        <p className="text-xs text-ink-muted">Talk to your clinic directly — they&apos;ll see this in their inbox.</p>
+        <p className="text-sm font-bold text-ink">{doctor ? `Message ${doctor.name}` : "Message my doctor"}</p>
+        <p className="text-xs text-ink-muted">
+          {doctor ? `Only ${doctor.name} sees this — it goes straight to their inbox.` : "No doctor is assigned to you yet — please contact the clinic to get one assigned before messaging."}
+        </p>
       </div>
 
       <div className="max-h-[420px] space-y-3 overflow-y-auto p-5">
@@ -886,7 +1107,7 @@ function MessagesSection({ token }: { token: string }) {
           </div>
         }
         {messages !== null && messages.length === 0 &&
-        <EmptyState icon={<MessageCircleIcon className="h-5 w-5" />} message="No messages yet — send one below to reach your clinic." />
+        <EmptyState icon={<MessageCircleIcon className="h-5 w-5" />} message={doctor ? `No messages yet — send one below to reach ${doctor.name}.` : "No doctor assigned yet."} />
         }
         {messages?.map((m) => {
           const fromPatient = m.role === "patient";
@@ -906,11 +1127,12 @@ function MessagesSection({ token }: { token: string }) {
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Type a message…"
-          className="flex-1 rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white" />
+          disabled={!doctor}
+          placeholder={doctor ? "Type a message…" : "No doctor assigned yet"}
+          className="flex-1 rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white disabled:opacity-50" />
         <button
           type="submit"
-          disabled={sending || !draft.trim()}
+          disabled={sending || !draft.trim() || !doctor}
           className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-600 text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40">
           <SendIcon className="h-4 w-4" />
         </button>
@@ -921,34 +1143,255 @@ function MessagesSection({ token }: { token: string }) {
 
 // --- Profile ----------------------------------------------------------------
 
-function ProfileSection({ data }: { data: PortalPatientResponse }) {
-  return (
-    <div className="rounded-3xl border border-sand-200 bg-white p-6 shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
-      <div className="flex items-center gap-4">
-        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-sand-200 text-xl font-bold text-ink-soft">
-          {data.first_name.charAt(0)}{data.last_name.charAt(0)}
-        </span>
-        <div>
-          <p className="text-lg font-bold text-ink">{data.first_name} {data.last_name}</p>
-          {data.portal_id && <p className="text-xs text-ink-muted">Reference ID: {data.portal_id}</p>}
+function ProfileSection({ data, token, onSaved }: { data: PortalPatientResponse; token: string; onSaved: (fresh: PortalPatientResponse) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [firstName, setFirstName] = useState(data.first_name);
+  const [lastName, setLastName] = useState(data.last_name);
+  const [email, setEmail] = useState(data.email || "");
+  const [additionalPhones, setAdditionalPhones] = useState<Array<{ number?: string; label?: string }>>(data.additional_phones);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showPinChange, setShowPinChange] = useState(false);
+  const [currentPin, setCurrentPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [savingPin, setSavingPin] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  async function changePin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!/^\d{4,6}$/.test(newPin)) {
+      setPinError("Your new PIN must be 4-6 digits.");
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setPinError("The two PINs don't match.");
+      return;
+    }
+    setSavingPin(true);
+    setPinError(null);
+    try {
+      const fresh = await portalSetPin(token, newPin, currentPin || undefined);
+      onSaved(fresh);
+      setShowPinChange(false);
+      setCurrentPin("");
+      setNewPin("");
+      setConfirmPin("");
+    } catch (err) {
+      setPinError(err instanceof Error ? err.message : "Couldn't change your PIN — try again.");
+    } finally {
+      setSavingPin(false);
+    }
+  }
+
+  function startEditing() {
+    setFirstName(data.first_name);
+    setLastName(data.last_name);
+    setEmail(data.email || "");
+    setAdditionalPhones(data.additional_phones);
+    setError(null);
+    setEditing(true);
+  }
+
+  function addPhone() {
+    setAdditionalPhones((prev) => [...prev, { number: "", label: "" }]);
+  }
+  function updatePhone(i: number, patch: Partial<{ number: string; label: string }>) {
+    setAdditionalPhones((prev) => prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
+  }
+  function removePhone(i: number) {
+    setAdditionalPhones((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const fresh = await updateMyPortalProfile(token, {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        email: email.trim() || null,
+        additional_phones: additionalPhones.filter((p) => p.number?.trim())
+      });
+      onSaved(fresh);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save your profile — try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="rounded-3xl border border-sand-200 bg-white p-6 shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-sand-200 text-xl font-bold text-ink-soft">
+              {data.first_name.charAt(0)}{data.last_name.charAt(0)}
+            </span>
+            <div>
+              <p className="text-lg font-bold text-ink">{data.first_name} {data.last_name}</p>
+              {data.portal_id && <p className="text-xs text-ink-muted">Reference ID: {data.portal_id}</p>}
+            </div>
+          </div>
+          <button type="button" onClick={startEditing} className="rounded-xl border border-sand-200 px-4 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">
+            Edit
+          </button>
         </div>
+
+        <div className="mt-6 space-y-3">
+          <div className="flex items-center gap-2.5 rounded-xl bg-sand-100 px-4 py-3">
+            <MailIcon className="h-4 w-4 text-ink-muted" />
+            <span className="text-sm text-ink-soft">{data.email || "No email on file"}</span>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-xl bg-sand-100 px-4 py-3">
+            <PhoneIcon className="h-4 w-4 text-ink-muted" />
+            <span className="text-sm text-ink-soft">{data.phone || "No phone on file"}</span>
+            <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Primary</span>
+          </div>
+          {data.additional_phones.map((p, i) => (
+            <div key={i} className="flex items-center gap-2.5 rounded-xl bg-sand-100 px-4 py-3">
+              <PhoneIcon className="h-4 w-4 text-ink-muted" />
+              <span className="text-sm text-ink-soft">{p.number}</span>
+              {p.label && <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{p.label}</span>}
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-5 text-xs text-ink-muted">
+          Your primary phone number is what your clinic has on file and can't be changed here — contact them to update it. You can edit your name, email, and add extra numbers above.
+        </p>
+
+        <div className="mt-5 border-t border-sand-100 pt-5">
+          <button
+            type="button"
+            onClick={() => { setShowPinChange((v) => !v); setPinError(null); }}
+            className="rounded-xl border border-sand-200 px-4 py-2 text-xs font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">
+            {data.pin_set ? "Change my login PIN" : "Set a login PIN"}
+          </button>
+          {!data.pin_set && <p className="mt-2 text-xs text-ink-muted">Set a 4-6 digit PIN so logging in won't need a code every time.</p>}
+
+          {showPinChange &&
+          <form onSubmit={changePin} className="mt-4 space-y-3">
+            {data.pin_set &&
+            <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Current PIN</span>
+                <input
+                  required
+                  inputMode="numeric"
+                  maxLength={6}
+                  type="password"
+                  value={currentPin}
+                  onChange={(e) => setCurrentPin(e.target.value)}
+                  placeholder="••••••"
+                  className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-center text-lg tracking-[0.5em] text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+              </label>
+            }
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">New PIN</span>
+              <input
+                required
+                inputMode="numeric"
+                maxLength={6}
+                type="password"
+                value={newPin}
+                onChange={(e) => setNewPin(e.target.value)}
+                placeholder="••••••"
+                className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-center text-lg tracking-[0.5em] text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Confirm new PIN</span>
+              <input
+                required
+                inputMode="numeric"
+                maxLength={6}
+                type="password"
+                value={confirmPin}
+                onChange={(e) => setConfirmPin(e.target.value)}
+                placeholder="••••••"
+                className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-center text-lg tracking-[0.5em] text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+            </label>
+            {pinError && <p className="text-sm font-medium text-danger">{pinError}</p>}
+            <button
+              type="submit"
+              disabled={savingPin}
+              className="rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:opacity-40">
+              {savingPin ? "Saving…" : "Save PIN"}
+            </button>
+          </form>
+          }
+        </div>
+      </div>);
+  }
+
+  return (
+    <form onSubmit={save} className="rounded-3xl border border-sand-200 bg-white p-6 shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
+      <p className="text-lg font-bold text-ink">Edit profile</p>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">First name</span>
+          <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Last name</span>
+          <input value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
       </div>
 
-      <div className="mt-6 space-y-3">
-        <div className="flex items-center gap-2.5 rounded-xl bg-sand-100 px-4 py-3">
-          <MailIcon className="h-4 w-4 text-ink-muted" />
-          <span className="text-sm text-ink-soft">{data.email || "No email on file"}</span>
-        </div>
-        <div className="flex items-center gap-2.5 rounded-xl bg-sand-100 px-4 py-3">
+      <label className="mt-3 block">
+        <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Email</span>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+      </label>
+
+      <div className="mt-3">
+        <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Primary phone</span>
+        <div className="flex items-center gap-2.5 rounded-xl bg-sand-100 px-3.5 py-2.5">
           <PhoneIcon className="h-4 w-4 text-ink-muted" />
           <span className="text-sm text-ink-soft">{data.phone || "No phone on file"}</span>
+          <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Contact clinic to change</span>
         </div>
       </div>
 
-      <p className="mt-5 text-xs text-ink-muted">
-        To update your contact details, please get in touch with your clinic — they keep your official record.
-      </p>
-    </div>);
+      <div className="mt-3">
+        <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Other phone numbers</span>
+        <div className="space-y-2">
+          {additionalPhones.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                value={p.number || ""}
+                onChange={(e) => updatePhone(i, { number: e.target.value })}
+                placeholder="Phone number"
+                className="min-w-0 flex-1 rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+              <input
+                value={p.label || ""}
+                onChange={(e) => updatePhone(i, { label: e.target.value })}
+                placeholder="Label (Home, Work…)"
+                className="w-36 shrink-0 rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+              <button type="button" onClick={() => removePhone(i)} className="shrink-0 text-ink-muted hover:text-danger">
+                <XIcon className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={addPhone} className="mt-2 text-xs font-semibold text-teal-600 hover:underline">
+          + Add another number
+        </button>
+      </div>
+
+      {error && <p className="mt-3 text-sm font-medium text-danger">{error}</p>}
+
+      <div className="mt-5 flex items-center justify-end gap-3">
+        <button type="button" onClick={() => setEditing(false)} className="rounded-xl border border-sand-200 px-5 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink-muted/40">
+          Cancel
+        </button>
+        <button type="submit" disabled={saving} className="rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:opacity-40">
+          {saving ? "Saving…" : "Save changes"}
+        </button>
+      </div>
+    </form>);
 }
 
 const SMOKING_OPTIONS = ["Never smoked", "Former smoker", "Current smoker", "Prefer not to say"];

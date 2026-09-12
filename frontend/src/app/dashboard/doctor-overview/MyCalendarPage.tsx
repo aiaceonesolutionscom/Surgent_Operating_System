@@ -14,6 +14,9 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const STATUS_CLASS: Record<string, string> = {
   scheduled: "bg-accent-500/10 text-accent-700",
   confirmed: "bg-success/10 text-success",
+  checked_in: "bg-teal-600/10 text-teal-600",
+  with_doctor: "bg-warning/10 text-warning",
+  ready_for_checkout: "bg-[#8B5CF6]/10 text-[#8B5CF6]",
   cancelled: "bg-danger/10 text-danger",
   completed: "bg-ink-muted/10 text-ink-muted",
   no_show: "bg-warning/10 text-warning"
@@ -24,6 +27,8 @@ const DOT_CLASS: Record<string, string> = {
   scheduled: "bg-accent-500",
   confirmed: "bg-success",
   checked_in: "bg-teal-600",
+  with_doctor: "bg-warning",
+  ready_for_checkout: "bg-[#8B5CF6]",
   completed: "bg-ink-muted/60",
   cancelled: "bg-danger/50",
   no_show: "bg-warning"
@@ -152,7 +157,7 @@ export function MyCalendarPage() {
 
   return (
     <>
-      <PageHeader title="My Calendar" subtitle="Your upcoming appointments, month by month." />
+      <PageHeader title="My Calendar" subtitle="Your upcoming appointments, month by month — plus your own personal time-blocks. “Book” adds a patient straight to your own schedule (e.g. a follow-up mid-consult) without going through Front Desk." />
 
       <div className="rounded-3xl border border-sand-200 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.05)] sm:p-6">
         <div className="flex items-center justify-between gap-3">

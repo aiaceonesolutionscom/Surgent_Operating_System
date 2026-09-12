@@ -33,6 +33,7 @@ export function FirstDoctorStep({ onNext, onSkip }: StepProps) {
       bio: "",
       availability: [],
       documents: [],
+      isActive: true,
       activePatients: 0,
       upcomingSurgeries: 0
     };

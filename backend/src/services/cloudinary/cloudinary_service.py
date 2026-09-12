@@ -28,8 +28,15 @@ class CloudinaryService:
             "height": result.get("height"),
         }
 
-    async def upload_from_bytes(self, file_bytes: bytes, filename: str, folder: str = "patient_photos") -> dict:
-        result = await asyncio.to_thread(cloudinary.uploader.upload, file_bytes, folder=folder, public_id=filename)
+    async def upload_from_bytes(
+        self, file_bytes: bytes, filename: str, folder: str = "patient_photos", resource_type: str = "image"
+    ) -> dict:
+        # resource_type="raw" is required for non-image files (PDFs, etc.) —
+        # Cloudinary's default "image" upload validates/transforms as an
+        # image and rejects anything else.
+        result = await asyncio.to_thread(
+            cloudinary.uploader.upload, file_bytes, folder=folder, public_id=filename, resource_type=resource_type
+        )
         return {
             "public_id": result["public_id"],
             "url": result["secure_url"],

@@ -59,7 +59,7 @@ export function DemoPaymentPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const sessionId = params.get("session_id") || "";
-  const planTier = (params.get("plan_tier") as PlanTier) || "solo";
+  const planTier = (params.get("plan_tier") as PlanTier) || "practice";
   const email = params.get("email") || "";
   const livePlans = useLivePlans();
   const plan = livePlans.find((p) => p.id === planTier) || planFor(planTier);

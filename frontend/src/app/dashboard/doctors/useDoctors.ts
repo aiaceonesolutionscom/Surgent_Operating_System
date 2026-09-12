@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MOCK_DOCTORS } from "../data/mockDoctors";
 import type { Doctor } from "./types";
 import { loadDoctorsDB, saveDoctorsDB } from "./doctorsDB";
-import { createDoctor, listDoctors, updateDoctor as updateDoctorApi, type DoctorResponse } from "../../../api/entities";
+import { createDoctor, listDoctors, updateDoctor as updateDoctorApi, inviteDoctor, type DoctorResponse } from "../../../api/entities";
 
 type AuthedFetch = (<T>(path: string, init?: RequestInit) => Promise<T>) | null;
 
@@ -209,5 +209,22 @@ export function useDoctors(authedFetch: AuthedFetch = null) {
     [authedFetch]
   );
 
-  return { doctors, loading, getDoctor, addDoctor, updateDoctor };
+  // Owner's "help them log back in" lever — resends the invite this doctor
+  // originally got (POST /doctors/{id}/invite, backend endpoint already
+  // existed but was never wired to any UI). Not a permissions/roster change,
+  // just re-sends Clerk email access to the same doctor.id/email.
+  const resendAccess = useCallback(
+    async (id: string): Promise<string | null> => {
+      if (!authedFetch) return "Not signed in.";
+      try {
+        await inviteDoctor(authedFetch, id);
+        return null;
+      } catch (err) {
+        return err instanceof Error && err.message ? err.message : "Couldn't resend — try again.";
+      }
+    },
+    [authedFetch]
+  );
+
+  return { doctors, loading, getDoctor, addDoctor, updateDoctor, resendAccess };
 }

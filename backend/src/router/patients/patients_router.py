@@ -105,22 +105,23 @@ async def assign_doctor(
 async def archive_patient(
     patient_id: UUID,
     data: ArchivePatientRequest,
-    user: User = Depends(require_role(UserRole.OWNER)),
+    user: User = Depends(require_role(UserRole.OWNER, UserRole.RECEPTIONIST)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Owner-only. Archiving hides the patient from the default list,
-    disables portal login, and blocks new appointments (see
-    AppointmentsService.create_appointment) — a real administrative status,
-    not a soft/cosmetic flag. There is deliberately no hard-delete
-    endpoint for patients — medical and financial records don't get
-    casually destroyed."""
+    """Owner + Receptionist (front-desk needs to be able to remove a
+    duplicate/mistaken record without waiting on the Owner). Archiving
+    hides the patient from the default list, disables portal login, and
+    blocks new appointments (see AppointmentsService.create_appointment) —
+    a real administrative status, not a soft/cosmetic flag. There is
+    deliberately no hard-delete endpoint for patients — medical and
+    financial records don't get casually destroyed."""
     return await controller.archive_patient(db, user, patient_id, data)
 
 
 @router.post("/{patient_id}/restore", response_model=PatientResponse)
 async def restore_patient(
     patient_id: UUID,
-    user: User = Depends(require_role(UserRole.OWNER)),
+    user: User = Depends(require_role(UserRole.OWNER, UserRole.RECEPTIONIST)),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.restore_patient(db, user, patient_id)

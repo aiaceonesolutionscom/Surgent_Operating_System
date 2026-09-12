@@ -22,7 +22,7 @@ import { useSessions } from "../sessions/useSessions";
 // in conversations_controllers.py) — never the practice-wide lead/CRM
 // inbox, which stays Owner/Receptionist-only (see Sidebar.tsx).
 export function DoctorPatientDetail({ patient }: { patient: Patient }) {
-  const { sessions, loading: sessionsLoading, error: sessionsError, refetch } = useSessions(undefined, patient.id);
+  const { sessions, loading: sessionsLoading, error: sessionsError, refetch, resolve, loadMessages, sendMessage } = useSessions(undefined, patient.id);
   const patientSessions = sessions.filter((s) => s.patientId === patient.id);
 
   const tabs: PatientTab[] = [
@@ -39,7 +39,11 @@ export function DoctorPatientDetail({ patient }: { patient: Patient }) {
       id: "communication", label: "Communication", icon: MessageCircleIcon, content: (
         sessionsLoading ? <p className="rounded-3xl border border-sand-200 bg-white p-8 text-center text-sm text-ink-muted">Loading…</p> :
         sessionsError ? <div className="rounded-3xl border border-sand-200 bg-white p-8 text-center"><p className="text-sm text-danger">{sessionsError}</p><button onClick={() => refetch()} className="mt-3 text-sm text-teal-600 hover:underline">Retry</button></div> :
-        <SessionsView sessions={patientSessions} />
+        <SessionsView
+          sessions={patientSessions}
+          onLoadMessages={loadMessages}
+          onResolve={resolve}
+          onSendMessage={sendMessage} />
       )
     }
   ];

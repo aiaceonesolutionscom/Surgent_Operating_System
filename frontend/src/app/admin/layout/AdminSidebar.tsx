@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutDashboardIcon, Building2Icon, CreditCardIcon, InboxIcon } from "lucide-react";
+import { LayoutDashboardIcon, Building2Icon, CreditCardIcon, InboxIcon, UserPlusIcon, BotIcon } from "lucide-react";
 import { ADMIN_ROUTES } from "../constants/routes";
 import { Logo } from "../../../components/ui";
 
@@ -14,8 +14,10 @@ interface NavItem {
 const ITEMS: NavItem[] = [
 { label: "Overview", to: ADMIN_ROUTES.overview, icon: LayoutDashboardIcon, end: true },
 { label: "Clinics", to: ADMIN_ROUTES.clinics, icon: Building2Icon },
+{ label: "New organizations", to: ADMIN_ROUTES.orgRequests, icon: UserPlusIcon },
 { label: "Plans & Pricing", to: ADMIN_ROUTES.plans, icon: CreditCardIcon },
-{ label: "Sales Leads", to: ADMIN_ROUTES.salesLeads, icon: InboxIcon }];
+{ label: "Sales Leads", to: ADMIN_ROUTES.salesLeads, icon: InboxIcon },
+{ label: "Super Agent", to: ADMIN_ROUTES.superAgent, icon: BotIcon }];
 
 
 // Dark sidebar (bg-panel) — the inverse of the doctor dashboard's light

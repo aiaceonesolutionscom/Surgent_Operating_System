@@ -14,7 +14,7 @@ import {
 
 type AuthedFetch = (<T>(path: string, init?: RequestInit) => Promise<T>) | null;
 
-export function useSurgeries(authedFetch: AuthedFetch, patientId?: string) {
+export function useSurgeries(authedFetch: AuthedFetch, patientId?: string, scope?: "all" | "mine") {
   const [surgeries, setSurgeries] = useState<SurgeryResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -26,14 +26,14 @@ export function useSurgeries(authedFetch: AuthedFetch, patientId?: string) {
     }
     try {
       setLoading(true);
-      const data = await listSurgeries(authedFetch, patientId);
+      const data = await listSurgeries(authedFetch, patientId, scope);
       setSurgeries(data);
     } catch {
       setSurgeries([]);
     } finally {
       setLoading(false);
     }
-  }, [authedFetch, patientId]);
+  }, [authedFetch, patientId, scope]);
 
   useEffect(() => {
     refetch();

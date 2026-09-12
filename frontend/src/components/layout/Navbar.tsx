@@ -5,7 +5,6 @@ import { Link } from "react-router-dom";
 import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
 import { MenuIcon, XIcon } from "lucide-react";
 import { Button, Logo } from "../ui";
-import { readPlanOverride } from "../../app/dashboard/plan/plan";
 
 // `@clerk/clerk-react`'s components throw if there's no <ClerkProvider> above
 // them, and index.tsx only mounts one when the publishable key is actually
@@ -80,15 +79,9 @@ export function Navbar() {
           {clerkEnabled ?
           <>
               <SignedIn>
-                {readPlanOverride() ?
-              <Button to="/dashboard" size="sm" arrow className="shadow-soft">
-                    Go to dashboard
-                  </Button> :
-
-              <Button to="/demo" size="sm" arrow className="shadow-soft">
-                    Book a demo
-                  </Button>
-              }
+                <Button to="/dashboard" size="sm" arrow className="shadow-soft">
+                  Go to dashboard
+                </Button>
               </SignedIn>
               <SignedOut>
                 <Button to="/demo" size="sm" arrow className="shadow-soft">
@@ -151,13 +144,13 @@ export function Navbar() {
             <>
                   <SignedIn>
                     <Button
-                  to={readPlanOverride() ? "/dashboard" : "/demo"}
+                  to="/dashboard"
                   size="sm"
                   arrow
                   onClick={() => setOpen(false)}
                   className="mt-2">
 
-                      {readPlanOverride() ? "Go to dashboard" : "Book a demo"}
+                      Go to dashboard
                     </Button>
                   </SignedIn>
                   <SignedOut>

@@ -47,7 +47,9 @@ class AppointmentsService:
             appointments.append(appointment)
         return appointments
 
-    async def list_for_doctor_user(self, db: AsyncSession, practice_id: UUID, user_id: UUID) -> list[Appointment]:
+    async def list_for_doctor_user(
+        self, db: AsyncSession, practice_id: UUID, user_id: UUID, patient_id: UUID | None = None
+    ) -> list[Appointment]:
         result = await db.execute(
             select(Doctor).where(Doctor.practice_id == practice_id, Doctor.user_id == user_id)
         )
@@ -55,17 +57,25 @@ class AppointmentsService:
         if doctor is None:
             raise NotFoundException("No doctor profile linked to this account")
 
+        conditions = [Appointment.practice_id == practice_id, Appointment.doctor_id == doctor.id]
+        if patient_id is not None:
+            conditions.append(Appointment.patient_id == patient_id)
         query = (
             select(Appointment, Patient)
             .join(Patient, Patient.id == Appointment.patient_id)
-            .where(Appointment.practice_id == practice_id, Appointment.doctor_id == doctor.id)
+            .where(and_(*conditions))
             .order_by(Appointment.start_time)
         )
         result = await db.execute(query)
         return self._with_patient_names(result.all())
 
     async def list_for_practice(
-        self, db: AsyncSession, practice_id: UUID, start: datetime | None = None, end: datetime | None = None
+        self,
+        db: AsyncSession,
+        practice_id: UUID,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        patient_id: UUID | None = None,
     ) -> list[Appointment]:
         # Practice-wide view — Owner/Receptionist see every doctor's
         # schedule, unlike list_for_doctor_user's own-schedule-only scope.
@@ -74,6 +84,8 @@ class AppointmentsService:
             conditions.append(Appointment.start_time >= start)
         if end is not None:
             conditions.append(Appointment.start_time <= end)
+        if patient_id is not None:
+            conditions.append(Appointment.patient_id == patient_id)
 
         query = (
             select(Appointment, Patient)
@@ -103,6 +115,7 @@ class AppointmentsService:
         start_time: datetime,
         end_time: datetime,
         notes: str | None = None,
+        notify_patient: bool = True,
     ) -> Appointment:
         if end_time <= start_time:
             raise AppException("Appointment end_time must be after start_time")
@@ -120,8 +133,25 @@ class AppointmentsService:
             doctor_result = await db.execute(
                 select(Doctor).where(Doctor.id == doctor_id, Doctor.practice_id == practice_id)
             )
-            if doctor_result.scalar_one_or_none() is None:
+            doctor = doctor_result.scalar_one_or_none()
+            if doctor is None:
                 raise NotFoundException("Doctor not found")
+            if not doctor.is_active:
+                raise AppException("This doctor is not active — reactivate them before assigning appointments")
+
+            # Same conflict window the AI Receptionist's _find_available_doctor
+            # checks before booking on WhatsApp — staff-created appointments
+            # must not silently double-book a doctor either.
+            conflict_result = await db.execute(
+                select(Appointment).where(
+                    Appointment.doctor_id == doctor_id,
+                    Appointment.status.notin_([AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW]),
+                    Appointment.start_time < end_time,
+                    Appointment.end_time > start_time,
+                )
+            )
+            if conflict_result.scalars().first() is not None:
+                raise AppException("This doctor already has an appointment overlapping those times — pick a different slot")
 
         appointment = Appointment(
             practice_id=practice_id,
@@ -136,6 +166,18 @@ class AppointmentsService:
         db.add(appointment)
         await db.flush()
         await db.refresh(appointment)
+
+        # Staff-created bookings deserve the same confirmation the AI
+        # Receptionist gives conversationally on WhatsApp. The AI path passes
+        # notify_patient=False because its own reply to the patient IS the
+        # confirmation — routing another automated message right behind it
+        # would double-message the same person on the same channel.
+        if notify_patient:
+            when = start_time.strftime("%A, %B %d at %I:%M %p")
+            await self._notify_patient(
+                db, practice_id, patient_id, "appointment_confirmation",
+                f"Your {appointment_type} appointment is confirmed for {when}. We look forward to seeing you!",
+            )
         return appointment
 
     async def reschedule_appointment(
@@ -199,8 +241,18 @@ class AppointmentsService:
 
     async def complete_appointment(self, db: AsyncSession, practice_id: UUID, appointment_id: UUID) -> Appointment:
         appointment = await self.get_appointment(db, practice_id, appointment_id)
-        if appointment.status == AppointmentStatus.CANCELLED:
-            raise AppException("Cannot complete a cancelled appointment")
+        if appointment.status == AppointmentStatus.COMPLETED:
+            return appointment
+        # The front desk UI only ever shows "Complete" for ready_for_checkout,
+        # so anything else here is almost certainly a mistake (or a stale
+        # page) — don't let a scheduled appointment skip the whole visit.
+        if appointment.status not in (
+            AppointmentStatus.WITH_DOCTOR,
+            AppointmentStatus.READY_FOR_CHECKOUT,
+        ):
+            raise AppException(
+                f"Cannot complete a {appointment.status.value} appointment — the patient must be with the doctor first"
+            )
 
         appointment.status = AppointmentStatus.COMPLETED
         await db.flush()
