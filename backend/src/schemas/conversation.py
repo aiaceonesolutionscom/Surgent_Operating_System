@@ -64,6 +64,14 @@ class ConversationListItem(BaseModel):
 
 class ConversationDetail(ConversationListItem):
     messages: list[MessageResponse]
+    # Set only on the response to a just-sent staff message that didn't
+    # actually reach the patient over WhatsApp (no phone on file, WhatsApp
+    # not connected, or the send itself failed) — the message is still saved
+    # either way (see ConversationsService.send_staff_message), this is what
+    # lets the dashboard show a real warning instead of a false "sent" state.
+    # None on every other response (GET, resolve, toggle-ai) — there's
+    # nothing to warn about outside the send path.
+    send_warning: str | None = None
 
 
 class CreateMessageRequest(BaseModel):

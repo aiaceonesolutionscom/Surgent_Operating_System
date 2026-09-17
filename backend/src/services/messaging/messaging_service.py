@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.conversation import Conversation, ConversationChannel
+from src.models.conversation import Conversation, ConversationChannel, ConversationStatus
 from src.models.message import Message, MessageRole
 from src.models.patient import Patient
 from src.models.practice import Practice
@@ -56,18 +56,33 @@ class MessagingService:
     async def _find_or_create_conversation(
         self, db: AsyncSession, practice_id: UUID, patient_id: UUID, agent_type: str, channel: ConversationChannel
     ) -> Conversation:
+        # Matched on (practice, patient, channel) ONLY — not agent_type. This
+        # used to key on agent_type too, so a reminder, a billing receipt,
+        # and a post-op follow-up to the SAME patient over the SAME WhatsApp
+        # number each got their own separate Conversation row, and none of
+        # them reused the thread InboundService already has open for that
+        # patient's inbound replies (agent_type="ai_receptionist") either —
+        # from the patient's side it's one WhatsApp chat; the dashboard was
+        # showing it back as several unrelated ones. One row per
+        # (patient, channel) is what actually matches a real WhatsApp thread.
+        # A resolved thread is reused too (reactivated to ACTIVE), never
+        # abandoned for a fresh one — same reasoning as
+        # InboundService._find_or_create_conversation's identical fix.
         result = await db.execute(
             select(Conversation)
             .where(
                 Conversation.practice_id == practice_id,
                 Conversation.patient_id == patient_id,
-                Conversation.agent_type == agent_type,
+                Conversation.channel == channel,
             )
             .order_by(desc(Conversation.updated_at))
             .limit(1)
         )
         existing = result.scalar_one_or_none()
         if existing is not None:
+            if existing.status == ConversationStatus.RESOLVED:
+                existing.status = ConversationStatus.ACTIVE
+                await db.flush()
             return existing
 
         conversation = Conversation(

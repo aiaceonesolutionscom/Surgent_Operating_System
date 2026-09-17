@@ -84,6 +84,12 @@ export function CinematicHero({ onOpenChat }: { onOpenChat?: (seed: HeroChatSeed
       connectors: [],
       crossfade: 0.08
     });
+    // Tells index.html's inline scroll-lock script (see its own comment)
+    // that the hero has measured its real (very tall) track height and
+    // positioned its first scene — mountLetsScroll's layout() call runs
+    // synchronously during construction, so this is accurate the instant
+    // the function returns, not just "mount started."
+    (window as unknown as { __heroReady?: boolean }).__heroReady = true;
 
     // Make the flying copy interactive: clicking a headline/body opens the
     // landing chat (LandingChat.tsx) seeded with that section's text, so a

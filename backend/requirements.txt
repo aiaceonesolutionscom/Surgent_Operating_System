@@ -36,6 +36,12 @@ stripe==10.6.0
 celery==5.4.0
 redis==5.1.1
 
+# Observability / error tracking
+sentry-sdk==2.14.0
+
+# LangSmith tracing (LLM call logs → traces dashboard, free tier 5k/mo)
+langsmith>=0.2.0
+
 # Storage / File handling
 python-multipart==0.0.12
 Pillow==10.4.0

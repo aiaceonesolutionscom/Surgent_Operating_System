@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     mistral_api_key_3: str = ""
     mistral_model: str = "mistral-small-latest"
 
+    # Sentry error tracking. Empty = disabled (local dev boots without it).
+    # DSN is not a secret token — it's safe in clients too (frontend uses its
+    # own project DSN via VITE_SENTRY_DSN). Only initialized when set.
+    sentry_dsn: str = ""
+
     # Groq's chat-completions endpoint is also OpenAI-SDK compatible (same
     # pattern as Mistral above, different base_url) — used as the fallback
     # tier between Mistral (rate-limit-prone free tier) and OpenAI (a real

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { CheckIcon } from "lucide-react";
 import { Button, Container } from "../ui";
@@ -6,7 +6,7 @@ import { useLivePlans } from "../../hooks/useLivePlans";
 import { CheckoutModal } from "./CheckoutModal";
 
 export function Pricing() {
-  const [checkoutPlan, setCheckoutPlan] = useState<{ id: "solo" | "practice"; name: string } | null>(null);
+  const [checkoutPlan, setCheckoutPlan] = useState<{ id: "practice"; name: string } | null>(null);
   const PLANS = useLivePlans();
 
   return (
@@ -24,7 +24,7 @@ export function Pricing() {
           </p>
         </div>
 
-        <div className="mt-14 grid items-start gap-6 lg:grid-cols-3">
+        <div className="mx-auto mt-14 grid max-w-4xl items-stretch gap-6 sm:grid-cols-2">
           {PLANS.map((p, i) =>
           <motion.div
             key={p.name}
@@ -58,7 +58,7 @@ export function Pricing() {
                 </Button> :
 
             <Button
-              onClick={() => setCheckoutPlan({ id: p.id as "solo" | "practice", name: p.name })}
+              onClick={() => setCheckoutPlan({ id: "practice", name: p.name })}
               variant={p.highlight ? "cream" : "ink"}
               arrow
               className="mt-6 w-full">

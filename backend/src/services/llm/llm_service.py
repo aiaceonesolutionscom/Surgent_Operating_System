@@ -1,9 +1,37 @@
 from __future__ import annotations
+import os
+
 from openai import AsyncOpenAI, RateLimitError
 
 from src.config import get_settings
 
 settings = get_settings()
+
+# LangSmith tracing: wraps every OpenAI-SDK chat call with trace metadata
+# (model, tokens, latency, etc.) so agent prompts can be iterated from real
+# production data. Only active when LANGSMITH_API_KEY is set — zero overhead
+# otherwise. The project name matches config.langchain_project ("aesthetixai").
+#
+# The langsmith SDK reads its config from OS env vars, but this project loads
+# secrets from .env via pydantic-settings (which never exports os.environ).
+# So when the key is configured, mirror the three relevant vars into the real
+# environment so the SDK can authenticate and pick the right project.
+_tracing_enabled = bool(settings.langsmith_api_key)
+if _tracing_enabled:
+    os.environ.setdefault("LANGSMITH_API_KEY", settings.langsmith_api_key)
+    os.environ.setdefault("LANGCHAIN_PROJECT", settings.langchain_project)
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+
+
+def _maybe_wrap(client: AsyncOpenAI) -> AsyncOpenAI:
+    if not _tracing_enabled:
+        return client
+    try:
+        from langsmith import wrappers
+
+        return wrappers.wrap_openai(client)
+    except Exception:
+        return client
 
 
 class LLMService:
@@ -24,7 +52,7 @@ class LLMService:
     @property
     def openai_client(self):
         if self._openai_client is None:
-            self._openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+            self._openai_client = _maybe_wrap(AsyncOpenAI(api_key=settings.openai_api_key))
         return self._openai_client
 
     @property
@@ -35,14 +63,14 @@ class LLMService:
         if self._mistral_clients is None:
             keys = [k for k in (settings.mistral_api_key, settings.mistral_api_key_2, settings.mistral_api_key_3) if k]
             self._mistral_clients = [
-                AsyncOpenAI(api_key=key, base_url=self.MISTRAL_BASE_URL) for key in keys
+                _maybe_wrap(AsyncOpenAI(api_key=key, base_url=self.MISTRAL_BASE_URL)) for key in keys
             ]
         return self._mistral_clients
 
     @property
     def groq_client(self):
         if self._groq_client is None and settings.groq_api_key:
-            self._groq_client = AsyncOpenAI(api_key=settings.groq_api_key, base_url=self.GROQ_BASE_URL)
+            self._groq_client = _maybe_wrap(AsyncOpenAI(api_key=settings.groq_api_key, base_url=self.GROQ_BASE_URL))
         return self._groq_client
 
     async def _call_with_fallback(self, call):
@@ -82,6 +110,46 @@ class LLMService:
         if tier == "low" and self.mistral_clients:
             return self.mistral_clients[0], self.mistral_model
         return self.openai_client, self.openai_model
+
+    async def chat_fast(
+        self, messages: list[dict], system_prompt: str | None = None, json_mode: bool = False, max_tokens: int = 400
+    ) -> str:
+        """Low-latency twin of chat() for interactive websites where a slow
+        reply is the worst failure (landing-page chat). Goes straight to Groq
+        (fast, cheap, low TTFT) when a key is configured, and only falls back
+        to the Mistral-key chain (then OpenAI) if Groq errors."""
+        full_messages = []
+        if system_prompt:
+            full_messages.append({"role": "system", "content": system_prompt})
+        full_messages.extend(messages)
+
+        async def call(client, model):
+            kwargs = {}
+            if json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+            response = await client.chat.completions.create(
+                model=model,
+                messages=full_messages,
+                temperature=0.7,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+            return response.choices[0].message.content or ""
+
+        if self.groq_client is not None:
+            try:
+                return await call(self.groq_client, self.groq_model)
+            except RateLimitError as e:
+                last_error: Exception | None = e
+            except Exception as e:
+                last_error = e
+            try:
+                return await self._call_with_fallback(call)
+            except Exception:
+                if last_error is not None:
+                    raise last_error
+                raise
+        return await self._call_with_fallback(call)
 
     async def chat(
         self, messages: list[dict], system_prompt: str | None = None, tier: str = "high", json_mode: bool = False, max_tokens: int = 1024

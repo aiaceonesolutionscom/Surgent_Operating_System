@@ -107,7 +107,7 @@ export function DoctorOverviewPage() {
   const myUpcomingSurgeries = useMemo(
     () =>
       mySurgeries.surgeries
-        .filter((s) => s.status === "planned" && isUpcoming(s.scheduled_date))
+        .filter((s) => (s.status === "scheduled" || s.status === "confirmed" || s.status === "in_progress") && isUpcoming(s.scheduled_date))
         .sort((a, b) => +new Date(a.scheduled_date) - +new Date(b.scheduled_date))
         .slice(0, 5),
     [mySurgeries.surgeries]

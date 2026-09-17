@@ -10,10 +10,17 @@ Written for: internal planning and for forwarding to whoever needs the real pict
 where something is broken, mocked, or missing, it says so plainly, and pairs it with
 what fixing it actually takes.
 
-**Date:** 2026-09-04
-**Companion document:** `system_design.md` (architecture, data model, API surface —
-written Week 1 of the current 30-day build; this document is the "where are we now,
-and what does 'production' actually require" follow-up).
+**Date:** 2026-09-12 (updates to the 2026-09-04 original report below)
+**Companion document:** `system_design.md` (architecture, data model, API surface).
+
+> **What's changed since 2026-09-04:** the AI layer was re-architected from
+> "31 named stubs, 5 real" to **9 real agents across 4 practice categories**,
+> plus a platform-wide Super Agent. Plans were simplified from Solo/Practice/
+> Enterprise to **Practice ($999 flat) + Enterprise (custom)**, gated
+> server-side and admin-managed via a new `/admin` panel. Aria (the marketing
+> chat) was added; Redis was integrated (rate limiting, OTP, booking drafts,
+> landing-chat cache); the post-op recovery journal is now real. That section
+> below has been updated inline.
 
 ---
 
@@ -55,19 +62,20 @@ Legend: ✅ Real & verified · 🟡 Real but partial/rough edges · 🔴 Mock/st
 | AI Receptionist — WhatsApp | ✅ | **Genuinely working end-to-end**, verified live this session (see §5) |
 | AI Receptionist — voice/other channels | 🔴 | Only WhatsApp is real; phone/SMS/Instagram/Facebook are schema-ready (channel enum exists) but have no working integration |
 | "Main Agent" (Command Center) | ✅ | Real Mistral-backed natural-language assistant over 5 real category handlers (front-desk/consultation/surgery/post-care/business); now reachable from the sidebar for all three roles, not just Owner |
-| The other ~29 "AI agent" pages | 🔴 | Mostly UI shells demonstrating what an agent *would* do — not wired to real automated logic. This was a deliberate, previously-agreed scope decision (see `system_design.md` §"AI layer") to focus real engineering on the 8 workflows that matter, not build 31 shallow agents |
+| The AI agent layer (updated) | ✅ | **Re-architected since 2026-09-04.** Now 9 real agents across 4 categories — every one has a working backend endpoint answering with real data: receptionist (Aria), appointment_reminder, patient_intake, lead_qualification, consultation_assistant, main_agent (Command Center), finance_agent, post_op_recovery, marketing_retention. Plus a platform-wide **Super Agent** (`/super-admin/super-agent`) and **Aria** (marketing-site chat). All gated server-side by the practice's plan tier |
 | Owner Overview / Analytics dashboard | 🔴 | Deliberately still on mock data — an earlier, explicit decision in this project, not an oversight |
-| Post-op recovery journal | 🔴 | Model exists, nothing writes to it yet (Week 3 of the current plan) |
+| Post-op recovery journal | ✅ | Real now (was schema-only): `RecoveryJournal` tied to each `Surgery`, checkpoint-based (Day 1/3/7/14/1mo), plus a `post_op_recovery` agent and recovery dashboard |
 | Notification engine (SMS/email/WhatsApp/in-app unified) | 🔴 | Not built (Week 3) |
 | Audit logging | 🔴 | Not built (Week 4) |
 | Automated test suite / CI | 🔴 | Not built (Week 4) — verification this whole month has been real, live, manual (real DB smoke scripts + real browser sessions), not automated regression tests |
 
 **Bottom line:** the core clinical/operational workflow of a real clinic — from a
 patient's first contact through booking, check-in, consultation, treatment planning,
-consent, surgery, billing, and now a real patient portal — is genuinely built and
-working, not mocked. What's *not* built yet is mostly forward-looking depth (post-op
-journey, deeper analytics, more AI workflows) and everything needed to run this as a
-*hardened, multi-customer product* rather than one clinic's dev environment — see §7–§9.
+consent, surgery, billing, recovery tracking, and a real patient portal — is
+genuinely built and working, not mocked. What's *not* built yet is mostly
+forward-looking depth (deeper analytics, more AI depth per category) and everything
+needed to run this as a *hardened, multi-customer product* rather than one clinic's
+dev environment — see §7–§9.
 
 ---
 
@@ -167,14 +175,44 @@ weekday," which would have let a Mon/Wed/Fri-only doctor get booked on a Tuesday
 fixed and covered by a test that checks a day the doctor does NOT work, not just
 one they do.
 
-### Not built — despite being planned/discussed
-Lead Qualification, AI Patient Intake (structured history collection), Consultation
-Assistant (SOAP note drafting), automated appointment confirmation messages,
-post-op follow-up prompts, and lead-nurturing sequences are all designed
-(`system_design.md` names all 8 target AI workflows) but not implemented. Three of
-the eight are now real (WhatsApp AI Receptionist including booking, Main Agent,
-and — new — real appointment booking as part of the receptionist workflow); five
-are not.
+### Updated since 2026-09-04: the AI layer is now 9 real agents + Super Agent
+
+The prior report listed 8 target workflows with 3 real and 5 not. Since then the
+entire AI layer was re-architected: the 31 stub pages were replaced by **9
+consolidated, real agents** across 4 categories — every one backed by a working
+backend endpoint returning real data, not a `get_status()` stub:
+
+| Category | Agents |
+|---|---|
+| Front Desk & Intake | `receptionist` (Aria marketing-site chat + triage → real booking → lead), `appointment_reminder` |
+| Consultation & Screening | `patient_intake`, `lead_qualification`, `consultation_assistant` |
+| Business & Operations | `main_agent` (Command Center — 4 real handlers), `finance_agent` (real revenue/expense queries) |
+| Post-Surgery Care | `post_op_recovery` (real RecoveryJournal data), `marketing_retention` |
+
+Plus two non-practice agents:
+- **Aria** — the marketing site's own chat: Groq-powered, short answers, answers
+  pricing questions, converts a booking conversation into a real patient lead (source
+  "Landing Chat") with an in-app notification to the practice.
+- **Super Agent** — staff-only, at `/super-admin/super-agent`, works across every
+  practice's data (platform-wide assistant, not scoped to one practice).
+
+**Server-side plan gating:** every agent call checks the practice's plan tier in the
+LLM service itself — not just hidden in the UI. The practice has two plans:
+**Practice** ($999 flat, no per-seat billing, all categories included) and
+**Enterprise** (custom). Solo was retired; the plan model kept the enum value but
+normalizes it everywhere. Plans are admin-managed via `/admin/plans` with live
+content (tagline, limits, category notes) served to the marketing frontend.
+
+### Rough edges that remain honest to call out
+- Deeper agent depth is still uneven — `main_agent`/`finance_agent`/`super_agent`
+  query real data; the consultation-screening category largely routes LLM triage
+  rather than fully automated end-to-end clinical workflows (deliberate — the
+  safety boundary below).
+- Automated appointment-confirmation messaging beyond reminders, and deeper
+  lead-nurturing sequences, remain roadmap — the building blocks (lifecycle
+  funnel, real leads feed) are real.
+- Audit logging and the focused test suite are still not built (Week 4 line items —
+  see §9).
 
 ### Explicit safety boundary (already a hard rule in the design, not just a promise)
 Nowhere in this system does AI diagnose or decide treatment. It collects,
@@ -260,10 +298,10 @@ on someone (me, or whoever tests manually) happening to exercise that exact path
 
 | Risk | Why it breaks | Fix |
 |---|---|---|
-| Rate limiting is in-memory | Works for one backend process. The moment there are 2+ backend instances (needed for real uptime/scale), each has its own separate counter — a determined attacker (or just normal multi-instance load balancing) defeats it entirely | Move to Redis-backed rate limiting — `REDIS_URL` is already in the env config, this is a real but bounded piece of work |
+| Rate limiting is in-memory | Works for one backend process. The moment there are 2+ backend instances (needed for real uptime/scale), each has its own separate counter — a determined attacker (or just normal multi-instance load balancing) defeats it entirely | **Done (updated):** rate limiting is now Redis-backed (`RedisRateLimiter`) and **fails open** when Redis is unreachable — good enough for local dev, real protection once Redis runs in the deployment |
 | Green API WhatsApp poller is one background loop in one process | Same problem as above — two backend replicas would both poll the same WhatsApp instance, double-processing every incoming message (a patient could get two AI replies, or two staff notifications) | Needs a proper job queue (e.g. one dedicated worker process, or a leader-election lock) before running more than one backend instance |
 | The poller loops over **every** practice's WhatsApp instance every 3 seconds, in sequence | Fine for a handful of pilot clinics. At real scale (dozens+ practices) this becomes a slow, serial bottleneck and increases message-handling latency practice by practice | Needs to become concurrent (one task per instance) or move off polling to real webhooks once there's a public HTTPS endpoint (the webhook route already exists in code, just unused locally) |
-| No caching layer | Every dashboard load re-queries Postgres directly. Fine at pilot scale. Will need Redis-backed caching for hot read paths (Overview, Command Center) at real scale | Add Redis caching once real traffic patterns are known — premature right now |
+| No caching layer | Every dashboard load re-queries Postgres directly. Fine at pilot scale. Will need Redis-backed caching for hot read paths (Overview, Command Center) at real scale | Partial (updated): a Redis-backed landing-chat cache and OTP/book-draft stores now exist; broader caching of hot read paths is still premature |
 | Single Postgres instance, no read replicas | A single clinic won't notice. Dozens of clinics on one database will, eventually | Standard managed-Postgres scaling (read replicas, connection pooling) — a hosting-provider-level decision, not urgent yet |
 | Frontend ships as one large JavaScript bundle (~1MB) | Every visitor downloads the whole app on first load, including admin-only agent pages they may never use | Code-splitting (dynamic imports) — flagged by the build tool on every build already, straightforward but not yet done |
 | No error monitoring / alerting | Right now, "did anything break in production" means someone has to notice or a user has to complain | Add Sentry (or equivalent) before real customers — cheap, fast, should happen early in productionization |
@@ -282,16 +320,22 @@ simultaneously, which is the stated goal.
 - **Clerk** (staff authentication) — real, free tier
 - **Postgres** — local dev instance; a managed production Postgres is a hosting
   decision, not a new credential
-- **Mistral** (LLM, powers Main Agent + AI Receptionist) — real, free tier
+- **Mistral** (LLM, general/main-agent tier) — real, free tier
+- **Groq** (LLM, fast tier — powers Aria's reply path and JSON extraction, model
+  `openai/gpt-oss-120b`) — real, free tier (updated since original report)
 - **Resend** (email) — real, free tier
 - **Cloudinary** (photo storage) — real, free tier, added this session
 - **Green API** (WhatsApp) — real, connected to one real WhatsApp number right now
+- **Admin panel auth** — real, username/password (not Clerk)
 
 ### Free-tier ceilings worth knowing about *before* they're hit
 - Clerk's free tier is capped by monthly active staff users — fine for a pilot,
   needs a paid plan once there are real paying clinics with real staff counts
-- Mistral's free tier has request-rate limits — fine for light AI Receptionist
-  traffic today; needs monitoring once WhatsApp volume grows
+- Mistral's free tier has request-rate limits — this actually bit the project once
+  (all 3 keys rate-limited at once, IP-level); Aria's fast path now routes through
+  Groq to reduce dependence on it
+- Groq has generous-but-real concurrent-request limits — Aria races through it; worth
+  monitoring once marketing traffic grows
 - Cloudinary free tier has storage and bandwidth caps — before/after photos are
   exactly the kind of large-file usage that hits this ceiling first
 - Green API's free/cheap tiers have message-volume limits per connected number
@@ -299,13 +343,12 @@ simultaneously, which is the stated goal.
 
 ### Needed, not yet in place
 - A real domain + SSL (currently local-only, by explicit decision this month)
-- **Stripe** or equivalent — required to actually charge clinics money; currently
-  wired into the codebase but not live
+- **Live Stripe payment** — checkout *sessions* are now created server-side and the
+  end-to-end flow works locally, but charging real money needs real keys
 - A hosting/cloud provider decision (Railway, Render, Fly.io, AWS, etc.)
 - Sentry or equivalent error monitoring
-- Twilio (only if SMS, beyond WhatsApp, is wanted — not required for the current plan)
-- OpenAI (optional — nothing today requires it; would only matter if a future
-  feature genuinely needs a higher-capability model than Mistral's free tier)
+- Twilio (only if traditional voice/SMS, beyond WhatsApp, is wanted — the legacy
+  voice path is idle today)
 
 ---
 
@@ -351,73 +394,88 @@ clinics. Steps 7–10 are what's needed before scaling that to many.
 
 ## 9. What's Left On The Product Roadmap (not production-hardening, actual features)
 
-From the active 30-day plan (`system_design.md` has the full week-by-week detail):
+From the 30-day plan (`system_design.md` has the full week-by-week detail) — statuses
+updated for the 2026-09-12 rearchitecture:
 
-- **Week 3** (not started): real post-op recovery journal writes, a unified
-  notification engine (SMS/WhatsApp/email/in-app behind one interface), deeper
-  inventory (suppliers, purchase orders, implant-consumption-on-surgery hook),
-  and real Owner analytics (revenue-over-time, most-profitable-procedure,
-  lead-conversion-rate, no-show-rate — currently the Overview page is
-  deliberately still mock).
-- **Week 4** (not started): the remaining 6 of 8 AI workflows, Groq-based speech-
-  to-text (for AI Receptionist call transcription and doctor voice-dictation —
-  currently zero speech-to-text exists anywhere in the system), real audit
-  logging, the focused test suite from §9 above, and a CI pipeline.
-- **Frontend bundle size** — code-splitting, flagged by the build tooling
-  already, not yet acted on.
-- **The Owner-only Consent Templates settings page** (built this session) has
-  been verified against the real backend but never actually clicked through in
-  its own UI — there was no Owner login available to this session to test it
-  directly. Worth a five-minute manual check.
+- **Post-op recovery** — **done**: real `RecoveryJournal` tied to each `Surgery`,
+  checkpoint-based (Day 1/3/7/14/1mo), plus the `post_op_recovery` agent.
+- **AI layer** — **re-architected and done**: 9 real agents across 4 categories +
+  Aria (marketing chat) + platform Super Agent; server-side plan gating.
+- **Owner analytics** — **partial**: 4 real Command Center handlers
+  (revenue-over-time, most-profitable-procedure, lead-conversion-rate,
+  no-show-rate) exist and the Finance Agent answers revenue/expense questions;
+  the legacy Overview page widgets remain deliberately mock.
+- **Unified notification engine** (SMS/WhatsApp/email/in-app behind one
+  interface) — **still roadmapping**; real send paths exist per-channel today.
+- **Deeper inventory** (suppliers, purchase orders, implant-consumption-on-surgery
+  hook) — **still roadmapping**; supplier/PurchaseOrder models were added but the
+  full workflow isn't complete.
+- **Groq speech-to-text** (AI Receptionist call transcription, doctor
+  voice-dictation) — **not started**; nothing transcribes audio today.
+- **Real audit logging** — **not built** (Week 4 line item).
+- **Focused automated test suite + CI pipeline** — **not built** (Week 4 line
+  item). Verification remains real, live, manual.
+- **Frontend bundle size** — code-splitting, flagged by the build tooling already,
+  not yet acted on.
 
 ---
 
 ## 10. Immediate Next Steps, In Priority Order
 
-1. **Test the WhatsApp feature for real** (see §11 below) — the single most
-   customer-visible thing built this session.
-2. Decide whether to keep building Week 3/4 features, or pivot effort toward
-   §9's production-hardening steps 1–6 — this is a real prioritization
-   decision, not something to default on silently, since "sell this to other
-   businesses" and "keep adding features" pull in different directions this
-   month.
-3. Either way: Redis-backed rate limiting and the focused test suite are worth
-   doing soon regardless of which direction is chosen, since both are
-   foundational rather than feature work.
+1. **Verify the marketing-site flow end-to-end** (Aria chat → booking → lead, and
+   Pricing → Practice checkout → claim) — the most customer-visible paths built this
+   session.
+2. **Run Redis locally (WSL)** so rate limiting / OTP / booking-draft / cache paths
+   stop failing open and can be exercised for real.
+3. **Security + hardening**: audit logging, the focused test suite, and a real
+   `CLERK_WEBHOOK_SECRET` — the highest-leverage items left.
 
 ---
 
 ## 11. How To Test What Was Built This Session
 
 **WhatsApp AI Receptionist + human takeover:**
-Log in as the Owner on the practice with the connected WhatsApp number
-(`usageforworking@gmail.com` — this session doesn't have that password, so
-couldn't click through it directly; only verified via direct backend calls
-against the real, live-connected WhatsApp instance). Go to Agent Sessions →
-All conversations. There's a real conversation with "Ahmed Khan" about
-rhinoplasty pricing, handled entirely by AI. To test human takeover for real:
-send an actual WhatsApp message to the connected number from a different real
-phone, watch it appear in the dashboard, then type a reply directly in the
-dashboard's message box — it sends over real WhatsApp, and the AI stops
-auto-replying to that conversation until it's manually resumed (the "AI
-paused / AI replying" toggle next to the conversation).
+Go to Agent Sessions → All conversations. There's a real conversation with
+"Ahmed Khan" about rhinoplasty pricing, handled entirely by AI. To test human
+takeover for real: send an actual WhatsApp message to the connected number from
+a different real phone, watch it appear in the dashboard, then type a reply
+directly in the dashboard's message box — it sends over real WhatsApp, and the
+AI stops auto-replying to that conversation until it's manually resumed (the
+"AI paused / AI replying" toggle next to the conversation).
 
-**Surgery module:** Log in as Doctor (`doctor+clerk_test@aiaceone.dev` /
+**Aria (marketing chat):** on the public site, use the chat widget in the
+corner — ask about rhinoplasty pricing; replies should be short and fast
+(Groq). Attempt a booking; it should land as a lead under the practice's
+patients with source "Landing Chat".
+
+**Admin panel:**
+
+- `/admin` — log in with the configured admin credentials (`ADMIN_USERNAME` /
+  `ADMIN_PASSWORD` in `.env`). Practice list, create/edit a practice, edit a
+  practice's subscription plan, plans editor, sales leads feed.
+- `/super-admin/super-agent` — ask a platform-wide question (e.g. "how many
+  sales leads do we have?"); it answers from every practice's real data.
+  `/super-admin/sales-leads` — the real sales leads table (populated by
+  Landing Chat bookings).
+
+**Surgery + recovery:** Log in as Doctor (`doctor+clerk_test@aiaceone.dev` /
 `Aceonedoctor`), go to Surgery in the sidebar, schedule one, check off the
-pre-op checklist, mark it complete with an operative note and implant details.
+pre-op checklist, mark it complete with an operative note and implant details —
+the patient's post-op recovery journal then tracks checkpoints.
 
 **Patient medical profile / consent versioning / photo timeline:** Open any
-patient's record as Doctor or Owner — the new "Medical profile" section is
-editable in place; the Photo timeline groups uploads by stage with a
-before/after comparison slider; Consent documents can be raised from a
-template (Owner creates templates under Settings → Consent templates).
+patient's record as Doctor or Owner — the "Medical profile" section is editable
+in place; the Photo timeline groups uploads by stage with a before/after
+comparison slider; Consent documents can be raised from a versioned template
+(Owner creates templates under Settings → Consent templates).
 
-**Main Agent:** Click "Main Agent" in the sidebar (now visible to all three
-roles) and ask it a real question — e.g. "how many patients are checked in
-today?"
+**Main Agent / Finance Agent:** Click "Main Agent" (visible to all three roles)
+and ask e.g. "how many patients are checked in today?", or ask Finance "what's
+revenue this month?" — both query the real database.
 
 ---
 
-*This document reflects the state of the system as of 2026-09-04. It is meant to
-be updated, not archived — the honest-status format here should keep being used
-as the project moves toward production, not just for this one report.*
+*This document reflects the state of the system as of 2026-09-12 (updated from the
+2026-09-04 original). It is meant to be updated, not archived — the honest-status
+format here should keep being used as the project moves toward production, not just
+for this one report.*

@@ -142,9 +142,17 @@ function mountLetsScroll(container, config) {
   [sky, scrollbar, topbar, stage, copylayer, route, hint, track].forEach(n => container.appendChild(n));
 
   // segment scenes
-  SEGMENTS.forEach(s => {
+  SEGMENTS.forEach((s, i) => {
     const scene = el('div', 'sw-scene'); scene.style.setProperty('--sw-accent', s.accent || '');
-    const img = el('img', 'sw-scene__still'); img.alt = ''; img.decoding = 'async'; img.loading = 'lazy';
+    const img = el('img', 'sw-scene__still'); img.alt = ''; img.decoding = 'async';
+    // The very first scene is on screen the instant this mounts — lazy-loading
+    // it (the old unconditional behavior) deprioritizes its fetch behind
+    // everything else on the page, so it can sit blank for a beat before
+    // popping in, reading as "the page loaded scrolled past the intro."
+    // Every later scene is still genuinely off-screen at mount, so lazy stays
+    // right for those.
+    if (i === 0) { img.loading = 'eager'; img.fetchPriority = 'high'; }
+    else { img.loading = 'lazy'; }
     const poster = (isMobile() && s.stillM) ? s.stillM : s.still;
     if (poster) img.src = poster;
     scene.appendChild(img); stage.appendChild(scene);

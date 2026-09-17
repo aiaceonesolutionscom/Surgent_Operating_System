@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { SearchIcon, Loader2Icon, InboxIcon } from "lucide-react";
 import { listAdminSalesLeads, type SalesLeadResponse } from "../../../api/admin";
 

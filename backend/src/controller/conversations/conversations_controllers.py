@@ -105,8 +105,10 @@ class ConversationsController:
             # Owner read-only applies to portal patient messages even via the
             # generic reply route.
             await self._require_can_reply(db, user, conversation_id)
-        await self.service.send_staff_message(db, user.practice_id, conversation_id, body)
-        return await self.get_conversation(db, user, conversation_id)
+        sent = await self.service.send_staff_message(db, user.practice_id, conversation_id, body)
+        detail = await self.get_conversation(db, user, conversation_id)
+        detail.send_warning = getattr(sent, "_delivery_error", None)
+        return detail
 
     async def toggle_ai(self, db: AsyncSession, user: User, conversation_id: UUID, paused: bool) -> ConversationDetail:
         await self.service.toggle_ai(db, user.practice_id, conversation_id, paused)
@@ -147,8 +149,10 @@ class ConversationsController:
         return conversation
 
     async def reply_to_patient_message(self, db: AsyncSession, user: User, conversation_id: UUID, body: str) -> ConversationDetail:
-        await self.service.send_staff_message(db, user.practice_id, conversation_id, body)
-        return await self.get_patient_message(db, user, conversation_id)
+        sent = await self.service.send_staff_message(db, user.practice_id, conversation_id, body)
+        detail = await self.get_patient_message(db, user, conversation_id)
+        detail.send_warning = getattr(sent, "_delivery_error", None)
+        return detail
 
     async def resolve_patient_message(self, db: AsyncSession, user: User, conversation_id: UUID) -> ConversationDetail:
         await self._require_can_reply(db, user, conversation_id)

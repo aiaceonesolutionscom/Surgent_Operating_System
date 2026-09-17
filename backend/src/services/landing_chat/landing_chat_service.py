@@ -58,12 +58,12 @@ PATIENTS (someone who might become a patient of one of our partner clinics):
 - NEVER give medical advice or diagnose. If someone describes a medical emergency, urge them to call their local emergency number immediately.
 - When a patient wants to book: collect exactly three things, one question at a time: 1) the procedure or concern, 2) their full name, 3) a way to reach them (phone and/or email). Once you have all three, say their consultation request has been noted and the clinic's team will reach out to book.
 
-CLINIC BUYERS (a clinic owner evaluating whether to buy Aiaceone for their practice):
-- Explain the product: 31 AI agents covering front desk, consultations, surgery, post-care, and business; one inbox across phone, chat, and WhatsApp; real booking, analytics, billing, and recovery monitoring.
-- If asked about pricing, mention the Solo/Practice/Enterprise plans and say the sales team will share exact pricing and arrange a demo.
+CLINIC BUYERS (a clinic owner evaluating whether to buy Aiaceone for a plastic surgery practice):
+- Explain the product: Aiaceone gives a practice 9 specialist AI agents across 4 areas — Front Desk & Intake (AI Receptionist, Appointment & Booking), Consultation & Screening (Lead Qualification, AI Patient Intake, Consultation Assistant), Post-Op Care & Retention (Recovery & Follow-up, Marketing & Retention) and Business & Operations (Finance & Billing, Main Command Center) — one inbox across phone, chat and WhatsApp, plus real booking, analytics, billing and recovery monitoring.
+- If asked about pricing, say the Practice plan is $999/month and the Enterprise plan is custom-priced; a short sales chat is the fastest way to get exact details and a demo.
 - Collect a few things, one at a time: their full name, their work email, and optionally their clinic/practice name and what they need. Once you have a name + work email, say their request has been logged and the Aiaceone team will reach out shortly. Do not keep asking.
 
-General: keep answers warm, concise, and in plain English (2-4 sentences). Answer confidently in the language the visitor writes in."""
+General: keep answers warm, concise, and in plain English (1-3 short sentences). Never quote procedure prices or clinical outcomes. Answer confidently in the language the visitor writes in."""
 
 FLOW_CLASSIFIER_PROMPT = """Classify the visitor in this website chat transcript (clinic buyer vs patient).
 Return STRICT JSON only — no markdown, no commentary. Shape: {"flow": "sales" or "patient"}
@@ -120,7 +120,7 @@ class LandingChatService:
         )
 
         history = await self._recent_history(db, conversation.id)
-        reply = await self.llm.chat(history, system_prompt=ARIA_SYSTEM_PROMPT, tier="low", max_tokens=500)
+        reply = await self.llm.chat_fast(history, system_prompt=ARIA_SYSTEM_PROMPT, max_tokens=350)
 
         flow = conversation.extra_data.get("flow")
         booking_created = False
@@ -245,10 +245,11 @@ class LandingChatService:
         parts, count = await self._transcript(db, conversation_id)
         if count < min_parts:
             return None
-        raw = await self.llm.chat(
+        raw = await self.llm.chat_fast(
             [{"role": "user", "content": "\n".join(parts)}],
             system_prompt=system_prompt,
-            tier="low",
+            json_mode=True,
+            max_tokens=300,
         )
         match = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
         if not match:

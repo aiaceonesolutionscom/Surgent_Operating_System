@@ -30,16 +30,24 @@ class RedisRateLimiter:
         self.max_attempts = max_attempts
         self.window_seconds = window_seconds
         self._client = None
+        self._redis_available: bool | None = None
 
     @property
     def client(self):
         if self._client is None:
-            self._client = redis.from_url(settings.redis_url, decode_responses=True)
+            self._client = redis.from_url(
+                settings.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=2.0,
+                socket_timeout=2.0,
+            )
         return self._client
 
     async def check(self, key: str) -> None:
         """Raises AppException(429) if `key` has hit its attempt limit
         within the window; otherwise records this attempt."""
+        if self._redis_available is False:
+            return  # known outage — fail open instantly, no socket wait
         full_key = f"ratelimit:{key}"
         try:
             now = time.time()
@@ -52,15 +60,24 @@ class RedisRateLimiter:
                 raise AppException("Too many attempts — try again in a few minutes.", status_code=429)
             await self.client.zadd(full_key, {f"{now}": now})
             await self.client.expire(full_key, self.window_seconds)
+            self._redis_available = True
         except AppException:
             raise
         except Exception:
+            # Cache the outage so login doesn't eat a socket timeout on every
+            # Redis op — after the first probe failure, fail open instantly.
+            self._redis_available = False
+            self._client = None
             logger.warning("RedisRateLimiter check failed for key=%s, failing open", key, exc_info=True)
 
     async def reset(self, key: str) -> None:
         """Clears attempts for `key` — call on a successful login so a
         legitimate user isn't left rate-limited by their own earlier typos."""
+        if self._redis_available is False:
+            return
         try:
             await self.client.delete(f"ratelimit:{key}")
+            self._redis_available = True
         except Exception:
+            self._redis_available = False
             logger.warning("RedisRateLimiter reset failed for key=%s", key, exc_info=True)

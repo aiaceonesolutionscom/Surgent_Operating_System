@@ -476,7 +476,7 @@ function UpcomingSurgeriesCard() {
 
   const now = new Date();
   const upcoming = surgeries
-    .filter((s) => s.status === "planned" && new Date(s.scheduled_date).getTime() >= now.getTime())
+    .filter((s) => (s.status === "scheduled" || s.status === "confirmed") && new Date(s.scheduled_date).getTime() >= now.getTime())
     .sort((a, b) => +new Date(a.scheduled_date) - +new Date(b.scheduled_date))
     .slice(0, 6);
 
@@ -493,7 +493,7 @@ function UpcomingSurgeriesCard() {
       {loading ?
       <p className="px-5 py-6 text-sm text-ink-muted">Loading…</p> :
       upcoming.length === 0 ?
-      <p className="px-5 py-6 text-sm text-ink-muted">No planned surgeries coming up.</p> :
+      <p className="px-5 py-6 text-sm text-ink-muted">No surgeries booked ahead.</p> :
       <div className="divide-y divide-sand-100">
           {upcoming.map((s) =>
         <Link

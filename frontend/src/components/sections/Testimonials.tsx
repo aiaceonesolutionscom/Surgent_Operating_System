@@ -19,6 +19,10 @@ export function Testimonials() {
           </div>
         </div>
 
+        <p className="mt-3 text-sm text-ink-muted">
+          Illustrative feedback from early pilot conversations — not verbatim reviews.
+        </p>
+
         <div className="mt-14 grid gap-6 lg:grid-cols-3">
           {TESTIMONIALS.map((t, i) =>
           <motion.figure

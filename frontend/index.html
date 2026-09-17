@@ -7,7 +7,51 @@
     <meta name="description" content="Aiaceone — Your practice, run by an AI workforce. AI agents for patient intake, follow-up, scheduling, and revenue for aesthetic and plastic surgery clinics." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- The hero's first scene poster (components/hero/CinematicHero.tsx) is
+         the first thing anyone sees — start fetching it before the JS bundle
+         has even parsed, instead of waiting for React to mount and the
+         scrub-engine to request it. -->
+    <link rel="preload" as="image" href="/lets-scroll/reception.png" fetchpriority="high" />
     <title>Aiaceone — Your practice, run by an AI workforce</title>
+    <script>
+      history.scrollRestoration = "manual";
+      !function() {
+        function lock() {
+          var html = document.documentElement;
+          html.style.scrollBehavior = "auto";
+          html.style.overflow = "hidden";
+          window.scrollTo(0, 0);
+          var start = Date.now();
+          // document.readyState "complete" only means the initial HTML/script
+          // tags finished loading — this is a client-rendered SPA, so React
+          // itself, its lazy route chunk, and (on "/") the scroll-scrubbed
+          // hero's own layout pass all happen well after that. Releasing the
+          // scroll lock at "complete" let the page become scrollable before
+          // the hero had measured its real (very tall) track height, so a
+          // layout shift during that gap could visibly jump the viewport past
+          // the intro. Wait for the hero to signal window.__heroReady (see
+          // components/hero/CinematicHero.tsx) too — capped at 4s so a page
+          // without a hero, or any failure to signal, never gets stuck locked.
+          // Only the home page ("/") mounts the scroll-scrubbed hero — every
+          // other route settles as soon as the document itself is ready, so
+          // only home waits on the extra __heroReady signal (capped at 4s).
+          var isHome = window.location.pathname === "/";
+          var iv = setInterval(function() {
+            window.scrollTo(0, 0);
+            var elapsed = Date.now() - start;
+            var heroSettled = !isHome || window.__heroReady || elapsed > 4000;
+            if (document.readyState === "complete" && heroSettled) {
+              clearInterval(iv);
+              html.style.overflow = "";
+            }
+          }, 16);
+        }
+        lock();
+        window.addEventListener("pageshow", function(e) {
+          if (e.persisted) lock();
+        });
+      }();
+    </script>
   </head>
   <body>
     <div id="root"></div>

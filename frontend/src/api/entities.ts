@@ -831,6 +831,11 @@ export interface MessageResponse {
 
 export interface ConversationDetail extends ConversationListItem {
   messages: MessageResponse[];
+  // Set only on the response to a just-sent message that was saved but did
+  // NOT actually reach the patient over WhatsApp (no phone on file, channel
+  // not connected, or the send failed) — see backend's ConversationsService.
+  // send_staff_message. Absent/undefined on every other response.
+  send_warning?: string | null;
 }
 
 export async function listConversations(
@@ -1492,8 +1497,9 @@ export function markConsentDiscussed(authedFetch: AuthedFetch, id: string) {
 }
 
 // --- surgery ---------------------------------------------------------------
-// Matches backend/src/router/surgery/surgery_router.py. Owner/Doctor only,
-// same clinical-visibility boundary as consultation notes and photos.
+// Matches backend/src/router/surgery/surgery_router.py. Scheduling (create/
+// confirm/reschedule/cancel) is Receptionist+Owner; clinical actions (pre-op
+// checklist/start/complete) are Doctor+Owner; viewing is open to all three.
 export interface SurgeryResponse {
   id: string;
   practice_id: string;
@@ -1514,7 +1520,12 @@ export interface SurgeryResponse {
   pre_op_checklist: Array<{ item: string; checked: boolean; checked_by?: string | null; checked_at?: string | null }>;
   implants_used: Array<{ type?: string; manufacturer?: string; lot_number?: string; size?: string }>;
   operative_note: string | null;
-  status: "planned" | "completed" | "cancelled";
+  status: "scheduled" | "confirmed" | "in_progress" | "completed" | "cancelled";
+  confirmed_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  cancelled_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1532,12 +1543,17 @@ export interface CreateSurgeryRequest {
   pre_op_checklist?: Array<{ item: string; checked: boolean }>;
 }
 
+// Scheduling-only update — Receptionist's reschedule surface. Clinical fields
+// live on updateSurgeryClinical.
 export interface UpdateSurgeryRequest {
   scheduled_date?: string | null;
   duration_estimate_minutes?: number | null;
   anesthesia_type?: string | null;
   facility_note?: string | null;
   assistant_doctor_id?: string | null;
+}
+
+export interface UpdateSurgeryClinicalRequest {
   pre_op_checklist?: Array<{ item: string; checked: boolean }> | null;
   implants_used?: Array<{ type?: string; manufacturer?: string; lot_number?: string; size?: string }> | null;
   operative_note?: string | null;
@@ -1546,6 +1562,40 @@ export interface UpdateSurgeryRequest {
 export interface CompleteSurgeryRequest {
   operative_note: string;
   implants_used?: Array<{ type?: string; manufacturer?: string; lot_number?: string; size?: string }>;
+}
+
+export interface CancelSurgeryRequest {
+  reason?: string;
+}
+
+export interface SurgeryAvailabilityCheckRequest {
+  doctor_id: string;
+  scheduled_date: string;
+  duration_minutes?: number | null;
+}
+
+export interface SurgeryAvailabilityCheckResponse {
+  available: boolean;
+  reasons: string[];
+}
+
+export interface DoctorSurgerySummary {
+  doctor_id: string;
+  doctor_name: string | null;
+  scheduled: number;
+  confirmed: number;
+  in_progress: number;
+  completed: number;
+  cancelled: number;
+}
+
+export interface SurgeryOverviewResponse {
+  by_status: Record<string, number>;
+  today: SurgeryResponse[];
+  upcoming: SurgeryResponse[];
+  in_progress: SurgeryResponse[];
+  completed_this_week: number;
+  per_doctor: DoctorSurgerySummary[];
 }
 
 export function createSurgery(authedFetch: AuthedFetch, data: CreateSurgeryRequest) {
@@ -1572,6 +1622,26 @@ export function updateSurgery(authedFetch: AuthedFetch, id: string, data: Update
   });
 }
 
+export function updateSurgeryClinical(authedFetch: AuthedFetch, id: string, data: UpdateSurgeryClinicalRequest) {
+  return authedFetch<SurgeryResponse>(`/api/v1/surgeries/${id}/clinical`, {
+    method: "PATCH",
+    body: JSON.stringify(data)
+  });
+}
+
+export function confirmSurgery(authedFetch: AuthedFetch, id: string) {
+  return authedFetch<SurgeryResponse>(`/api/v1/surgeries/${id}/confirm`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
+export function startSurgery(authedFetch: AuthedFetch, id: string) {
+  return authedFetch<SurgeryResponse>(`/api/v1/surgeries/${id}/start`, {
+    method: "POST"
+  });
+}
+
 export function completeSurgery(authedFetch: AuthedFetch, id: string, data: CompleteSurgeryRequest) {
   return authedFetch<SurgeryResponse>(`/api/v1/surgeries/${id}/complete`, {
     method: "POST",
@@ -1579,10 +1649,25 @@ export function completeSurgery(authedFetch: AuthedFetch, id: string, data: Comp
   });
 }
 
-export function cancelSurgery(authedFetch: AuthedFetch, id: string) {
+export function cancelSurgery(authedFetch: AuthedFetch, id: string, data?: CancelSurgeryRequest) {
   return authedFetch<SurgeryResponse>(`/api/v1/surgeries/${id}/cancel`, {
-    method: "POST"
+    method: "POST",
+    body: JSON.stringify(data || {})
   });
+}
+
+export function checkSurgeryAvailability(
+  authedFetch: AuthedFetch,
+  data: SurgeryAvailabilityCheckRequest
+) {
+  return authedFetch<SurgeryAvailabilityCheckResponse>("/api/v1/surgeries/availability-check", {
+    method: "POST",
+    body: JSON.stringify(data)
+  });
+}
+
+export function getSurgeryOverview(authedFetch: AuthedFetch) {
+  return authedFetch<SurgeryOverviewResponse>("/api/v1/surgeries/overview");
 }
 
 // --- invoices (billing) --------------------------------------------------------

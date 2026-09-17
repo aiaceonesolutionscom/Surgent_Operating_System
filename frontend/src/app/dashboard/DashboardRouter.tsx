@@ -5,6 +5,7 @@ import { RequirePractice } from "../auth/RequirePractice";
 import { DashboardLayout } from "./layout/DashboardLayout";
 import { DASHBOARD_ROUTES } from "./constants/routes";
 import { usePlan } from "./plan/PlanContext";
+import type { Role } from "../../data/roles";
 
 // ── Lazy-loaded dashboard pages ──────────────────────────────────────────
 // Each page is its own chunk — only downloaded when the user navigates to it.
@@ -62,15 +63,24 @@ const TeamAttendancePage = React.lazy(() => import("./attendance/TeamAttendanceP
 // Same reasoning for Receptionist → Front Desk. roleLanding() is the single
 // source for "where does THIS role go when their path doesn't exist or they
 // don't belong somewhere" — never bounces anyone onto a foreign dashboard.
-function roleLanding() {
-  const { role } = usePlan();
+// Deliberately a plain function taking `role` as a parameter, NOT a hook —
+// every caller below already has `role` from its own top-level usePlan()
+// call. This used to call usePlan() internally instead, which made it
+// secretly hook-shaped; every Require* guard below invoked it only inside an
+// `if` branch (e.g. RequireDoctor: only when role !== "doctor"), so the
+// number of hook calls per render varied with `role` — a real, live "Warning:
+// React has detected a change in the order of Hooks" (Rules of Hooks
+// violation), not just a lint nag. usePlan() itself is unaffected; only
+// this helper's own internal call was the problem.
+function roleLanding(role: Role) {
   if (role === "doctor") return DASHBOARD_ROUTES.doctorOverview;
   if (role === "receptionist") return DASHBOARD_ROUTES.frontDesk;
   return DASHBOARD_ROUTES.overview;
 }
 
 function RoleLanding() {
-  return <Navigate to={roleLanding()} replace />;
+  const { role } = usePlan();
+  return <Navigate to={roleLanding(role)} replace />;
 }
 
 function DashboardIndex() {
@@ -85,7 +95,7 @@ function DashboardIndex() {
 // receptionist never gets dumped onto the Owner overview by mistake.
 function RequireDoctor({ children }: { children: React.ReactNode }) {
   const { role } = usePlan();
-  if (role !== "doctor") return <Navigate to={roleLanding()} replace />;
+  if (role !== "doctor") return <Navigate to={roleLanding(role)} replace />;
   return <>{children}</>;
 }
 
@@ -94,14 +104,14 @@ function RequireDoctor({ children }: { children: React.ReactNode }) {
 // Doctor cannot.
 function RequireReceptionist({ children }: { children: React.ReactNode }) {
   const { role } = usePlan();
-  if (role !== "receptionist" && role !== "owner") return <Navigate to={roleLanding()} replace />;
+  if (role !== "receptionist" && role !== "owner") return <Navigate to={roleLanding(role)} replace />;
   return <>{children}</>;
 }
 
 // Guards the Owner-only review pages — anyone else goes to their own landing.
 function RequireOwner({ children }: { children: React.ReactNode }) {
   const { role } = usePlan();
-  if (role !== "owner") return <Navigate to={roleLanding()} replace />;
+  if (role !== "owner") return <Navigate to={roleLanding(role)} replace />;
   return <>{children}</>;
 }
 
@@ -110,7 +120,7 @@ function RequireOwner({ children }: { children: React.ReactNode }) {
 // roles reach it; anyone else (receptionist/staff) is sent to their own landing.
 function RequireOwnerOrDoctor({ children }: { children: React.ReactNode }) {
   const { role } = usePlan();
-  if (role !== "owner" && role !== "doctor") return <Navigate to={roleLanding()} replace />;
+  if (role !== "owner" && role !== "doctor") return <Navigate to={roleLanding(role)} replace />;
   return <>{children}</>;
 }
 
@@ -118,7 +128,7 @@ function RequireOwnerOrDoctor({ children }: { children: React.ReactNode }) {
 // surgery mutation stays Owner/Doctor backend-side.
 function RequireOwnerOrDoctorOrReceptionist({ children }: { children: React.ReactNode }) {
   const { role } = usePlan();
-  if (role !== "owner" && role !== "doctor" && role !== "receptionist") return <Navigate to={roleLanding()} replace />;
+  if (role !== "owner" && role !== "doctor" && role !== "receptionist") return <Navigate to={roleLanding(role)} replace />;
   return <>{children}</>;
 }
 
@@ -175,7 +185,10 @@ export function DashboardRouter() {
           <Route path="inventory" element={<RequireReceptionist><InventoryPage /></RequireReceptionist>} />
           <Route path="inventory/:id" element={<RequireReceptionist><InventoryItemDetailPage /></RequireReceptionist>} />
           <Route path="surgeries" element={<RequireOwnerOrDoctorOrReceptionist><SurgeryListPage /></RequireOwnerOrDoctorOrReceptionist>} />
-          <Route path="surgeries/new" element={<RequireOwnerOrDoctor><SurgeryFormPage /></RequireOwnerOrDoctor>} />
+          {/* Scheduling is a front-desk surface — Receptionist + Owner book,
+              confirm, reschedule. A Doctor reaching this URL is redirected to
+              their own landing (they get notified, they don't book). */}
+          <Route path="surgeries/new" element={<RequireReceptionist><SurgeryFormPage /></RequireReceptionist>} />
           <Route path="surgeries/:id" element={<RequireOwnerOrDoctorOrReceptionist><SurgeryDetailPage /></RequireOwnerOrDoctorOrReceptionist>} />
           <Route path="messages" element={<MessagesPage />} />
           <Route path="agents/:categoryId" element={<AgentCategoryPage />} />

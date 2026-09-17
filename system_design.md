@@ -39,11 +39,11 @@ patients), **Receptionist** (front desk, day-to-day operations), **Patient**
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS, React Router |
 | Auth (staff) | Clerk — Owner/Doctor/Receptionist |
 | Auth (patient) | Custom Patient ID + PIN (see §4.4) — deliberately not Clerk (per-MAU staff pricing model, patients aren't staff) |
-| LLM | Mistral (`tier="low"`, free tier, default) + OpenAI (`tier="high"`, optional, currently unconfigured) via one `AsyncOpenAI`-based client pointed at two base URLs |
-| Speech-to-text | Groq (Whisper-large-v3-turbo, OpenAI-compatible endpoint) — new this month, see §7 |
-| Messaging | Twilio (SMS/voice), Meta WhatsApp Business API (raw Graph API calls), Resend (email) |
+| LLM | Mistral (general tier) + **Groq** (fast tier — Aria's reply path & JSON extraction, OpenAI-compatible via one client) via a single provider-agnostic service; OpenAI (`tier="high"`, optional, currently unconfigured) |
+| Speech-to-text | Groq (Whisper-large-v3-turbo, OpenAI-compatible endpoint) — same Groq key as the fast LLM tier |
+| Messaging | **Green API** (unofficial WhatsApp Business API — live, connected), Twilio (legacy voice path, idle), Resend (email) |
 | File storage | Cloudinary |
-| Background jobs | Celery + Redis — dependency present, not yet actually running any job (flagged honestly, not hidden) |
+| Background/cache | **Redis — now used** (rate limiting, patient-portal OTP store, booking drafts, landing-chat cache); **fails open** if unreachable. No job queue (Celery) runs yet |
 
 ### 2.2 Backend layout
 
@@ -110,6 +110,8 @@ frontend/src/
 | `ConsentTemplate` | 2 | Versioned consent text; `ConsentDocument` snapshots `template_id`+`template_version` at signing so edits never retroactively change what was signed |
 | `Surgery` | 2 | Real surgery record: patient/procedure/surgeon/assistant/anesthesia/date/pre-op checklist/implants/operative note — **not** a multi-room OR-conflict scheduler (see plan's "explicitly out of reach") |
 | `Supplier`, `PurchaseOrder`/`PurchaseOrderItem` | 3 | Inventory procurement |
+| `Plan` (seeded: Practice/Enterprise), practice `subscription_plan` + server-side gating | — | Simplify pricing: flat $999 Practice (all categories) + Enterprise custom; Solo retired but enum value kept & normalized; plans admin-editable (`/admin/plans`) |
+| `AdminAccount`/admin JWT | — | Platform staff auth, separate from Clerk — username/password login → scoped admin token |
 | `Notification` | 3 | In-app notification store (SMS/WhatsApp/Email already have their own real send paths — this is the 4th channel) |
 | `AuditLog` | 4 | WHO/WHAT/WHEN/FROM-WHERE on sensitive actions — separate from `AgentLog`, which is AI-action-specific |
 
@@ -170,6 +172,15 @@ against both wrong-PIN brute-forcing and ID enumeration. The PIN is handed
 to the patient by front-desk staff at first real booking/check-in (default),
 with self-registration on first portal visit as a practice-level option.
 
+### 4.5 Platform admin — separate from Clerk (new)
+
+Platform staff (the company running Aiaceone, not clinic staff) authenticate at
+`/admin` with a username + password from `.env` (`ADMIN_USERNAME`/`ADMIN_PASSWORD`),
+earning a short-lived scoped JWT. This is the **only** surface that sees across
+practices: practice CRUD, subscription edits, plans editor, org-request approval,
+user management, sales leads, and the platform Super Agent. Everything else in the
+system remains strictly `practice_id`-scoped.
+
 ---
 
 ## 5. API surface — new this month (by domain)
@@ -185,30 +196,46 @@ with self-registration on first portal visit as a practice-level option.
 | Notifications | `GET /notifications`, `PATCH /notifications/{id}/read` |
 | Command Center | 4 new real query handlers: revenue-over-time, most-profitable-procedure, lead-conversion-rate, no-show-rate |
 | AI workflows | `POST /ai/lead-qualification`, `POST /ai/patient-intake`, `POST /ai/consultation-assistant`, `POST /ai/transcribe` (Groq STT) |
+| Landing chat (Aria) | `POST /api/v1/landing-chat/messages` — Groq-fast answers, real booking → patient lead (source "Landing Chat"), Redis-backed per-IP rate limiting/cache |
+| Platform admin | `POST /admin/auth/login`, `GET /admin/me`, `GET/POST /admin/practices`, `PATCH /admin/practices/{id}`, `PATCH /admin/practices/{id}/subscription`, `GET/POST/PATCH /admin/plans`, `GET/PATCH /admin/users`, org-request approve/reject, `GET /admin/sales-leads`, `/admin/super-agent/*` |
 | Audit | Internal only (middleware-level), no new public endpoints |
 
 ---
 
 ## 6. AI layer
 
-### 6.1 Already real
+### 6.1 The workforce: 9 real agents, 4 categories
 
-`ai_receptionist/` (voice/chat via Mistral+Twilio, automated SMS reminders,
-real-time translation, usage/cost overview) and Command Center (5 real
-category handlers, LLM tool-calling, entirely on `tier="low"`/Mistral).
-Both are the proven pattern every new workflow below follows: a thin
-service wrapping a real integration, logged via `AgentLogService`.
+The AI layer is now **9 consolidated, real agents** (replacing the earlier
+"31 stubs, 5 real" catalog — every agent has a working backend endpoint that
+answers with real data, logged via `AgentLogService`):
 
-### 6.2 The 8 workflows (priority order, per product owner)
+| Category | Agents |
+|---|---|
+| Front Desk & Intake | `receptionist` (Aria — marketing-site chat/triage → real booking → lead), `appointment_reminder` |
+| Consultation & Screening | `patient_intake`, `lead_qualification`, `consultation_assistant` |
+| Business & Operations | `main_agent` (Command Center, 4 handlers), `finance_agent` (real revenue/expense queries) |
+| Post-Surgery Care | `post_op_recovery` (reads the real RecoveryJournal), `marketing_retention` |
 
-1. AI Receptionist — real, gets Groq transcription added this month
-2. Lead Qualification — new
-3. AI Patient Intake — new
-4. Consultation Assistant — new
-5. Appointment automation — reminders real, adds confirmation/reschedule messaging
-6. Post-op follow-up — new, ties into the real `RecoveryJournal`
-7. Lead nurturing — new, built on the already-real `lifecycle_stage` funnel
-8. Owner AI Analytics — new Command Center category
+Plus two platform-level agents:
+- **Aria** — the marketing site chat. Fast (Groq-first `chat_fast`, capped
+  `max_tokens`), short answers, converts a booking conversation into a real lead.
+- **Super Agent** — staff-only, `/super-admin/super-agent`; one assistant across
+  every practice's data (practices, plans, sales leads, conversations, sessions).
+
+**Two hard rules on every LLM call:**
+1. **Server-side plan gating** — the LLM service checks the practice's plan tier
+   before answering (not just UI hiding). Practice ($999 flat, all categories)
+   vs Enterprise (custom); Solo retired.
+2. **Latency discipline** — interactive call sites cap `max_tokens` (Aria ~350,
+   agents 400) and Aria's reply path uses `chat_fast` (Groq-first) so the widget
+   feels instant.
+
+### 6.2 Pattern
+A thin service wrapping a real integration, logged via `AgentLogService`. Aria
+double-send / stale-prompt issues and admin-login hangs (Redis timeouts) were
+found and fixed by live browser runs this session — see the shared-services
+notes (rate limiter socket timeouts + cached fail-open).
 
 ### 6.3 Explicit AI boundary (stated once, applies everywhere)
 
@@ -226,14 +253,16 @@ phase pending compliance review.
 | Service | Status today | This month | Cost |
 |---|---|---|---|
 | Clerk | Real, working | — | Free tier (sufficient for pilot volume) |
-| Mistral | Real, working | — | Free tier |
+| Mistral | Real, working | Fallback/general tier | Free tier |
+| **Groq** (fast LLM tier) | Real, working | Powers Aria + JSON extraction | Free tier |
 | Resend | Real, working | — | Free tier |
-| Cloudinary | Placeholder | Sign up (free tier) | Free |
-| **Groq** (new — speech-to-text) | Doesn't exist | Sign up, wire `speech_service.py` | Free, no time-limited trial (unlike Deepgram's $200 credit) |
-| Twilio | Placeholder | Flagged, not resolved this month | **Not free** — no meaningful free tier for a real number; a real budget/account decision for the practice owner |
-| WhatsApp Business API | Placeholder | Flagged, not resolved this month | Free API, but requires Meta's external business-verification process — outside engineering's control either way |
-| Stripe | Placeholder | Flagged, not resolved this month | Free to integrate, only charges per real transaction — not a blocker for dev/pilot |
-| OpenAI | Placeholder | Not needed this month | Optional — nothing in this plan requires `tier="high"` |
+| Cloudinary | Real, working | — | Free |
+| **Green API** (WhatsApp) | Real, working | One real number connected | Free/cheap tiers, message-volume caps |
+| **Redis** | Configured (WSL), optional at runtime | Now integrated — rate limiting, OTP, booking drafts, landing-chat cache; fails open if down | Free |
+| Twilio | Placeholder | Legacy voice path idle | Not free — no meaningful free tier for a real number |
+| WhatsApp Business API (Meta) | Not used | Not used — Green API chosen over the verification-gated Meta path | Free API, but requires Meta's external business-verification process |
+| Stripe | Placeholder | Real checkout sessions are created server-side (end-to-end works locally); live charge needs real keys | Free to integrate, only charges per real transaction |
+| OpenAI | Placeholder | Not needed — Groq covers the fast path | Optional — nothing live requires it |
 
 See `CREDENTIALS.md` (added Week 4) for the actionable signup checklist.
 
@@ -271,17 +300,22 @@ Full detail lives in the approved plan
 (`C:\Users\muhammad sadoon\.claude\plans\woolly-meandering-harbor.md`) —
 summarized here for a reader who only has this file:
 
-- **Week 1** — this file, Doctor model enrichment (+today-at-a-glance
-  dashboard), Receptionist front-desk status machine, real Patient Portal
-  auth, a repeatable 2-doctor+1-receptionist demo seed script.
+- **Week 1** — Doctor model enrichment (+today-at-a-glance dashboard),
+  Receptionist front-desk status machine, real Patient Portal auth, a
+  repeatable 2-doctor+1-receptionist demo seed script. ✅ done
 - **Week 2** — Patient profile depth, consent versioning, before/after
-  photo timeline, the Surgery module.
-- **Week 3** — Post-op recovery journey, centralized notification engine,
-  inventory depth (suppliers/purchase orders/wastage), 4 new real Owner
-  Analytics handlers.
-- **Week 4** — The remaining AI workflows, Groq speech-to-text, audit
-  logging + rate-limiting, a focused test suite + CI pipeline, the
-  credentials checklist, handoff docs.
+  photo timeline, the Surgery module. ✅ done
+- **Week 3** — Post-op recovery journey (✅ `RecoveryJournal` real), a
+  centralized notification engine (🟡 per-channel send paths real,
+  unified interface still roadmap), inventory depth (🟡 models added), 4
+  real Owner Analytics handlers (✅ in Command Center + Finance Agent).
+- **Week 4** — the AI workforce rebuild (✅ 9 agents + Aria + Super Agent,
+  server-side gating), Groq fast tier (✅), admin panel (✅), Redis
+  integration (✅). Still open: real audit logging, the focused test suite
+  + CI pipeline, Groq STT wiring for call transcription.
+- **Won/ongoing since**: plan simplification (Practice $999 / Enterprise;
+  Solo retired), `chat_fast` latency work, Redis-fail-open hardening, and
+  the docs you're reading.
 
 Every week ends with the same verification discipline already proven
 throughout this project: a reviewed Alembic migration, a real-DB smoke

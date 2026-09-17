@@ -50,37 +50,37 @@ export function SuperAgentPage() {
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-accent-500">
             <SparklesIcon className="h-3.5 w-3.5" /> Super Agent
           </p>
-          <h1 className="mt-1 font-display text-2xl font-bold text-white">Ask the platform anything</h1>
-          <p className="mt-1 max-w-xl text-sm text-white/60">
+          <h1 className="mt-1 font-display text-2xl font-bold text-ink">Ask the platform anything</h1>
+          <p className="mt-1 max-w-xl text-sm text-ink-soft">
             Business questions about the whole book of clinics — live numbers from real practice, plan and
             signup data. Answers stay short and to the point.
           </p>
         </div>
       </div>
 
-      {error && <p className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm font-medium text-white">{error}</p>}
+      {error && <p className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm font-medium text-danger">{error}</p>}
 
-      <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5">
+      <div className="overflow-hidden rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
         <div className="flex max-h-[520px] flex-col gap-3 overflow-y-auto px-5 py-4">
           {messages.length === 0 && (
-            <p className="text-sm text-white/50">
-              Try: <span className="text-white">"Kya platform overall achha kar raha hai?"</span> — it will
-              answer in short, direct language.
+            <p className="text-sm text-ink-muted">
+              Click a quick question below, or type your own — e.g. "How is the platform doing?" in short,
+              direct language.
             </p>
           )}
           {messages.map((m, i) => (
             <div
               key={i}
-              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${m.role === "staff" ? "ml-auto bg-accent-500 text-white" : "bg-white/10 text-white/90"}`}
+              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${m.role === "staff" ? "ml-auto bg-accent-500 text-white" : "bg-sand-100 text-ink"}`}
             >
               <span className="whitespace-pre-wrap">{m.content}</span>
             </div>
           ))}
-          {busy && <div className="w-fit rounded-2xl bg-white/10 px-4 py-2.5 text-sm text-white/50">Thinking…</div>}
+          {busy && <div className="w-fit rounded-2xl bg-sand-100 px-4 py-2.5 text-sm text-ink-muted">Thinking…</div>}
           <div ref={endRef} />
         </div>
 
-        <div className="border-t border-white/10 px-5 py-3">
+        <div className="border-t border-sand-200 px-5 py-3">
           <div className="mb-2.5 flex flex-wrap gap-2">
             {QUICK_PROMPTS.map((p) => (
               <button
@@ -88,7 +88,7 @@ export function SuperAgentPage() {
                 type="button"
                 disabled={busy}
                 onClick={() => send(p)}
-                className="rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/70 transition-colors hover:border-accent-400 hover:text-accent-400 disabled:opacity-40"
+                className="rounded-full border border-sand-200 px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-accent-500 hover:text-accent-600 disabled:opacity-40"
               >
                 {p}
               </button>
@@ -99,7 +99,7 @@ export function SuperAgentPage() {
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder="Ask the Super Agent…"
-              className="flex-1 rounded-xl border border-white/15 bg-panel px-3.5 py-2.5 text-sm text-white outline-none placeholder:text-white/40 focus:border-accent-400/50"
+              className="flex-1 rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-ink-muted focus:border-accent-500/50 focus:bg-white"
             />
             <button
               type="submit"

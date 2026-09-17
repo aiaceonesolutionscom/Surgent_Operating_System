@@ -1,7 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation, useNavigationType } from "react-router-dom";
 
 const KEY_PREFIX = "scrollpos:";
+
+// Module-level (not component state) so it survives React StrictMode's dev
+// double-mount but always starts false on a real page load/refresh — a
+// fresh module evaluation. Restoring a saved scroll position is only ever
+// correct for a browser-back landing on a page the user genuinely left via
+// an in-app click during THIS session; react-router's history can report
+// navigationType "POP" for the very first render of a fresh tab too (its
+// initial action defaults to Pop), which would otherwise let a stale
+// sessionStorage value from a previous visit jump the page straight past
+// the hero on load — this flag is what tells those two "POP"s apart.
+let hasNavigatedWithinApp = false;
 
 function readSaved(pathname: string): number {
   try {
@@ -15,31 +26,32 @@ function writeSaved(pathname: string, y: number) {
   try {
     sessionStorage.setItem(KEY_PREFIX + pathname, String(y));
   } catch {
-    // ignore (private mode / storage disabled) — restoration just won't work
+    // ignore (private mode / storage disabled)
   }
 }
 
-// A fresh forward navigation ("PUSH" — clicking a link/CTA to a new page)
-// always starts at the top. Browser back/forward ("POP") restores the exact
-// scroll position the visitor left that page at.
-//
-// The save can't just happen reactively (e.g. on every `scroll` event, or
-// even on a timer): when a page unmounts — the hero's tall content
-// disappearing as the homepage gives way to a shorter page — the browser
-// clamps `scrollY` to the new, shorter height as a genuine side effect of the
-// DOM shrinking, and that clamp is itself indistinguishable from a real
-// scroll after the fact. So instead this saves at the one moment that's
-// actually reliable: a capture-phase click listener fires *before* React
-// Router's own handler processes the navigation, while `window.scrollY` is
-// still the true, un-clamped position of the page the visitor is still on.
+function forceScrollTo(top: number) {
+  const html = document.documentElement;
+  const prev = html.style.scrollBehavior;
+  html.style.scrollBehavior = "auto";
+  window.scrollTo({ top, left: 0, behavior: "instant" });
+  html.style.scrollBehavior = prev;
+}
+
 export function ScrollToTop() {
   const { pathname, hash } = useLocation();
   const navigationType = useNavigationType();
+  const isFirstRun = useRef(true);
+
+  useEffect(() => {
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  }, []);
 
   useEffect(() => {
     const onClickCapture = (e: MouseEvent) => {
       const anchor = (e.target as HTMLElement)?.closest?.("a[href]");
       if (!anchor) return;
+      hasNavigatedWithinApp = true;
       writeSaved(window.location.pathname, window.scrollY);
     };
     document.addEventListener("click", onClickCapture, { capture: true });
@@ -47,13 +59,10 @@ export function ScrollToTop() {
   }, []);
 
   useEffect(() => {
-    // A link like `/#security` (used by the footer to reach a homepage
-    // section from another page) is a real cross-page navigation — pathname
-    // changes, so this effect would otherwise force-scroll to top and fight
-    // the anchor. Scroll to the target element instead once it exists (the
-    // hero's async height means the target may not be laid out yet on the
-    // very first frame).
-    if (hash) {
+    const firstLoad = isFirstRun.current;
+    isFirstRun.current = false;
+
+    if (hash && !firstLoad) {
       const id = hash.slice(1);
       let cancelled = false;
       let attempts = 0;
@@ -68,36 +77,32 @@ export function ScrollToTop() {
         }
       };
       requestAnimationFrame(tryScrollToHash);
-      return () => {
-        cancelled = true;
-      };
+      return () => { cancelled = true; };
     }
 
-    const saved = navigationType === "POP" ? readSaved(pathname) : 0;
+    const saved = !firstLoad && hasNavigatedWithinApp && navigationType === "POP" ? readSaved(pathname) : 0;
     if (saved <= 0) {
-      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+      forceScrollTo(0);
       return;
     }
-    // The cinematic hero sets its real (tall) height asynchronously, a beat
-    // after mount (see CinematicHero.tsx) — restoring immediately into a
-    // still-short page would get silently clamped to 0, so wait until the
-    // document is actually tall enough for the saved position.
+
     let cancelled = false;
     let attempts = 0;
+    const pageHeight = () =>
+      Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0);
     const tryRestore = () => {
       if (cancelled) return;
       attempts++;
-      const pageIsTallEnough = document.body.scrollHeight - window.innerHeight >= saved;
-      if (pageIsTallEnough || attempts > 60) {
-        window.scrollTo({ top: saved, left: 0, behavior: "instant" });
-      } else {
+      if (pageHeight() - window.innerHeight >= saved) {
+        forceScrollTo(saved);
+      } else if (attempts <= 600) {
         requestAnimationFrame(tryRestore);
+      } else {
+        forceScrollTo(0);
       }
     };
     requestAnimationFrame(tryRestore);
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [pathname, navigationType, hash]);
 
   return null;

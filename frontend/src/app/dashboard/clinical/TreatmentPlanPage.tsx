@@ -113,7 +113,7 @@ export function TreatmentPlanPage() {
               <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${ITEM_STATUS_CLASS[item.status] || "bg-sand-100 text-ink-soft"}`}>
                 {item.status}
               </span>
-              {(role === "owner" || role === "doctor") && item.status !== "completed" && item.status !== "cancelled" &&
+              {role === "owner" && item.status !== "completed" && item.status !== "cancelled" &&
             <Link
               to={DASHBOARD_ROUTES.surgeryNew(plan.patient_id, item.procedure_id)}
               className="flex shrink-0 items-center gap-1.5 rounded-xl border border-sand-200 px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">

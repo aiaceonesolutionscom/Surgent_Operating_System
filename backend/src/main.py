@@ -22,8 +22,27 @@ post_op_poller = PostOpFollowUpPoller()
 lead_nurturing_poller = LeadNurturingPoller()
 
 
+def _init_sentry() -> None:
+    if not settings.sentry_dsn:
+        return
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.app_env,
+        release=settings.app_version,
+        # Medical SaaS: deliberately do NOT capture user PII (request headers,
+        # IPs, form bodies). send_default_pii=False keeps patient data out of
+        # Sentry even though the default snippet suggests otherwise.
+        send_default_pii=False,
+        traces_sample_rate=0.1,
+    )
+    logger.info("Sentry initialized (environment=%s)", settings.app_env)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _init_sentry()
     poller.start()
     logger.info("Green API poller started on app startup")
     post_op_poller.start()

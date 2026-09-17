@@ -177,10 +177,15 @@ export function useSessions(statusFilter?: string, patientId?: string) {
   }, []);
 
   const sendMessage = useCallback(
-    async (id: string, body: string) => {
-      if (!authedFetch) return;
+    async (id: string, body: string): Promise<string | null> => {
+      if (!authedFetch) return null;
       const detail = await sendConversationMessage(authedFetch, id, body);
       applyDetail(id, detail);
+      // Non-null only when the reply was saved but did NOT actually reach
+      // the patient over WhatsApp (see backend ConversationsService.
+      // send_staff_message) — the old behavior silently swallowed this, so
+      // staff had no way to know a message never arrived.
+      return detail.send_warning ?? null;
     },
     [authedFetch, applyDetail]
   );

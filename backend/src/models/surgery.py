@@ -10,7 +10,13 @@ from src.database import Base
 
 
 class SurgeryStatus(str, enum.Enum):
-    PLANNED = "planned"
+    # End-to-end status machine: booked at the front desk (scheduled), then
+    # confirmed with patient + doctor (confirmed), the doctor starts the case
+    # (in_progress), finishes it with the operative note (completed). Anything
+    # pre-procedure can be cancelled instead.
+    SCHEDULED = "scheduled"
+    CONFIRMED = "confirmed"
+    IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
 
@@ -49,7 +55,15 @@ class Surgery(Base):
     # the same reasoning Week 3's inventory work cares about for batches.
     implants_used: Mapped[list] = mapped_column(JSONB, default=list)
     operative_note: Mapped[str] = mapped_column(Text, nullable=True)
-    status: Mapped[SurgeryStatus] = mapped_column(Enum(SurgeryStatus), default=SurgeryStatus.PLANNED)
+    status: Mapped[SurgeryStatus] = mapped_column(Enum(SurgeryStatus), default=SurgeryStatus.SCHEDULED)
+    # Lifecycle timestamps + who cancelled it — lets the Owner's overview (and
+    # the front desk) answer "kis ne kab kya kiya" without counting on
+    # updated_at alone.
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_reason: Mapped[str] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

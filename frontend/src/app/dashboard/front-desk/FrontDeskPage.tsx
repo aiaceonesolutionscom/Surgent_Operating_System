@@ -42,7 +42,7 @@ export function FrontDeskPage() {
           <div className="mb-2">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-500">Front desk</p>
             <h1 className="mt-2 font-display text-[28px] font-600 tracking-tight text-ink sm:text-[32px]">
-              {staffName ? `Welcome receptionist ${staffName}` : "Welcome receptionist"}
+              {staffName ? `Welcome back, ${staffName}` : "Welcome back"}
             </h1>
             <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">{todayStats}</p>
           </div>

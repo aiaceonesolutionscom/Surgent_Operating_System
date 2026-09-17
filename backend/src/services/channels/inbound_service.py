@@ -23,6 +23,7 @@ from src.services.channels.whatsapp_green_api import WhatsAppGreenAPI
 from src.services.channels.booking_draft_store import BookingDraftStore
 from src.services.leads.lead_qualification_service import LeadQualificationService
 from src.services.patient_portal.patient_portal_auth_service import PatientPortalAuthService
+from src.utils.phone import normalize_phone
 
 logger = logging.getLogger(__name__)
 
@@ -362,6 +363,17 @@ class InboundService:
         db.add(agent_msg)
         if escalated:
             conversation.status = ConversationStatus.NEEDS_ATTENTION
+            # Escalating used to only flip the status badge — extra_data.ai_paused
+            # (the flag this SAME function checks at the top, and the one
+            # send_staff_message sets when a human actually replies) was never
+            # touched here. So the very next inbound message from this patient
+            # re-read ai_paused as still False and the AI happily auto-replied
+            # again, completely undoing its own "I need a human" request. A
+            # request_human_handoff call is now durable, exactly like a human
+            # manually taking over — it stays off until a staff member
+            # resumes it via the "AI replying" toggle (or replies themselves,
+            # which also sets this).
+            conversation.extra_data = {**(conversation.extra_data or {}), "ai_paused": True}
             reason_text = f": {escalation_reason}" if escalation_reason else ""
             db.add(Message(
                 conversation_id=conversation.id,
@@ -450,6 +462,7 @@ class InboundService:
         """Find existing patient by phone or create a new one. Returns
         (patient, is_new) — the AI's system prompt uses is_new to greet a
         returning patient differently instead of asking who they are again."""
+        phone = normalize_phone(phone)
         result = await db.execute(
             select(Patient).where(
                 Patient.practice_id == practice_id,
@@ -459,6 +472,24 @@ class InboundService:
         existing = result.scalar_one_or_none()
         if existing:
             return existing, False
+
+        # Green API always reports digits-only (see green_api_poller.py), but
+        # a patient's phone on file may have been typed by staff with a "+",
+        # spaces, or a leading "0" instead of the country code — none of
+        # which match the exact-string lookup above even though it's the
+        # same real number. Real bug found live: one contact ended up with
+        # a second Patient row (and from there a second Conversation/thread)
+        # purely because of this formatting mismatch. Fall back to a
+        # normalized comparison across the practice's other patients before
+        # concluding this is really someone new — practice patient counts
+        # are small enough that this full pass is cheap (same precedent as
+        # PracticeService.resolve_doctor_signup_code's own full scan).
+        candidates = await db.execute(
+            select(Patient).where(Patient.practice_id == practice_id, Patient.phone.isnot(None))
+        )
+        for candidate in candidates.scalars().all():
+            if candidate.phone and normalize_phone(candidate.phone) == phone:
+                return candidate, False
 
         # Split sender_name into first/last
         parts = (sender_name or "Unknown").strip().split(" ", 1)
@@ -480,20 +511,40 @@ class InboundService:
     async def _find_or_create_conversation(
         self, db: AsyncSession, practice_id: UUID, patient_id: UUID, channel: ConversationChannel
     ) -> Conversation:
-        """Find existing active conversation or create a new one."""
+        """Find this patient's existing WhatsApp thread or create a new one.
+
+        Two real bugs fixed here (found live: one contact ending up with
+        2-3 separate "chats"):
+        1. Matching used to ALSO require agent_type == "ai_receptionist" —
+           so a thread that started as (say) an appointment-reminder send
+           (MessagingService._find_or_create_conversation, agent_type=
+           "appointment_reminder") was invisible to this lookup, and the
+           patient's next inbound reply spawned a brand-new, separate
+           conversation instead of landing in the one they were already
+           replying to. Matching now drops agent_type entirely — one row per
+           (patient, channel) is the actual WhatsApp thread, same fix as
+           MessagingService's identical function.
+        2. A RESOLVED thread used to be treated as unusable — "Mark as
+           resolved" is a normal, expected staff action, but the very next
+           time that same patient texted in, this created ANOTHER new
+           conversation rather than reopening theirs. Resolved threads are
+           now reactivated (status -> ACTIVE) and reused instead.
+        """
         result = await db.execute(
             select(Conversation)
             .where(
                 Conversation.practice_id == practice_id,
                 Conversation.patient_id == patient_id,
                 Conversation.channel == channel,
-                Conversation.agent_type == "ai_receptionist",
             )
             .order_by(desc(Conversation.updated_at))
             .limit(1)
         )
         existing = result.scalar_one_or_none()
-        if existing and existing.status != ConversationStatus.RESOLVED:
+        if existing:
+            if existing.status == ConversationStatus.RESOLVED:
+                existing.status = ConversationStatus.ACTIVE
+                await db.flush()
             return existing
 
         conversation = Conversation(

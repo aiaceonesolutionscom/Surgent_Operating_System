@@ -4,13 +4,27 @@ import { ScissorsIcon, PlusIcon, ClockIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { usePlan } from "../plan/PlanContext";
-import { useSurgeries } from "./useSurgeries";
+import { useSurgeries, useSurgeryOverview } from "./useSurgeries";
+import { SurgeryOwnerOverview } from "./SurgeryOwnerOverview";
 import { DASHBOARD_ROUTES } from "../constants/routes";
+import type { SurgeryResponse } from "../../../api/entities";
 
+// End-to-end status colors: teal until the OR, success at completion,
+// muted for cancelled.
 const STATUS_STYLES: Record<string, string> = {
-  planned: "bg-accent-500/10 text-accent-700",
+  scheduled: "bg-accent-500/10 text-accent-700",
+  confirmed: "bg-teal-500/10 text-teal-700",
+  in_progress: "bg-amber-500/15 text-amber-700",
   completed: "bg-success/10 text-success",
   cancelled: "bg-ink-muted/10 text-ink-muted"
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  scheduled: "Scheduled",
+  confirmed: "Confirmed",
+  in_progress: "In progress",
+  completed: "Completed",
+  cancelled: "Cancelled"
 };
 
 function formatDateTime(iso: string) {
@@ -20,24 +34,35 @@ function formatDateTime(iso: string) {
 export function SurgeryListPage() {
   const { authedFetch, role } = usePlan();
   const isDoctor = role === "doctor";
-  const canManage = role === "owner" || role === "doctor";
+  // Booking surface belongs to the front desk: Receptionist + Owner schedule
+  // (and confirm) surgeries; the Doctor is notified and owns the clinical side.
+  const canSchedule = role === "owner" || role === "receptionist";
+  const isOwner = role === "owner";
   // Doctors default to "Mine" (their own surgeries as surgeon); "All" stays
   // available when they have practice-wide visibility. Owner/Receptionist
   // always see the whole practice's list.
   const [scope, setScope] = useState<"all" | "mine">(isDoctor ? "mine" : "all");
   const { surgeries, loading } = useSurgeries(authedFetch, undefined, isDoctor ? scope : undefined);
+  const { overview, loading: overviewLoading } = useSurgeryOverview(isOwner ? authedFetch : null);
 
-  const upcoming = surgeries.filter((s) => s.status === "planned");
-  const past = surgeries.filter((s) => s.status !== "planned");
+  // Still to happen: scheduled + confirmed + the one currently in the OR.
+  const active = surgeries.filter((s) => s.status !== "completed" && s.status !== "cancelled");
+  const past = surgeries.filter((s) => s.status === "completed" || s.status === "cancelled");
 
   return (
     <>
+      {isOwner && <SurgeryOwnerOverview overview={overview} loading={overviewLoading} />}
+
       <div className="mb-6 flex items-start justify-between gap-4">
         <PageHeader
           title="Surgery"
-          subtitle={isDoctor ? "Your surgeries across the practice." : "Every planned, completed, and cancelled surgery across the practice."}
+          subtitle={
+            isDoctor
+              ? "Your surgeries across the practice."
+              : "End-to-end surgery flow — booked, confirmed, in the OR, completed, or cancelled."
+          }
         />
-        {canManage &&
+        {canSchedule &&
         <Link
           to={DASHBOARD_ROUTES.surgeryNew()}
           className="flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700">
@@ -71,8 +96,8 @@ export function SurgeryListPage() {
         </div> :
 
       <div className="space-y-6">
-          {upcoming.length > 0 &&
-        <SurgerySection title={`Upcoming (${upcoming.length})`} surgeries={upcoming} />
+          {active.length > 0 &&
+        <SurgerySection title={`Upcoming & active (${active.length})`} surgeries={active} />
         }
           {past.length > 0 &&
         <SurgerySection title={`Past (${past.length})`} surgeries={past} />
@@ -83,7 +108,7 @@ export function SurgeryListPage() {
 
 }
 
-function SurgerySection({ title, surgeries }: { title: string; surgeries: ReturnType<typeof useSurgeries>["surgeries"] }) {
+function SurgerySection({ title, surgeries }: { title: string; surgeries: SurgeryResponse[] }) {
   return (
     <div className="rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
       <div className="border-b border-sand-100 px-5 py-4">
@@ -106,8 +131,8 @@ function SurgerySection({ title, surgeries }: { title: string; surgeries: Return
                 {s.assistant_doctor_name && <> + {s.assistant_doctor_name}</>}
               </p>
             </div>
-            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${STATUS_STYLES[s.status] || "bg-sand-100 text-ink-soft"}`}>
-              {s.status}
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_STYLES[s.status] || "bg-sand-100 text-ink-soft"}`}>
+              {STATUS_LABELS[s.status] || s.status}
             </span>
           </Link>
         )}

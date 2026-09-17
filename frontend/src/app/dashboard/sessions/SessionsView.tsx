@@ -9,7 +9,7 @@ interface SessionsViewProps {
   sessions: Session[];
   onLoadMessages?: (sessionId: string) => void;
   onResolve?: (sessionId: string) => void;
-  onSendMessage?: (sessionId: string, body: string) => Promise<void>;
+  onSendMessage?: (sessionId: string, body: string) => Promise<string | null>;
   onToggleAi?: (sessionId: string, paused: boolean) => Promise<void>;
 }
 

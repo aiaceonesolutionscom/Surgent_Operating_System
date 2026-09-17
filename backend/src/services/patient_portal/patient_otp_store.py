@@ -5,16 +5,13 @@ import time
 
 from src.config import get_settings
 from src.server.exceptions import AppException
+from src.utils.phone import normalize_phone as _normalize_phone
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
 _TTL_SECONDS = 10 * 60
 _CODE_LENGTH = 6
-
-
-def _normalize_phone(phone: str) -> str:
-    return "".join(ch for ch in phone if ch.isdigit())
 
 
 class PatientOtpStore:
@@ -32,7 +29,12 @@ class PatientOtpStore:
         if self._client is None:
             try:
                 import redis.asyncio as redis
-                self._client = redis.from_url(settings.redis_url, decode_responses=True)
+                self._client = redis.from_url(
+                    settings.redis_url,
+                    decode_responses=True,
+                    socket_connect_timeout=2.0,
+                    socket_timeout=2.0,
+                )
             except Exception:
                 logger.warning("Could not initialize Redis client")
                 self._client = None

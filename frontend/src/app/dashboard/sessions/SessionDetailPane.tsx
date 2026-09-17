@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2Icon, DownloadIcon, FileTextIcon, PlayIcon, PauseIcon } from "lucide-react";
 import type { Session } from "./types";
@@ -121,7 +121,7 @@ export function SessionDetailPane({
 }: {
   session: Session;
   onResolve?: (sessionId: string) => void;
-  onSendMessage?: (sessionId: string, body: string) => Promise<void>;
+  onSendMessage?: (sessionId: string, body: string) => Promise<string | null>;
   // Accepted for interface-compatibility with SessionsView's callbacks. For
   // WhatsApp sessions it powers the per-conversation "AI replying" toggle
   // (the AI Receptionist pauses auto-reply once a human replies — this is
@@ -130,6 +130,33 @@ export function SessionDetailPane({
   // auto-reply to pause, so the toggle is hidden there.
   onToggleAi?: (sessionId: string, paused: boolean) => Promise<void>;
 }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const [sendWarning, setSendWarning] = React.useState<string | null>(null);
+
+  async function handleSendMessage(text: string) {
+    if (!onSendMessage) return;
+    setSendWarning(null);
+    const warning = await onSendMessage(session.id, text);
+    if (warning) setSendWarning(warning);
+  }
+
+  // Messages render oldest-first top-to-bottom (correct for a bottom-anchored
+  // chat), but nothing was ever scrolling the pane down to actually show the
+  // bottom — so opening a conversation, or switching to a different one,
+  // left the browser's default scrollTop of 0 in place, landing on the
+  // OLDEST message instead. Depends on session.id too, not just message
+  // count, so switching between two conversations that happen to have the
+  // same number of messages still re-scrolls (a plain [messages.length] dep
+  // would miss that case). Mirrors the same pattern already used correctly
+  // in the internal staff chat, MessageThreadView.tsx.
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [session.id, session.messages.length]);
+
+  useEffect(() => {
+    setSendWarning(null);
+  }, [session.id]);
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-sand-200 px-6 py-4">
@@ -187,6 +214,7 @@ export function SessionDetailPane({
             </div>
 
         )}
+        <div ref={bottomRef} />
       </div>
 
       {session.status === "needs_attention" && onResolve &&
@@ -199,7 +227,13 @@ export function SessionDetailPane({
         </div>
       }
 
-      {onSendMessage && <MessageInput onSendText={(text) => onSendMessage(session.id, text)} />}
+      {sendWarning &&
+      <div className="border-t border-warning/25 bg-warning/[0.06] px-6 py-2.5 text-xs font-medium text-warning">
+          ⚠ {sendWarning}
+        </div>
+      }
+
+      {onSendMessage && <MessageInput onSendText={(text) => void handleSendMessage(text)} />}
     </div>);
 
 }

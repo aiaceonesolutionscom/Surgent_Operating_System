@@ -3,9 +3,9 @@
 A real, working **Clinic Management OS** for plastic surgery and aesthetic
 medicine practices — Owner, Doctor, and Receptionist roles each get a real,
 authenticated dashboard backed by a real Postgres database — plus an **AI
-Agent Workforce** layered on top: 31 named AI capabilities across 5
-categories, a handful of which are real and running today, the rest of
-which are this product's forward roadmap.
+Agent Workforce** layered on top: **9 named agents across 4 practice
+categories**, every one backed by a real backend endpoint (not a shell),
+plus a platform-wide **Super Agent** in the admin panel.
 
 This repo is a monorepo: the practice-facing web app (`frontend/`) and its
 API (`backend/`).
@@ -15,8 +15,9 @@ API (`backend/`).
 ├── frontend/          Vite + React + TypeScript — the marketing/product site
 │                      AND the real, authenticated Owner/Doctor/Receptionist
 │                      dashboard (patients, appointments, billing, staff, ...)
+│                      AND the platform admin panel (/admin, /super-admin)
 ├── backend/           FastAPI (Python) — the real clinic-operations API,
-│                      the 31 agents' APIs, auth, and integrations
+│                      the 9 agents' APIs, admin API, auth, integrations
 └── design-references/ Early AI-generated UI mockups, kept for reference only —
                         not built, not part of either app
 ```
@@ -31,16 +32,17 @@ precise about which is which before reading anything else below:
 1. **The clinic operating system** — patients, appointments, billing,
    staff, clinical documentation, inventory, leads — is **real**. Every
    domain below is backed by real SQLAlchemy models, real Alembic
-   migrations (17 so far), real CRUD APIs, real role-based access control,
-   and a real authenticated React dashboard. This is the part a practice
-   could actually run its front desk and back office on today.
-2. **The "31 AI agents"** is this product's marketing concept and forward
-   roadmap for an autonomous AI layer on top of that operating system —
-   phone/chat answering, consultation triage, surgery scheduling, recovery
-   monitoring, business automation. **5 of the 31 have real logic behind
-   them today; the other 24 are scaffolded but not built** (see
-   [The AI agent layer](#the-ai-agent-layer--whats-real-what-isnt-and-why)
-   below for exactly which, and why those specific ones were built first).
+   migrations, real CRUD APIs, real role-based access control, and a real
+   authenticated React dashboard.
+2. **The AI agent layer** is this product's core differentiator: **9
+   agents, all real** (`receptionist`, `appointment_reminder`,
+   `patient_intake`, `lead_qualification`, `consultation_assistant`,
+   `main_agent`, `finance_agent`, `post_op_recovery`,
+   `marketing_retention`) grouped into 4 practice categories (Front Desk
+   & Intake, Consultation & Screening, Business & Operations, Post-Surgery
+   Care) — plus **Aria**, the marketing site's own AI chat, and the
+   platform-wide **Super Agent** at `/super-admin/super-agent` that works
+   across every practice.
 
 Nothing below is aspirational unless it's explicitly marked as such.
 
@@ -52,20 +54,24 @@ development (not just "the code compiles"):
 
 | Domain | What it actually does |
 |---|---|
-| **Auth & roles** | Clerk-based sign-in; four roles (Owner, Doctor, Receptionist, platform Staff/admin) with granular, per-record permission grants — not just role-level gating |
-| **Patients** | Full CRM: contact info, chief complaint, AI-agent routing, consent status, and a real **lifecycle/funnel stage** (inquiry → contacted → consult → treatment planned → patient, or lost) |
+| **Auth & roles** | Clerk-based sign-in for staff; four roles (Owner, Doctor, Receptionist, platform Staff/admin) with granular, per-record permission grants — not just role-level gating. Staff also get a separate authenticated **admin panel** (`/admin`) with its own login |
+| **Patients** | Full CRM: contact info, chief complaint, consent status, medical profile (allergies, history, medications, insurance, referral source), and a real **lifecycle/funnel stage** (inquiry → contacted → consult → treatment planned → patient, or lost) |
 | **Doctors** | Owner-managed roster; a doctor can also **self-apply** via a shareable signup link, reviewed and approved by the Owner before they get real dashboard access |
 | **Receptionist / Front Desk** | A real staff role — today's schedule, check-in, waiting room, booking — invited by the Owner via email, with its own granular permission set |
-| **Appointments** | Full booking/reschedule/cancel/complete/check-in lifecycle |
-| **Clinical documentation** | SOAP-structured consultation notes, phased treatment plans built from a real procedure catalog, patient photo galleries, and per-document e-consent (typed-name signature, witnessed by staff) |
-| **Billing & Invoicing** | Invoices generated ad-hoc or straight from a treatment plan's priced items, line items, tax/discount, mark-paid workflow |
-| **Finance** | Expense tracking (Owner + Receptionist) and a real revenue-vs-expense overview (Owner) — counts only *paid* invoices as revenue, never a projection |
-| **Leads / Funnel** | The patient lifecycle stage above, visualized as a real funnel with a "lost" breakdown |
-| **Inventory** | SKU catalog + received-batch tracking (lot/quantity/expiry), FEFO (first-expiry-first-out) consumption, low-stock flagging |
-| **AI Receptionist** | Real LLM-driven call/chat handling (Twilio + Mistral), automated SMS appointment reminders, and real-time message translation — see below |
-| **Website chat (Aria)** | The marketing site's own AI chat: clickable hero copy opens a real FAQ + booking chat (Mistral), and every completed booking lands as a patient lead (source "Landing Chat") with an in-app notification + emailed to the practice for follow-up |
-| **Internal messaging** | A simple two-way message thread between the Owner and each Doctor/Receptionist |
-| **Practice subscription** | The practice's *own* SaaS plan (Solo/Practice/Enterprise) — pricing → Stripe checkout → claim → setup wizard |
+| **Appointments** | Full booking/reschedule/cancel/complete/check-in lifecycle, plus no-show marking and a real waitlist |
+| **Clinical documentation** | SOAP-structured consultation notes, phased treatment plans built from a real procedure catalog, per-doctor procedure pricing, and per-document e-consent (typed-name signature, **versioned templates** so signed wording is frozen) |
+| **Before/after photos** | Cloudinary-backed upload, timeline grouping by stage (before/day7/day14/1mo/3mo/6mo/1yr), a drag-comparison slider, and an independent marketing-use approval flag separate from clinical consent |
+| **Surgery** | Real record (surgeon, assistant, anesthesia, pre-op checklist, implants with lot numbers, operative note), full planned → completed/cancelled lifecycle |
+| **Billing / Invoices** | Invoices generated ad-hoc or straight from a treatment plan's priced items, line items, tax/discount, mark-paid workflow |
+| **Finance** | Expense tracking, a real revenue-vs-expense overview (Owner), and a dedicated **Finance Agent** that answers revenue/expense questions in plain language |
+| **Leads / Funnel** | The patient lifecycle stage above, visualized as a real funnel with a "lost" breakdown + a real Sales Leads feed in the admin panel |
+| **Inventory** | SKU catalog + received-batch tracking (lot/quantity/expiry), FEFO consumption, low-stock flagging |
+| **Post-op recovery** | Real `RecoveryJournal` tied to each Surgery, checkpoint-based (Day 1/3/7/14/1mo) |
+| **Internal messaging** | Two-way threads between the Owner and each Doctor/Receptionist, surfaced from the topbar |
+| **AI Receptionist / Aria** | The marketing site chat (Aria) answers questions live via LLM and every completed booking lands as a patient lead (source "Landing Chat") with immediate follow-up — see below |
+| **Human takeover** | Staff can reply directly to an AI-handled conversation and the AI pauses auto-replying until manually resumed — a human and the bot never talk over each other |
+| **Command Center** | "Main Agent" — a real assistant staff can ask things like "which patients need surgery?" — genuinely queries the real database via real category handlers, gated by the plan tier |
+| **Practice subscription** | **Practice** (flat $999/mo, all categories included) and **Enterprise** (custom) plans — billing → Stripe checkout → claim → setup wizard. Plans and every practice's tier are managed from the admin panel; AI features are **gated server-side** by the practice's plan, not just hidden in the UI |
 
 ## Backend (`backend/`)
 
@@ -78,16 +84,19 @@ backend/src/
 ├── controller/<domain>/<domain>_controllers.py    patients, appointments, billing,
 ├── services/<domain>/<domain>_services.py         finance, inventory, clinical, staff, ...
 │
-├── router/agents/<name>_agent/<name>_agent_router.py        the 31 AI agents,
-├── controller/agents/<name>_agent/<name>_agent_controllers.py  one named folder
-├── services/agents/<name>_agent/<name>_agent_services.py       each, same shape
+├── router/agents/<name>_agent/<name>_agent_router.py     the 9 AI agents +
+├── controller/agents/<name>_agent/<name>_agent_controllers.py  super agent,
+├── services/agents/<name>_agent/<name>_agent_services.py       one named folder each
+├── router/admin/                                    platform admin API (staff-only):
+│    practices CRUD, subscriptions, plans, users,
+│    org-request approval, sales leads, super-agent
 ├── router/agents/__init__.py    registers every router (agent or not) -> /api/v1/...
 │
-├── models/       SQLAlchemy models (Practice, Patient, Appointment, Invoice, ...)
+├── models/       SQLAlchemy models (Practice, Patient, Appointment, Invoice, Plan, ...)
 ├── schemas/      Pydantic request/response contracts
 ├── server/       middleware, Clerk auth dependency chain, exception handling
-└── services/     shared, non-domain services: llm, twilio, messaging, storage,
-                  cloudinary, email, agent_log, agent_costing, clerk, ...
+└── services/     shared, non-domain services: llm, messaging, storage,
+                  cloudinary, email, agent_log, rate_limiter (Redis-backed), ...
 ```
 
 Router → Controller → Service is the call chain everywhere: the router
@@ -95,7 +104,9 @@ defines HTTP routes + the auth dependency (`get_current_practice_user`,
 `require_role(...)`), the controller adapts a request into a service call,
 the service holds the actual logic. Every practice-scoped query is
 filtered by `practice_id` resolved server-side from the authenticated
-user — never trusted from the client.
+user — never trusted from the client. The new platform admin area is
+authenticated separately (username + password, JWT) and is the only
+surface that can see across practices.
 
 **Running it locally:**
 ```bash
@@ -109,7 +120,17 @@ alembic upgrade head
 uvicorn src.main:app --host 127.0.0.1 --port 8001
 ```
 `GET /health` is a liveness check with no auth. Everything else expects a
-Clerk-issued bearer token (`Authorization: Bearer <token>`).
+Clerk-issued bearer token (`Authorization: Bearer <token>`), except the
+patient portal (ID+PIN login → its own JWT) and the admin panel
+(`/api/v1/admin/auth/login` → admin JWT).
+
+**Redis note (Windows local dev):** rate limiting, the patient-portal PIN
+OTP store, booking drafts, and the landing-chat cache use Redis
+(`REDIS_URL=redis://localhost:6380` in the WSL setup). If Redis is not
+reachable the app **fails open** (connection timeouts are short and the
+rate limiter caches the outage), so everything still works — it just isn't
+rate-limited. Start Redis (`redis-server`, typically via WSL) to get the
+real protection.
 
 ## Frontend (`frontend/`)
 
@@ -121,17 +142,21 @@ frontend/src/
 │   ├── auth/         real Clerk sign-in/sign-up, doctor self-apply flow,
 │   │                 staff invite acceptance
 │   ├── onboarding/   pricing -> Stripe checkout -> claim plan -> setup wizard
-│   └── dashboard/    the real, authenticated Owner/Doctor/Receptionist app —
-│                      one folder per domain: patients/, doctors/, appointments
-│                      (front-desk/), clinical/, billing-invoices/, finance/,
-│                      inventory/, leads/, messages/, receptionist/ (AI monitor),
-│                      staff/, plan/, settings/, layout/ (Sidebar role-gating)
+│   ├── dashboard/    the real, authenticated Owner/Doctor/Receptionist app —
+│   │                  one folder per domain: patients/, doctors/, appointments
+│   │                  (front-desk/), clinical/, billing-invoices/, finance/,
+│   │                  inventory/, leads/, messages/, receptionist/ (AI monitor),
+│   │                  staff/, plan/, settings/, layout/ (Sidebar role-gating)
+│   ├── admin/        platform staff panel: practices, plans, users, org-requests,
+│   │                  sales leads, and /super-admin (Super Agent chat + sessions)
+│   └── super-admin/...
 ├── components/       marketing site sections (Navbar, hero, pricing, ...)
 ├── pages/            public marketing pages (Home, Agents catalog, ...)
-├── data/agents/       one file per AI agent — name/description/icon/category —
+├── data/agents/       one file per AI agent — content/capabilities/category —
 │                      aggregated by index.ts into the public catalog
+├── hooks/             e.g. useLivePlans (plans served from the backend)
 └── api/               typed fetch wrapper (client.ts) + one file of functions
-                       per backend domain (entities.ts, practice.ts, ...)
+                       per backend domain (entities.ts, practice.ts, admin.ts, ...)
 ```
 
 `app/dashboard/` is **not** placeholder scaffolding — it's the real product:
@@ -155,84 +180,44 @@ allow-list is `localhost`-only, so the two don't count as the same origin).
 (SPA fallback included) — no Node process at runtime. `backend/Dockerfile`
 runs the API directly.
 
-## The AI agent layer — what's real, what isn't, and why
+## The AI agent layer — what's real
+
+Nine agents, four categories — **every one is real** (a working backend
+endpoint answering with real data, not a stub), all logged via
+`AgentLogService` so usage is queryable:
 
 | Category | Agents (slug) |
 |---|---|
-| Front Desk & Intake | `receptionist`, `appointment_reminder`, `multilingual_translation` *(merged into one real module, see below)*; `appointment_booking`, `reschedule_cancellation` *(retired — see below)* |
-| Consultation & Screening | `ai_consultation`, `photo_analysis`, `video_consultation`, `medical_history_intake`, `risk_assessment`, `procedure_recommendation`, `pre_surgery_preparation` |
-| Surgery Management | `surgery_scheduling`, `surgeon_calendar`, `operating_room_scheduler`, `equipment_checklist`, `implant_inventory`, `surgical_documentation` |
-| Post-Surgery Care | `recovery_followup`, `healing_monitoring`, `emergency_triage`, `medication_reminder`, `wound_care_guidance`, `recovery_dashboard` |
-| Business & Operations | `cost_estimation`, `payment_invoice`, `insurance_verification`, `analytics_dashboard`, `patient_feedback`, `marketing_followup`, `lead_nurturing` |
+| Front Desk & Intake | `receptionist` (Aria — marketing-site chat/triage, real booking → lead), `appointment_reminder` |
+| Consultation & Screening | `patient_intake`, `lead_qualification`, `consultation_assistant` |
+| Business & Operations | `main_agent` (Command Center), `finance_agent` |
+| Post-Surgery Care | `post_op_recovery`, `marketing_retention` |
 
-**Real today (5 of 31):**
-- **`receptionist` + `appointment_reminder` + `multilingual_translation`** —
-  merged into one backend module, `backend/src/services/ai_receptionist/`
-  (`voice_chat_service.py`, `reminder_service.py`, `translation_service.py`,
-  `overview_service.py`), one router at `/api/v1/ai-receptionist/*`. Real
-  LLM call/chat handling (Mistral), real Twilio TwiML generation, real
-  automated SMS reminders, real message translation. The dashboard's **AI
-  Receptionist** page shows real usage counts and a real cost estimate
-  computed from actual logged activity — not a mock.
-- **`marketing_followup`** — sends a practice's configured promotional
-  offer to a real patient via SMS/WhatsApp, logged.
-- **`patient_feedback`** — requests a review from a patient after a real
-  completed appointment, with a real per-practice review link if one's
-  configured.
+Plus, outside the per-practice catalog:
 
-**Retired (2 of 31):** `appointment_booking` and `reschedule_cancellation`
-had backend logic that was a byte-for-byte duplicate of what the real
-Receptionist role's booking/reschedule/cancel screens already do — their
-dedicated agent folders were deleted. They're still listed in the public
-marketing catalog (`data/agents/`), since the *capability* is real — it's
-just delivered by the real Receptionist system now, not a separate "AI
-agent" code path.
+- **Aria** — the marketing site's own chat widget. Fast (Groq-first,
+  short capped answers), answers pricing/questions, and converts a booking
+  conversation into a real lead handed to the practice.
+- **Super Agent** — platform-wide, staff-only, at `/super-admin/super-agent`.
+  One assistant that works across every practice's data (practices, plans,
+  sales leads, conversations) instead of being scoped to one practice.
 
-**Still stubs (24 of 31):** every other agent's `..._services.py` is a
-6-line file with one method, `get_status()`, returning
-`{"status": "active"}` — no real logic behind it yet. This is deliberate
-sequencing, not an oversight: the team built the **clinic operating
-system** first — patients, scheduling, billing, staff, clinical records,
-inventory — because that's what makes the product usable and sellable on
-its own, independent of how many AI agents exist. Each unbuilt category
-has its own reason it wasn't next:
-- **Consultation & Screening** agents need real vision/LLM pipelines wired
-  against real clinical data, and — being actual medical-context AI —
-  warrant a compliance/liability review before going live, not just an
-  implementation pass.
-- **Surgery Management** agents need real OR-calendar and
-  implant-inventory data models that don't fully exist yet.
-- **Post-Surgery Care** agents need a real recovery-tracking data model
-  (the `RecoveryJournal` model exists but has zero real writers today).
-- **Business & Operations** agents (`cost_estimation`, `payment_invoice`,
-  `insurance_verification`, `analytics_dashboard`, `lead_nurturing`)
-  substantially overlap with the real Billing/Finance/Leads systems
-  already built — they need to be *re-scoped* against what's real now,
-  not just filled in, or they'd duplicate real functionality the same way
-  `appointment_booking`/`reschedule_cancellation` did.
-
-Building one out: fill in its `..._services.py` with real logic (almost
-always the only file that changes) — see `ai_receptionist`'s services for
-the pattern (a thin service wrapping a real integration, logged via
-`AgentLogService` so usage is queryable later).
+Latency discipline is built in: interactive agents cap their LLM `max_tokens`
+so the UI stays snappy, and Aria's reply path routes through a dedicated
+`chat_fast` Groq-first helper rather than the general-purpose chat call.
 
 ## What's deliberately still mock data
 
-Separate from "not built yet" above — these have real backend endpoints
-that already work, but the frontend was intentionally reverted to mock
-data mid-project at the product owner's request (a decision to revisit,
-not a technical gap):
+Separate from "not built yet" above:
 
-- **Overview dashboard** (sessions/needs-attention/bookings KPIs),
-  **Sessions** pages, **Analytics** charts — `AnalyticsService` and the
-  real `Conversation`/`Appointment` data they'd read from already exist
-  and are tested; re-wiring the frontend to them is a fast follow, not a
-  rebuild.
-- **AI Receptionist monitor page**'s call/transcript widgets (live active
-  call, transcripts, omnichannel status) — these need real Twilio
-  call-streaming infrastructure that doesn't exist yet, clearly labeled
-  "Preview" on the page itself. The page's *KPI numbers* (calls handled,
-  cost estimate) are real, not mock.
+- **Legacy Overview / Sessions / Analytics widgets** in the older dashboard
+  areas were intentionally left on mock data at the product owner's request
+  (a decision to revisit, not a technical gap). In contrast, the **agent**
+  layer (Command Center, Finance Agent, Super Agent, Aria) reads real data
+  end-to-end.
+- **AI Receptionist monitor** page's live call/transcript widgets need call
+  streaming infra that isn't wired up yet — clearly labeled "Preview" on the
+  page; its KPI numbers and conversation feed are real.
 
 ## Configuration — what needs a real credential, and what breaks without one
 
@@ -245,62 +230,52 @@ tracked.)
 
 | Service | Env vars | Status here | Breaks without a real one |
 |---|---|---|---|
-| **Clerk** (auth) | `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_JWKS_URL`, `CLERK_WEBHOOK_SECRET` | Real (webhook secret is a placeholder) | Auth itself is real and working. The webhook secret placeholder means `user.created`/etc. webhook payloads from Clerk aren't cryptographically signature-verified yet — fine in dev, needs a real one before production |
+| **Clerk** (staff auth) | `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_JWKS_URL`, `CLERK_WEBHOOK_SECRET` | Real (webhook secret is a placeholder) | Auth itself is real and working. Webhook signatures aren't verified yet — fine in dev, needs a real value before production |
 | **Postgres** | `DATABASE_URL` | Real | — |
-| **OpenAI** | `OPENAI_API_KEY` | Placeholder | Any LLM call routed at `tier="high"` fails (nothing on a real, live path needs that tier today — `AI Receptionist` and translation both intentionally run on Mistral instead; future high-stakes agents will need this) |
-| **Mistral** | `MISTRAL_API_KEY` | Real | Powers the AI Receptionist's voice/chat and real-time translation today |
-| **Twilio** | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | Placeholder | Real SMS/voice sending fails — appointment reminders, marketing offers, and review requests all build the message correctly but the actual send fails at this step |
-| **Cloudinary** | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Placeholder | File uploads fail — `STORAGE_BACKEND=cloudinary` is the active storage backend, so patient photos and doctor application documents can't actually upload |
-| **WhatsApp** (Meta) | `WHATSAPP_API_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | Placeholder | WhatsApp-channel messaging doesn't send |
-| **Resend** | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Real | The actual active outbound-email path |
-| **SendGrid** | `SENDGRID_API_KEY` | Placeholder | Unused today — `EmailService` exists but Resend is what's actually wired to send |
-| **Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_SOLO`, `STRIPE_PRICE_PRACTICE` | Placeholder | The practice's own subscription checkout (pricing → pay → claim) can't process a real payment |
-| **Google Calendar** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Placeholder | Unused — belongs to the still-stub `surgeon_calendar` agent |
-| **Redis / Celery** | `REDIS_URL`; `celery` in `requirements.txt` | Present, unused | No background job queue actually runs anywhere in the code yet — both are dependencies waiting for a real use case |
+| **Mistral** | `MISTRAL_API_KEY` | Real | Fallback LLM tier — powers the AI layer when Groq is down / for non-Aria paths |
+| **Groq** | `GROQ_API_KEY`, `GROQ_MODEL` (e.g. `openai/gpt-oss-120b`) | Real | Aria's fast reply path, JSON extraction, and admin Super Agent fail |
+| **OpenAI** | `OPENAI_API_KEY` | Placeholder | Optional high-tier fallback — nothing on a live path hard-requires it |
+| **Twilio** | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | Placeholder | Legacy voice path idle — active messaging runs through WhatsApp/email, not Twilio |
+| **WhatsApp / Green API** | `GREEN_API_ID`, `GREEN_API_TOKEN` | Real (one real number connected) | Live WhatsApp conversations, media/profile lookups, human-takeover replies |
+| **Cloudinary** | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Real in this project's `.env` | Before/after photo uploads and doctor-application documents fail (uploads stored here) |
+| **Resend** | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Real | The active outbound-email path (notifications, practice outreach) |
+| **Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_SOLO`, `STRIPE_PRICE_PRACTICE` | Placeholder | Checkout sessions are created server-side and the flow works end-to-end locally, but a real transaction needs real keys |
+| **Redis** | `REDIS_URL` | Configured (WSL), optional at runtime | Rate limiting / OTP store / booking drafts / meeting-cache **fail open** if unreachable (see note above) — real protection needs it running |
 
 ## How ready is this, honestly
 
 - **The core clinic operating system** — patients, appointments, billing,
-  staff, clinical documentation, inventory, leads, internal messaging —
-  is **built, tested, and usable today** by a real practice, gated only by
-  the placeholder credentials above (Twilio, Cloudinary, Stripe, WhatsApp).
-  Those are pure configuration — obtain real keys and the exact same code
-  paths (already exercised via real database tests and live browser runs
-  during development) start working with no code changes.
-- **Auth, roles, and permissions** are fully real: Clerk sign-in, four
-  roles, granular per-record permission grants, doctor self-apply +
-  Owner-approval flow, staff email invites.
-- **The AI agent layer is 5 of 31 real (~16%)** — the rest is this
-  product's own forward roadmap, sequenced deliberately behind the core
-  operating system (see above for why each category wasn't next).
-- **Overview/Sessions/Analytics are intentionally mock** right now — a
-  product decision already reversible in a small frontend change, not a
-  backend gap.
+  staff, clinical documentation, surgery, recovery, inventory, leads,
+  internal messaging, patient portal — is **built, tested, and usable today**
+  by a real practice, gated only by the placeholder credentials above
+  (Stripe, Twilio). Those are pure configuration — real keys and the exact
+  same code paths start working with no code changes.
+- **Auth, roles, and permissions** are fully real: Clerk sign-in for the
+  four staff roles, granular per-record permission grants, doctor self-apply,
+  staff email invites, a separate patient ID+PIN portal auth, and a
+  username/password admin panel auth.
+- **The AI agent layer is 9 real agents + Aria + a platform Super Agent**,
+  with server-side plan gating (Practice $999 flat / Enterprise custom).
+- Everything was verified with real-database smoke scripts and live browser
+  runs; there is **no committed automated test suite / CI yet** — worth
+  adding before scaling the team.
 - **What's actually blocking a fully production-ready launch:**
-  1. Real Twilio / Cloudinary / Stripe / WhatsApp credentials — configuration only, zero code work needed.
+  1. Real Stripe keys for live checkout; the pipeline (sessions, claim,
+     setup wizard) is code-complete.
   2. A real `CLERK_WEBHOOK_SECRET` for cryptographic webhook verification.
-  3. A decision on when to re-wire Overview/Sessions/Analytics to their already-built real endpoints.
-  4. No committed automated test suite exists — every feature in this repo was verified with a real-database smoke script and a live Playwright browser run at the time it was built, but none of that is wired into CI today; worth adding before scaling the team.
-  5. Production infrastructure (VPS sizing, an actually-running Celery/Redis worker if background jobs get added, logging/monitoring) hasn't been set up — everything above was built and verified in local development only.
-  6. The 24 unbuilt AI agents, if the product's roadmap calls for them — not required for the *core clinic OS* to be sellable on its own.
-
-## VPS / sizing notes
-
-- The frontend is essentially free at runtime — static files behind nginx,
-  no Node process.
-- The backend today constructs real SDK clients (Mistral, Twilio's TwiML
-  builder, Clerk) — a **2 vCPU / 2GB RAM** VPS is comfortably enough to
-  start, `uvicorn` with 1–2 workers (FastAPI is async and doesn't need more
-  processes for I/O-bound work at this stage).
-- Revisit VPS size (4GB+) once more of the AI agent layer is real and/or a
-  Celery/Redis worker is actually running background jobs.
+  3. Redis running in the hosting environment (it's already integrated —
+     rate limiting, OTP store, booking drafts).
+  4. A decision on re-wiring the legacy mock Overview/Sessions/Analytics
+     widgets vs. keeping agent-focused analytics.
+  5. Production infrastructure (VPS sizing, logging/monitoring) — everything
+     above was built and verified in local development only.
 
 ## Tech stack
 
-**Backend**: FastAPI 0.115, SQLAlchemy 2.0 (async) + Postgres, Alembic,
-Pydantic v2, Clerk (auth), Twilio, Meta/WhatsApp API, OpenAI + Mistral,
-Stripe, Resend, Cloudinary, Celery + Redis (present, not yet running any
-real job).
+**Backend**: FastAPI, SQLAlchemy 2.0 (async) + Postgres, Alembic, Pydantic v2,
+Clerk (auth), Mistral + Groq (LLM), Green API (WhatsApp), Stripe, Resend,
+Cloudinary, Redis (rate limiting/OTP, fail-open), Twilio (legacy voice path
+idle).
 
 **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, React Router,
-Clerk React SDK.
+Clerk React SDK, framer-motion, lucide-react.

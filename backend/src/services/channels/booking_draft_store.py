@@ -33,7 +33,12 @@ class BookingDraftStore:
     @property
     def client(self):
         if self._client is None:
-            self._client = redis.from_url(settings.redis_url, decode_responses=True)
+            self._client = redis.from_url(
+                settings.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=2.0,
+                socket_timeout=2.0,
+            )
         return self._client
 
     def _key(self, conversation_id: UUID | str) -> str:

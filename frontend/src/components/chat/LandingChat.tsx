@@ -54,6 +54,7 @@ export function LandingChat({ open, seed, onClose, onSeedConsumed }: LandingChat
     }
   });
   const convIdRef = useRef(convId);
+  const pendingRef = useRef(false);
   const seedHandledRef = useRef<string | null>(null);
   const seedContextRef = useRef<string | undefined>(undefined);
   const greetedRef = useRef(messages.length > 0);
@@ -70,8 +71,11 @@ export function LandingChat({ open, seed, onClose, onSeedConsumed }: LandingChat
 
   const send = useCallback(
     async (text: string, context?: string) => {
+      // pendingRef (not the `sending` state) is the real in-flight guard so two
+      // calls in the same tick (e.g. a seeded hero message) can't both pass.
       const trimmed = text.trim();
-      if (!trimmed || sending) return;
+      if (!trimmed || pendingRef.current) return;
+      pendingRef.current = true;
       setSending(true);
       setMessages((prev) => [...prev, { id: Date.now(), role: "user", text: trimmed }]);
       setInput("");
@@ -111,10 +115,11 @@ export function LandingChat({ open, seed, onClose, onSeedConsumed }: LandingChat
           { id: Date.now() + 1, role: "bot", text: "Sorry, I hit a snag — please try again in a moment." }
         ]);
       } finally {
+        pendingRef.current = false;
         setSending(false);
       }
     },
-    [sending]
+    []
   );
 
   useEffect(() => {
@@ -137,7 +142,6 @@ export function LandingChat({ open, seed, onClose, onSeedConsumed }: LandingChat
       seedHandledRef.current = seed.title;
       seedContextRef.current = seed.title;
       const topic = formatSeed(seed);
-      setMessages((prev) => [...prev, { id: Date.now(), role: "user", text: topic }]);
       void send(topic, seed.title);
       onSeedConsumed();
     }
