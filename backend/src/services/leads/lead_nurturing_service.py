@@ -13,6 +13,7 @@ from src.models.conversation import Conversation
 from src.models.message import Message, MessageRole
 from src.services.llm.llm_service import LLMService
 from src.services.messaging.messaging_service import MessagingService
+from src.services.messaging.quiet_hours import MessageTiming
 from src.services.notifications.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
@@ -66,9 +67,20 @@ class LeadNurturingService:
 
             try:
                 text = await self._draft_message(patient)
-                await self.messaging.send_and_log(db, patient.practice_id, patient, _AGENT_TYPE, text)
+                # PROACTIVE: this is the clinic chasing a lead, so it respects
+                # both the patient's waking hours and their market's working
+                # week (SOP s11). Held messages are picked up by the next poll
+                # run — the 12h cadence is what makes a hold safe.
+                message = await self.messaging.send_and_log(
+                    db, patient.practice_id, patient, _AGENT_TYPE, text,
+                    timing=MessageTiming.PROACTIVE,
+                )
             except Exception:
                 logger.exception("Failed to send lead nurture for patient %s", patient.id)
+                continue
+
+            if message is None:
+                # Not sent — do not notify the practice that a follow-up went out.
                 continue
 
             await self.notifications.notify(

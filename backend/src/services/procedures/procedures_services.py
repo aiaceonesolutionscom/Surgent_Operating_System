@@ -24,6 +24,8 @@ class ProceduresService:
             description=data.description,
             base_price=data.base_price,
             duration_minutes=data.duration_minutes,
+            default_session_count=data.default_session_count,
+            default_checklist=data.default_checklist,
         )
         db.add(procedure)
         await db.flush()

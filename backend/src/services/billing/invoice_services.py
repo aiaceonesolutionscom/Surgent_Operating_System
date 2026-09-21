@@ -325,3 +325,47 @@ class InvoiceService:
     async def list_payments_for_invoice(self, db: AsyncSession, practice_id: UUID, invoice_id: UUID) -> list[Payment]:
         invoice = await self.get_invoice(db, practice_id, invoice_id)
         return list(invoice.payments)
+
+    async def record_refund(
+        self, db: AsyncSession, practice_id: UUID, invoice_id: UUID, amount: float,
+        recorded_by: UUID | None, notes: str | None = None,
+    ) -> Invoice:
+        """The money-moving half of RefundService.complete_request — writes
+        a NEGATIVE Payment row (reverses part or all of what was collected)
+        rather than deleting/editing existing Payment rows, so the ledger
+        stays a real append-only history of what actually happened (a
+        deposit, a balance payment, then a refund), same reasoning every
+        other Payment row here already follows. `_attach_computed`'s
+        `sum(p.amount for p in invoice.payments)` already handles a negative
+        entry correctly with no changes needed there."""
+        invoice = await self.get_invoice(db, practice_id, invoice_id)
+        if invoice.status == InvoiceStatus.CANCELLED:
+            raise AppException("Can't refund a cancelled invoice.")
+        if amount <= 0:
+            raise AppException("Refund amount must be greater than zero.")
+        if amount > invoice.amount_paid:
+            raise AppException(
+                f"Refund amount ({invoice.currency} {amount:,.2f}) is more than what's actually been paid "
+                f"on this invoice ({invoice.currency} {invoice.amount_paid:,.2f})."
+            )
+
+        payment = Payment(
+            practice_id=practice_id,
+            invoice_id=invoice.id,
+            amount=-amount,
+            currency=invoice.currency,
+            method=PaymentMethod.OTHER,
+            recorded_by=recorded_by,
+            notes=notes or "Refund",
+        )
+        db.add(payment)
+        await db.flush()
+
+        remaining_paid = invoice.amount_paid - amount
+        if remaining_paid <= 0:
+            invoice.status = InvoiceStatus.REFUNDED
+        elif remaining_paid < float(invoice.total_amount):
+            invoice.status = InvoiceStatus.PARTIALLY_PAID
+        await db.flush()
+
+        return await self.get_invoice(db, practice_id, invoice_id)

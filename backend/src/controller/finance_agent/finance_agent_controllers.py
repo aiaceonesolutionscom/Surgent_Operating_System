@@ -48,6 +48,10 @@ class FinanceAgentController:
         self._guard(ctx)
         return await self.service.ask(db, ctx.practice.id, data.question, data.session_id)
 
+    def ask_stream(self, db: AsyncSession, ctx: PracticeContext, data: AskFinanceAgentRequest):
+        self._guard(ctx)
+        return self.service.ask_stream(db, ctx.practice.id, data.question, data.session_id)
+
     async def list_sessions(self, db: AsyncSession, ctx: PracticeContext) -> list[FinanceAgentSessionSummary]:
         self._guard(ctx)
         conversations = await self.service.list_sessions(db, ctx.practice.id)
@@ -64,6 +68,7 @@ class FinanceAgentController:
                 FinanceAgentMessage(
                     role="staff" if m.role == MessageRole.STAFF else "agent",
                     content=m.content,
+                    steps=(m.extra_data or {}).get("steps", []),
                     created_at=m.created_at,
                 )
                 for m in messages

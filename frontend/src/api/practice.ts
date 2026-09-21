@@ -35,6 +35,23 @@ export function getMyPractice(authedFetch: AuthedFetch) {
   return authedFetch<PracticeMeResponse>("/api/v1/practice/me");
 }
 
+export interface UpdatePracticeRequest {
+  name?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  timezone?: string | null;
+}
+
+// Owner-only (see practice_router.py's role check on PATCH /practice/me) —
+// persists real Practice columns, not the old localStorage-only draft
+// usePracticeProfile.ts used before this.
+export function updateMyPractice(authedFetch: AuthedFetch, data: UpdatePracticeRequest) {
+  return authedFetch<PracticeMeResponse>("/api/v1/practice/me", {
+    method: "PATCH",
+    body: JSON.stringify(data)
+  });
+}
+
 export function claimPlan(authedFetch: AuthedFetch, sessionId: string) {
   return authedFetch<ClaimPlanResponse>("/api/v1/practice/claim", {
     method: "POST",

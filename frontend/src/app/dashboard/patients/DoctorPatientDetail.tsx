@@ -10,6 +10,7 @@ import { PatientAppointmentsTab } from "./PatientAppointmentsTab";
 import { ClinicalSection } from "../clinical/ClinicalSection";
 import { PatientPhotosGallery } from "../clinical/PatientPhotosGallery";
 import { ConsentDocumentsList } from "../clinical/ConsentDocumentsList";
+import { VisitDocumentsList } from "../clinical/VisitDocumentsList";
 import { PatientMedicalProfile } from "./PatientMedicalProfile";
 import { SessionsView } from "../sessions/SessionsView";
 import { useSessions } from "../sessions/useSessions";
@@ -33,7 +34,7 @@ export function DoctorPatientDetail({ patient }: { patient: Patient }) {
       )
     },
     { id: "photos", label: "Photos", icon: CameraIcon, content: <PatientPhotosGallery patientId={patient.id} /> },
-    { id: "consents", label: "Consents", icon: FileTextIcon, content: <ConsentDocumentsList patientId={patient.id} /> },
+    { id: "consents", label: "Consents", icon: FileTextIcon, content: <div><VisitDocumentsList patientId={patient.id} /><ConsentDocumentsList patientId={patient.id} /></div> },
     { id: "appointments", label: "Appointments", icon: CalendarIcon, content: <PatientAppointmentsTab patientId={patient.id} /> },
     {
       id: "communication", label: "Communication", icon: MessageCircleIcon, content: (

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { SendIcon, SparklesIcon, XIcon } from "lucide-react";
-import { sendLandingChatMessage } from "../../api/entities";
+import { sendLandingChatMessageStream } from "../../api/entities";
 
 export interface HeroChatSeed {
   eyebrow: string;
@@ -46,6 +46,11 @@ export function LandingChat({ open, seed, onClose, onSeedConsumed }: LandingChat
   const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // Separate from `sending` — sending covers the whole request, this covers
+  // only "no reply text has started arriving yet" so the bouncing-dots
+  // indicator disappears the moment the bot bubble starts streaming real
+  // text instead of sitting underneath it for the rest of the reply.
+  const [waitingReply, setWaitingReply] = useState(false);
   const [convId, setConvId] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem(CONV_KEY);
@@ -77,46 +82,66 @@ export function LandingChat({ open, seed, onClose, onSeedConsumed }: LandingChat
       if (!trimmed || pendingRef.current) return;
       pendingRef.current = true;
       setSending(true);
+      setWaitingReply(true);
       setMessages((prev) => [...prev, { id: Date.now(), role: "user", text: trimmed }]);
       setInput("");
+
+      const botId = Date.now() + 1;
+      let started = false;
       try {
-        const res = await sendLandingChatMessage({
+        for await (const ev of sendLandingChatMessageStream({
           conversation_id: convIdRef.current,
           message: trimmed,
           context: convIdRef.current ? undefined : context
-        });
-        convIdRef.current = res.conversation_id;
-        setConvId(res.conversation_id);
-        sessionStorage.setItem(CONV_KEY, res.conversation_id);
-        setMessages((prev) => [...prev, { id: Date.now() + 1, role: "bot", text: res.reply }]);
-        if (res.booking_created) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now() + 2,
-              role: "lead",
-              text: `Request received${res.lead_name ? ` — thanks, ${res.lead_name}` : ""}! Our receptionist team will reach out to book your consultation.`
+        })) {
+          if (ev.type === "chunk") {
+            if (!started) {
+              started = true;
+              setWaitingReply(false);
+              setMessages((prev) => [...prev, { id: botId, role: "bot", text: ev.text }]);
+            } else {
+              setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, text: m.text + ev.text } : m)));
             }
-          ]);
-        }
-        if (res.sales_lead_created) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now() + 2,
-              role: "lead",
-              text: `Thanks, ${res.sales_lead_name || "there"}! Your request has been logged and a member of the Aiaceone team will reach out to you shortly.`
+          } else if (ev.type === "done") {
+            convIdRef.current = ev.conversation_id;
+            setConvId(ev.conversation_id);
+            sessionStorage.setItem(CONV_KEY, ev.conversation_id);
+            if (ev.booking_created) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: Date.now() + 2,
+                  role: "lead",
+                  text: `Request received${ev.lead_name ? ` — thanks, ${ev.lead_name}` : ""}! Our receptionist team will reach out to book your consultation.`
+                }
+              ]);
             }
-          ]);
+            if (ev.sales_lead_created) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: Date.now() + 2,
+                  role: "lead",
+                  text: `Thanks, ${ev.sales_lead_name || "there"}! Your request has been logged and a member of the Aiaceone team will reach out to you shortly.`
+                }
+              ]);
+            }
+          } else if (ev.type === "error") {
+            setMessages((prev) =>
+              started ? prev.map((m) => (m.id === botId ? { ...m, text: ev.message } : m)) : [...prev, { id: botId, role: "bot", text: ev.message }]
+            );
+          }
         }
       } catch {
-        setMessages((prev) => [
-          ...prev,
-          { id: Date.now() + 1, role: "bot", text: "Sorry, I hit a snag — please try again in a moment." }
-        ]);
+        setMessages((prev) =>
+          started
+            ? prev
+            : [...prev, { id: botId, role: "bot", text: "Sorry, I hit a snag — please try again in a moment." }]
+        );
       } finally {
         pendingRef.current = false;
         setSending(false);
+        setWaitingReply(false);
       }
     },
     []
@@ -195,7 +220,7 @@ export function LandingChat({ open, seed, onClose, onSeedConsumed }: LandingChat
                   </div>
                 )
               )}
-              {sending && (
+              {waitingReply && (
                 <div className="mr-auto flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-sand-200 bg-white px-4 py-3">
                   {[0, 1, 2].map((i) => (
                     <span key={i} className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-600/60" style={{ animationDelay: `${i * 0.12}s` }} />

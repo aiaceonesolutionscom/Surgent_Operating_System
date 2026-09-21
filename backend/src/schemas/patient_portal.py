@@ -84,6 +84,24 @@ class UpdateMyProfileRequest(BaseModel):
     last_name: str | None = None
     email: str | None = None
     additional_phones: list[dict] | None = None
+    # Demographic/contact depth (Week 2 fields — see models/patient.py) that
+    # the intake.pdf reference expects a patient to be able to fill in
+    # themselves, not just staff/the AI receptionist. Same field names as
+    # Patient itself, so PatientPortalService.update_my_profile's plain
+    # setattr loop needs no changes to pick these up.
+    date_of_birth: date | None = None
+    gender: str | None = None
+    pregnancy_status: str | None = None
+    father_name: str | None = None
+    occupation: str | None = None
+    emergency_contact_name: str | None = None
+    emergency_contact_phone: str | None = None
+    emergency_contact_relationship: str | None = None
+    regular_physician_name: str | None = None
+    regular_physician_phone: str | None = None
+    preferred_language: str | None = None
+    insurance_provider: str | None = None
+    insurance_number: str | None = None
 
 
 class PortalBookingRequest(BaseModel):
@@ -114,6 +132,19 @@ class PortalPatientResponse(BaseModel):
     additional_phones: list[dict] = []
     chief_complaint: str | None
     consent_status: bool
+    date_of_birth: date | None = None
+    gender: str | None = None
+    pregnancy_status: str | None = None
+    father_name: str | None = None
+    occupation: str | None = None
+    emergency_contact_name: str | None = None
+    emergency_contact_phone: str | None = None
+    emergency_contact_relationship: str | None = None
+    regular_physician_name: str | None = None
+    regular_physician_phone: str | None = None
+    preferred_language: str | None = None
+    insurance_provider: str | None = None
+    insurance_number: str | None = None
     doctor: PortalDoctorInfo | None
     appointments: list[PortalAppointment]
     consent_documents: list[PortalConsentDocument]

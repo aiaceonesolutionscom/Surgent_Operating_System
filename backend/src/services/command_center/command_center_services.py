@@ -51,6 +51,21 @@ ORCHESTRATOR_SYSTEM_PROMPT = (
     "plain language, no filler."
 )
 
+# A SEPARATE, second-pass prompt for the synthesis call (turning gathered
+# category summaries into the final answer) — reusing ORCHESTRATOR_SYSTEM_
+# PROMPT here was a real bug: it tells the model "you MUST call tools",
+# but this second call has no tools at all (the real data is already
+# inline). That contradiction made Groq's model burn its whole reasoning
+# budget trying to reconcile it, coming back with an empty final answer.
+SYNTHESIS_SYSTEM_PROMPT = (
+    "You are the Main AI agent inside a plastic surgery practice's 'Command "
+    "Center'. You already have the real data you need below — do not ask for "
+    "more, do not mention tools. If a line says a category isn't included in "
+    "the plan, relay that honestly instead of guessing. Answer the doctor's "
+    "question directly using only this data, short and direct (under 150 "
+    "words), plain language, no filler."
+)
+
 
 class CommandCenterService:
     """Orchestrates the doctor-facing 'AI Command Center': a Main agent
@@ -120,37 +135,12 @@ class CommandCenterService:
             await db.flush()
             return AskCommandCenterResponse(session_id=conversation.id, steps=[], answer=answer)
 
-        steps: list[CommandCenterStep] = []
-        tool_result_messages: list[dict] = []
-
-        for tc in tool_calls:
-            category_id = TOOL_NAME_TO_CATEGORY.get(tc.function.name)
-            if category_id is None:
-                continue
-            label = CATEGORY_LABELS[category_id]
-
-            if not allows_category(tier, category_id):
-                summary = f"Not available — {label} isn't included in the {tier.value} plan."
-                steps.append(CommandCenterStep(category_id=category_id, category_label=label, status="locked", summary=summary))
-            else:
-                summary = await self._dispatch(db, category_id, practice_id)
-                steps.append(CommandCenterStep(category_id=category_id, category_label=label, status="consulted", summary=summary))
-
-            tool_result_messages.append({"role": "tool", "tool_call_id": tc.id, "content": summary})
-
-        assistant_message = {
-            "role": "assistant",
-            "content": first.get("content") or None,
-            "tool_calls": [
-                {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                for tc in tool_calls
-            ],
-        }
+        steps = await self._run_tools(db, tier, practice_id, tool_calls)
 
         try:
             answer = await self.llm.chat(
-                messages=[{"role": "user", "content": question}, assistant_message, *tool_result_messages],
-                system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
+                messages=self._synthesis_messages(question, steps),
+                system_prompt=SYNTHESIS_SYSTEM_PROMPT,
                 tier="low",
                 max_tokens=400,
             )
@@ -168,6 +158,112 @@ class CommandCenterService:
         await db.flush()
 
         return AskCommandCenterResponse(session_id=conversation.id, steps=steps, answer=answer)
+
+    async def _run_tools(
+        self, db: AsyncSession, tier: SubscriptionTier, practice_id: UUID, tool_calls: list
+    ) -> list[CommandCenterStep]:
+        steps: list[CommandCenterStep] = []
+        for tc in tool_calls:
+            category_id = TOOL_NAME_TO_CATEGORY.get(tc.function.name)
+            if category_id is None:
+                continue
+            label = CATEGORY_LABELS[category_id]
+            if not allows_category(tier, category_id):
+                summary = f"Not available — {label} isn't included in the {tier.value} plan."
+                steps.append(CommandCenterStep(category_id=category_id, category_label=label, status="locked", summary=summary))
+            else:
+                summary = await self._dispatch(db, category_id, practice_id)
+                steps.append(CommandCenterStep(category_id=category_id, category_label=label, status="consulted", summary=summary))
+        return steps
+
+    @staticmethod
+    def _synthesis_messages(question: str, steps: list[CommandCenterStep]) -> list[dict]:
+        # Plain-text context instead of replaying the raw OpenAI-protocol
+        # tool_calls/tool-role messages into a second completion — Groq's
+        # gpt-oss-120b rejected that shape outright ("Tool choice is none,
+        # but model called a tool") when the message history already
+        # contained a tool-calling turn, even with tool_choice="none" set on
+        # this call. A plain summary sidesteps the whole provider-specific
+        # function-calling protocol for what is really just "answer using
+        # this context," and works identically across Mistral/Groq/OpenAI.
+        context = "\n".join(f"- {s.category_label}: {s.summary}" for s in steps) or "No sub-agent data was available."
+        return [{"role": "user", "content": f"{question}\n\nReal data gathered from the practice's records:\n{context}"}]
+
+    async def ask_stream(
+        self, db: AsyncSession, practice_id: UUID, tier: SubscriptionTier, question: str, session_id: UUID | None = None
+    ):
+        """SSE twin of ask() — yields a "step" event the moment each
+        sub-agent category is actually consulted (real-time, replacing the
+        frontend's old fake setTimeout reveal — see CommandCenterChat.tsx),
+        then streams the final answer token-by-token, then a "done" event
+        with the session_id so the frontend can persist/refetch like before."""
+        conversation = await self._get_or_create_session(db, practice_id, session_id)
+        db.add(Message(conversation_id=conversation.id, role=MessageRole.STAFF, content=question))
+        await db.flush()
+
+        try:
+            first = await self.llm.chat_with_tools(
+                messages=[{"role": "user", "content": question}],
+                tools=self._tools(),
+                system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
+                tier="low",
+                max_tokens=400,
+            )
+        except Exception as exc:
+            yield {"type": "error", "message": f"The AI Command Center is temporarily unavailable: {exc}"}
+            return
+
+        tool_calls = first.get("tool_calls") or []
+        if not tool_calls:
+            answer = first.get("content") or "I couldn't find anything relevant to answer that."
+            for ch in answer:
+                yield {"type": "chunk", "text": ch}
+            db.add(Message(conversation_id=conversation.id, role=MessageRole.AGENT, content=answer, extra_data={"steps": []}))
+            await db.commit()
+            yield {"type": "done", "session_id": str(conversation.id), "steps": []}
+            return
+
+        steps: list[CommandCenterStep] = []
+        for tc in tool_calls:
+            category_id = TOOL_NAME_TO_CATEGORY.get(tc.function.name)
+            if category_id is None:
+                continue
+            label = CATEGORY_LABELS[category_id]
+
+            if not allows_category(tier, category_id):
+                summary = f"Not available — {label} isn't included in the {tier.value} plan."
+                step = CommandCenterStep(category_id=category_id, category_label=label, status="locked", summary=summary)
+            else:
+                summary = await self._dispatch(db, category_id, practice_id)
+                step = CommandCenterStep(category_id=category_id, category_label=label, status="consulted", summary=summary)
+            steps.append(step)
+            yield {"type": "step", "step": step.model_dump()}
+
+        chunks: list[str] = []
+        try:
+            async for delta in self.llm.chat_stream(
+                messages=self._synthesis_messages(question, steps),
+                system_prompt=SYNTHESIS_SYSTEM_PROMPT,
+                tier="low",
+                max_tokens=400,
+            ):
+                chunks.append(delta)
+                yield {"type": "chunk", "text": delta}
+        except Exception as exc:
+            yield {"type": "error", "message": f"The AI Command Center is temporarily unavailable: {exc}"}
+            return
+
+        answer = "".join(chunks) or "I couldn't find anything relevant to answer that."
+        db.add(
+            Message(
+                conversation_id=conversation.id,
+                role=MessageRole.AGENT,
+                content=answer,
+                extra_data={"steps": [s.model_dump() for s in steps]},
+            )
+        )
+        await db.commit()
+        yield {"type": "done", "session_id": str(conversation.id), "steps": [s.model_dump() for s in steps]}
 
     async def _dispatch(self, db: AsyncSession, category_id: str, practice_id: UUID) -> str:
         handler = {

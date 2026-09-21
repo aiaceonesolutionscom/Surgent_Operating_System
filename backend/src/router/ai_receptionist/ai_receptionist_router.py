@@ -17,6 +17,10 @@ from src.schemas.ai_receptionist import (
     AIReceptionistOverviewResponse,
     SystemPromptResponse,
     UpdateSystemPromptRequest,
+    MarketsSettingsResponse,
+    MarketSettingsUpdate,
+    HumanAvailabilityResponse,
+    HumanAvailabilityUpdate,
 )
 from src.controller.ai_receptionist.ai_receptionist_controllers import AIReceptionistController
 
@@ -93,4 +97,59 @@ async def update_system_prompt(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.update_system_prompt(db, user, body.custom_instructions)
+
+
+# Per-market configuration: the currency, clinic, approved price list and
+# payment methods the receptionist is allowed to quote from (SOP s7, s10.1).
+# Readable by anyone who can open the monitor so a receptionist can see what the
+# AI will say and correct a patient in the moment; editable by the Owner only,
+# because these are the numbers the clinic is held to.
+@router.get("/markets", response_model=MarketsSettingsResponse)
+async def get_market_settings(
+    user: User = Depends(require_role(UserRole.OWNER, UserRole.DOCTOR, UserRole.RECEPTIONIST)),
+    _agent: PracticeContext = Depends(require_agent("receptionist")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.get_market_settings(db, user)
+
+
+@router.put("/markets/{code}", response_model=MarketsSettingsResponse)
+async def save_market_settings(
+    code: str,
+    body: MarketSettingsUpdate,
+    user: User = Depends(require_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.save_market_settings(db, user, code, body)
+
+
+@router.delete("/markets/{code}", response_model=MarketsSettingsResponse)
+async def clear_market_settings(
+    code: str,
+    user: User = Depends(require_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.clear_market_settings(db, user, code)
+
+
+# Front-desk support hours — when the AI's escalation tools (request_human_handoff,
+# request_refund_or_cancellation) can honestly say "connecting you now" versus
+# "the team will follow up when they reopen at X" (see inbound_service.py).
+# Readable by anyone who can open the monitor; only the Owner changes it.
+@router.get("/human-hours", response_model=HumanAvailabilityResponse)
+async def get_human_availability(
+    user: User = Depends(require_role(UserRole.OWNER, UserRole.DOCTOR, UserRole.RECEPTIONIST)),
+    _agent: PracticeContext = Depends(require_agent("receptionist")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.get_human_availability(db, user)
+
+
+@router.put("/human-hours", response_model=HumanAvailabilityResponse)
+async def save_human_availability(
+    body: HumanAvailabilityUpdate,
+    user: User = Depends(require_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.save_human_availability(db, user, body)
 

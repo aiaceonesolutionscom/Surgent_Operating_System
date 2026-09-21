@@ -37,6 +37,9 @@ from src.models.inventory_adjustment import InventoryAdjustment
 from src.models.supplier import Supplier
 from src.models.purchase_order import PurchaseOrder, PurchaseOrderItem
 from src.models.wallet_transaction import WalletTransaction
+from src.models.visit_document import VisitDocument
+from src.models.session_visit import SessionVisit
+from src.models.refund_request import RefundRequest
 
 __all__ = [
     "Practice",
@@ -87,4 +90,7 @@ __all__ = [
     "PurchaseOrder",
     "PurchaseOrderItem",
     "WalletTransaction",
+    "VisitDocument",
+    "SessionVisit",
+    "RefundRequest",
 ]

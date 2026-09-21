@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { useUser, UserButton } from "@clerk/clerk-react";
-import { BuildingIcon, ClockIcon, MapPinIcon, PhoneIcon } from "lucide-react";
+import { BuildingIcon, ClockIcon, MapPinIcon, PhoneIcon, MailIcon, CreditCardIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { usePracticeProfile } from "./usePracticeProfile";
 import { usePlan } from "../plan/PlanContext";
@@ -54,7 +54,19 @@ export function ProfilePage() {
 }
 
 function OwnerProfileContent() {
-  const { profile, update } = usePracticeProfile();
+  const { authedFetch, tier } = usePlan();
+  const { profile, update, save, loading, saving, error } = usePracticeProfile(authedFetch);
+  const [saved, setSaved] = useState(false);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaved(false);
+    const ok = await save();
+    if (ok) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    }
+  }
 
   return (
     <>
@@ -64,20 +76,51 @@ function OwnerProfileContent() {
         <AccountCard />
       </div>
 
-      <div className="rounded-3xl border border-sand-200 bg-white p-6 shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
+      <form onSubmit={handleSave} className="rounded-3xl border border-sand-200 bg-white p-6 shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
         <p className="mb-4 text-sm font-bold text-ink">Practice details</p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field icon={BuildingIcon} label="Practice name" value={profile.name} onChange={(v) => update({ name: v })} />
-          <Field icon={ClockIcon} label="Timezone" value={profile.timezone} onChange={(v) => update({ timezone: v })} />
-          <Field icon={MapPinIcon} label="Address" value={profile.address} onChange={(v) => update({ address: v })} placeholder="Not set" />
-          <Field icon={PhoneIcon} label="On-call phone" value={profile.onCallPhone} onChange={(v) => update({ onCallPhone: v })} placeholder="Not set" />
-        </div>
-        <p className="mt-4 text-xs text-ink-muted">
-          Saved to this browser for now — the real{" "}
-          <code className="rounded bg-sand-100 px-1.5 py-0.5">Practice</code> model already exists on the backend;
-          a settings API to persist this for real is a later phase.
-        </p>
-      </div>
+        {loading ?
+        <p className="text-sm text-ink-muted">Loading…</p> :
+
+        <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field icon={BuildingIcon} label="Practice name" value={profile.name} onChange={(v) => update({ name: v })} />
+              <Field icon={ClockIcon} label="Timezone" value={profile.timezone} onChange={(v) => update({ timezone: v })} placeholder="e.g. Asia/Karachi" />
+              <Field icon={MapPinIcon} label="Address" value={profile.address} onChange={(v) => update({ address: v })} placeholder="Not set" />
+              <Field icon={PhoneIcon} label="On-call phone" value={profile.onCallPhone} onChange={(v) => update({ onCallPhone: v })} placeholder="Not set" />
+            </div>
+
+            <div className="mt-5 grid gap-4 border-t border-sand-100 pt-5 sm:grid-cols-2">
+              <div>
+                <span className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  <CreditCardIcon className="h-3.5 w-3.5" /> Plan
+                </span>
+                <p className="text-sm capitalize text-ink">{tier}</p>
+              </div>
+              {authedFetch === null &&
+            <div>
+                  <span className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                    <MailIcon className="h-3.5 w-3.5" /> Sign-in
+                  </span>
+                  <p className="text-sm text-ink-muted">Sign in to save these details for real.</p>
+                </div>
+            }
+            </div>
+
+            {error && <p className="mt-4 text-sm font-medium text-danger">{error}</p>}
+            {saved && <p className="mt-4 text-sm font-medium text-success">Saved.</p>}
+
+            <div className="mt-5 flex items-center justify-end border-t border-sand-100 pt-5">
+              <button
+              type="submit"
+              disabled={saving}
+              className="rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40">
+
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </>
+        }
+      </form>
     </>);
 
 }

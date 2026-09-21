@@ -10,6 +10,7 @@ import {
   CONSENT_DOCUMENT_TYPES,
   type ConsentTemplateResponse
 } from "../../../api/entities";
+import { ConsentSectionsBuilder, type ConsentSections } from "./ConsentSectionsBuilder";
 
 function label(type: string) {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -65,9 +66,9 @@ export function ConsentTemplatesPage() {
       {adding &&
       <AddForm
         availableTypes={availableTypes}
-        onCreate={async (documentType, body) => {
+        onCreate={async (documentType, body, sections) => {
           if (!authedFetch) return;
-          await createConsentTemplate(authedFetch, { document_type: documentType, body });
+          await createConsentTemplate(authedFetch, { document_type: documentType, body, sections });
           setAdding(false);
           await load();
         }}
@@ -103,14 +104,21 @@ export function ConsentTemplatesPage() {
               {editingId === t.id ?
           <EditForm
             template={t}
-            onSave={async (body, isActive) => {
+            onSave={async (body, isActive, sections) => {
               if (!authedFetch) return;
-              await updateConsentTemplate(authedFetch, t.id, { body, is_active: isActive });
+              await updateConsentTemplate(authedFetch, t.id, { body, is_active: isActive, sections });
               setEditingId(null);
               await load();
             }} /> :
 
-          <p className="whitespace-pre-wrap px-5 py-4 text-sm leading-relaxed text-ink-soft">{t.body}</p>
+          <>
+              <p className="whitespace-pre-wrap px-5 py-4 text-sm leading-relaxed text-ink-soft">{t.body}</p>
+              {t.sections &&
+          <p className="border-t border-sand-100 px-5 py-2 text-[11px] font-medium text-teal-600">
+                  Structured sections configured — used for the generated consent PDF instead of plain wording.
+                </p>
+          }
+            </>
           }
             </div>
         )}
@@ -126,11 +134,12 @@ function AddForm({
   onCancel
 }: {
   availableTypes: readonly string[];
-  onCreate: (documentType: string, body: string) => Promise<void>;
+  onCreate: (documentType: string, body: string, sections?: object) => Promise<void>;
   onCancel: () => void;
 }) {
   const [documentType, setDocumentType] = useState(availableTypes[0] || "");
   const [body, setBody] = useState("");
+  const [sections, setSections] = useState<ConsentSections | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,7 +149,7 @@ function AddForm({
     setSaving(true);
     setError(null);
     try {
-      await onCreate(documentType, body.trim());
+      await onCreate(documentType, body.trim(), sections ?? undefined);
     } catch (err: unknown) {
       setError(err instanceof Error && err.message ? err.message : "Couldn't save — try again.");
       setSaving(false);
@@ -170,6 +179,9 @@ function AddForm({
             className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
         </label>
       </div>
+      <div className="mt-4">
+        <ConsentSectionsBuilder value={sections} onChange={setSections} />
+      </div>
       {error && <p className="mt-3 text-sm font-medium text-danger">{error}</p>}
       <div className="mt-5 flex items-center justify-end gap-3">
         <button type="button" onClick={onCancel} className="rounded-xl border border-sand-200 px-5 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink-muted/40">
@@ -186,8 +198,9 @@ function AddForm({
 
 }
 
-function EditForm({ template, onSave }: { template: ConsentTemplateResponse; onSave: (body: string, isActive: boolean) => Promise<void> }) {
+function EditForm({ template, onSave }: { template: ConsentTemplateResponse; onSave: (body: string, isActive: boolean, sections: object | null) => Promise<void> }) {
   const [body, setBody] = useState(template.body);
+  const [sections, setSections] = useState<ConsentSections | null>((template.sections as ConsentSections | null) ?? null);
   const [isActive, setIsActive] = useState(template.is_active);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -197,7 +210,7 @@ function EditForm({ template, onSave }: { template: ConsentTemplateResponse; onS
     setSaving(true);
     setError(null);
     try {
-      await onSave(body.trim(), isActive);
+      await onSave(body.trim(), isActive, sections);
     } catch (err: unknown) {
       setError(err instanceof Error && err.message ? err.message : "Couldn't save — try again.");
       setSaving(false);
@@ -213,6 +226,9 @@ function EditForm({ template, onSave }: { template: ConsentTemplateResponse; onS
         value={body}
         onChange={(e) => setBody(e.target.value)}
         className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+      <div className="mt-3">
+        <ConsentSectionsBuilder value={sections} onChange={setSections} />
+      </div>
       {bodyChanged &&
       <p className="mt-2 text-xs font-medium text-warning">
           Saving this will bump the version to v{template.version + 1} — already-signed documents keep their original wording.

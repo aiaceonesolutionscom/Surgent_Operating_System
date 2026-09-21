@@ -29,7 +29,14 @@ function fmtDuration(minutes: number | null) {
 // (one record per calendar day, enforced backend-side); once you check out,
 // the day is sealed with its worked time. Browsing other months shows that
 // month's own records (the backend returns the month asked for).
-export function AttendanceCalendar() {
+//
+// `compact` drops the month grid + navigation, keeping only today's
+// check-in/check-out action — used on the Doctor/Receptionist's own pages,
+// where the full month-by-month history duplicated what's already shown
+// there (a "days present this month" summary) and the Owner's Team
+// Attendance page is the real place to review history. Full mode is still
+// used there (see TeamAttendancePage.tsx).
+export function AttendanceCalendar({ compact = false }: { compact?: boolean } = {}) {
   const { authedFetch } = usePlan();
   const [records, setRecords] = useState<AttendanceRecordResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,6 +120,7 @@ export function AttendanceCalendar() {
           <CalendarIcon className="h-4 w-4 text-accent-500" /> Attendance
         </div>
 
+        {!compact &&
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -132,6 +140,7 @@ export function AttendanceCalendar() {
             <ChevronRightIcon className="h-4 w-4" />
           </button>
         </div>
+        }
       </div>
 
       {/* Today's action strip */}
@@ -172,7 +181,7 @@ export function AttendanceCalendar() {
         {!authedFetch && <p className="mt-2 text-xs text-ink-muted">Demo mode — actions disabled.</p>}
       </div>
 
-      {loading ?
+      {!compact && (loading ?
         <p className="mt-6 text-sm text-ink-muted">Loading…</p> :
         <div className="mt-3 grid grid-cols-7 gap-1.5">
           {WEEKDAYS.map((wd) => <span key={wd} className="text-center text-[11px] font-bold text-ink-soft">{wd}</span>)}
@@ -211,11 +220,13 @@ export function AttendanceCalendar() {
             );
           })}
         </div>
-      }
+      )}
 
       {error && <p className="mt-2 flex items-center gap-1 text-xs font-medium text-danger"><AlertCircleIcon className="h-3.5 w-3.5" />{error}</p>}
+      {!compact &&
       <p className="mt-2 text-xs text-ink-muted">
         {monthCheckedCount} day{monthCheckedCount === 1 ? "" : "s"} worked this month.
       </p>
+      }
     </div>);
 }

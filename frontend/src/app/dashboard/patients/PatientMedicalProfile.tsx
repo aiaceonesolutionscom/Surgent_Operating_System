@@ -69,8 +69,20 @@ export function PatientMedicalProfile({ patientId }: { patientId: string }) {
       </div>);
   }
 
+  // Receptionist can edit contact/intake fields but the backend rejects any
+  // write touching truly clinical fields (see patients_controllers.py's
+  // _CLINICAL_FIELDS) — the edit form omits those inputs entirely for that
+  // role instead of sending values a Receptionist isn't allowed to set.
+  const isReceptionist = role === "receptionist";
+
   if (editing) {
-    return <EditProfile patient={patient} onCancel={() => setEditing(false)} onSaved={async () => { setEditing(false); await load(); }} />;
+    return (
+      <EditProfile
+        patient={patient}
+        hideClinicalFields={isReceptionist}
+        onCancel={() => setEditing(false)}
+        onSaved={async () => { setEditing(false); await load(); }} />);
+
   }
 
   const hasAnyDepth =
@@ -121,23 +133,25 @@ export function PatientMedicalProfile({ patientId }: { patientId: string }) {
           }
           </div>
 
+          {!isReceptionist &&
           <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Clinical history</p>
-            {patient.smoking_status && <Field label="Smoking status" value={patient.smoking_status} />}
-            {patient.allergies.length > 0 &&
-          <ListSummary label="Allergies" items={patient.allergies.map((a) => [a.name, a.severity, a.reaction].filter(Boolean).join(" — "))} danger />
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Clinical history</p>
+              {patient.smoking_status && <Field label="Smoking status" value={patient.smoking_status} />}
+              {patient.allergies.length > 0 &&
+            <ListSummary label="Allergies" items={patient.allergies.map((a) => [a.name, a.severity, a.reaction].filter(Boolean).join(" — "))} danger />
+            }
+              {patient.current_medications.length > 0 &&
+            <ListSummary label="Current medications" items={patient.current_medications.map((m) => [m.name, m.dosage, m.frequency].filter(Boolean).join(" — "))} />
+            }
+              {patient.surgical_history.length > 0 &&
+            <ListSummary label="Surgical history" items={patient.surgical_history.map((s) => [s.procedure, s.year, s.facility].filter(Boolean).join(" — "))} />
+            }
+              {patient.previous_cosmetic_procedures.length > 0 &&
+            <ListSummary label="Previous cosmetic procedures" items={patient.previous_cosmetic_procedures.map((p) => [p.procedure, p.year, p.provider].filter(Boolean).join(" — "))} />
+            }
+              {patient.referral_source && <Field label="Referred by" value={patient.referral_source} />}
+            </div>
           }
-            {patient.current_medications.length > 0 &&
-          <ListSummary label="Current medications" items={patient.current_medications.map((m) => [m.name, m.dosage, m.frequency].filter(Boolean).join(" — "))} />
-          }
-            {patient.surgical_history.length > 0 &&
-          <ListSummary label="Surgical history" items={patient.surgical_history.map((s) => [s.procedure, s.year, s.facility].filter(Boolean).join(" — "))} />
-          }
-            {patient.previous_cosmetic_procedures.length > 0 &&
-          <ListSummary label="Previous cosmetic procedures" items={patient.previous_cosmetic_procedures.map((p) => [p.procedure, p.year, p.provider].filter(Boolean).join(" — "))} />
-          }
-            {patient.referral_source && <Field label="Referred by" value={patient.referral_source} />}
-          </div>
         </div>
       }
     </div>);
@@ -218,8 +232,24 @@ function ListFieldEditor({
 
 }
 
-function EditProfile({ patient, onCancel, onSaved }: { patient: PatientResponse; onCancel: () => void; onSaved: () => void }) {
+function EditProfile({
+  patient,
+  hideClinicalFields,
+  onCancel,
+  onSaved
+}: {
+  patient: PatientResponse;
+  hideClinicalFields?: boolean;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
   const { authedFetch } = usePlan();
+  const [firstName, setFirstName] = useState(patient.first_name || "");
+  const [lastName, setLastName] = useState(patient.last_name || "");
+  const [email, setEmail] = useState(patient.email || "");
+  const [dateOfBirth, setDateOfBirth] = useState(patient.date_of_birth || "");
+  const [chiefComplaint, setChiefComplaint] = useState(patient.chief_complaint || "");
+  const [needsSurgery, setNeedsSurgery] = useState(patient.needs_surgery);
   const [phone, setPhone] = useState(patient.phone || "");
   const [additionalPhones, setAdditionalPhones] = useState<Record<string, string>[]>(patient.additional_phones as Record<string, string>[]);
   const [gender, setGender] = useState(patient.gender || "");
@@ -249,22 +279,34 @@ function EditProfile({ patient, onCancel, onSaved }: { patient: PatientResponse;
     setError(null);
     try {
       const data: UpdatePatientRequest = {
+        first_name: firstName.trim() || undefined,
+        last_name: lastName.trim() || undefined,
+        email: email.trim() || null,
+        date_of_birth: dateOfBirth || null,
+        chief_complaint: chiefComplaint.trim() || null,
+        needs_surgery: needsSurgery,
         phone: phone.trim() || null,
         additional_phones: additionalPhones.filter((p) => p.number),
         gender: gender || null,
         emergency_contact_name: emergencyName || null,
         emergency_contact_phone: emergencyPhone || null,
         preferred_language: preferredLanguage || null,
-        smoking_status: smokingStatus || null,
         referral_source: referralSource || null,
         insurance_provider: insuranceProvider || null,
         insurance_number: insuranceNumber || null,
-        communication_preferences: commPrefs,
-        allergies: allergies.filter((a) => a.name),
-        surgical_history: surgicalHistory.filter((s) => s.procedure),
-        current_medications: medications.filter((m) => m.name),
-        previous_cosmetic_procedures: cosmeticProcedures.filter((p) => p.procedure)
+        communication_preferences: commPrefs
       };
+      // A Receptionist can never write these — the backend rejects the
+      // whole request if any of them are present at all (see
+      // patients_controllers.py's _CLINICAL_FIELDS), so they're left out of
+      // the payload entirely rather than sent empty.
+      if (!hideClinicalFields) {
+        data.smoking_status = smokingStatus || null;
+        data.allergies = allergies.filter((a) => a.name);
+        data.surgical_history = surgicalHistory.filter((s) => s.procedure);
+        data.current_medications = medications.filter((m) => m.name);
+        data.previous_cosmetic_procedures = cosmeticProcedures.filter((p) => p.procedure);
+      }
       await updatePatient(authedFetch, patient.id, data);
       onSaved();
     } catch (err: unknown) {
@@ -283,6 +325,34 @@ function EditProfile({ patient, onCancel, onSaved }: { patient: PatientResponse;
 
       <div className="grid gap-5 p-5 sm:grid-cols-2">
         <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">First name</span>
+              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Last name</span>
+              <input value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Email</span>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Date of birth</span>
+              <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+            </label>
+          </div>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Chief complaint / reason for visit</span>
+            <input value={chiefComplaint} onChange={(e) => setChiefComplaint(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-ink-soft">
+            <input type="checkbox" checked={needsSurgery} onChange={(e) => setNeedsSurgery(e.target.checked)} className="h-4 w-4 rounded border-sand-300 text-teal-600 focus:ring-teal-600" />
+            Needs surgery
+          </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Primary phone</span>
             <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
@@ -293,12 +363,14 @@ function EditProfile({ patient, onCancel, onSaved }: { patient: PatientResponse;
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Gender</span>
               <input value={gender} onChange={(e) => setGender(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
             </label>
+            {!hideClinicalFields &&
             <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Smoking status</span>
-              <select value={smokingStatus} onChange={(e) => setSmokingStatus(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white">
-                {SMOKING_OPTIONS.map((o) => <option key={o} value={o}>{o || "Not specified"}</option>)}
-              </select>
-            </label>
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Smoking status</span>
+                <select value={smokingStatus} onChange={(e) => setSmokingStatus(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white">
+                  {SMOKING_OPTIONS.map((o) => <option key={o} value={o}>{o || "Not specified"}</option>)}
+                </select>
+              </label>
+            }
           </div>
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
@@ -341,12 +413,14 @@ function EditProfile({ patient, onCancel, onSaved }: { patient: PatientResponse;
           </label>
         </div>
 
+        {!hideClinicalFields &&
         <div className="space-y-4">
-          <ListFieldEditor label="Allergies" fields={ALLERGY_FIELDS} items={allergies} onChange={setAllergies} />
-          <ListFieldEditor label="Current medications" fields={MEDICATION_FIELDS} items={medications} onChange={setMedications} />
-          <ListFieldEditor label="Surgical history" fields={SURGICAL_HISTORY_FIELDS} items={surgicalHistory} onChange={setSurgicalHistory} />
-          <ListFieldEditor label="Previous cosmetic procedures" fields={COSMETIC_FIELDS} items={cosmeticProcedures} onChange={setCosmeticProcedures} />
-        </div>
+            <ListFieldEditor label="Allergies" fields={ALLERGY_FIELDS} items={allergies} onChange={setAllergies} />
+            <ListFieldEditor label="Current medications" fields={MEDICATION_FIELDS} items={medications} onChange={setMedications} />
+            <ListFieldEditor label="Surgical history" fields={SURGICAL_HISTORY_FIELDS} items={surgicalHistory} onChange={setSurgicalHistory} />
+            <ListFieldEditor label="Previous cosmetic procedures" fields={COSMETIC_FIELDS} items={cosmeticProcedures} onChange={setCosmeticProcedures} />
+          </div>
+        }
       </div>
 
       {error && <p className="px-5 pb-2 text-sm font-medium text-danger">{error}</p>}

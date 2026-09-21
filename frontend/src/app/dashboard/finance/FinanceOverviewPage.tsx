@@ -4,7 +4,7 @@ import {
   WalletIcon, ReceiptIcon, PlusIcon, CreditCardIcon,
   BanknoteIcon, UserPlusIcon, XIcon, SettingsIcon,
   TrashIcon, ScaleIcon, TrendingDownIcon, DollarSignIcon,
-  ArrowUpRightIcon, CoinsIcon
+  ArrowUpRightIcon, CoinsIcon, RotateCcwIcon, ClockIcon
 } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { KpiCard } from "../components/KpiCard";
@@ -64,7 +64,7 @@ function StatusBadge({ status }: { status: string }) {
 // can run the whole money side without leaving this page. A receptionist
 // sees invoices/payments read-only; Wallet + Finance Settings are Owner-only.
 export function FinanceOverviewPage() {
-  const { authedFetch, role, loading: roleLoading } = usePlan();
+  const { authedFetch, authedFetchStream, role, loading: roleLoading } = usePlan();
   // usePlanTier() seeds `role` with a placeholder "owner" before the real
   // /practice/me response resolves — trusting it before `loading` clears
   // fires Owner-only calls (finance/settings, staff) for every role for one
@@ -167,7 +167,37 @@ export function FinanceOverviewPage() {
         <KpiCard icon={ReceiptIcon} label="Open invoices" value={String(pendingInvoices.length)} color="#F59E0B" />
       </div>
 
-      {authedFetch && <FinanceAgentCard authedFetch={authedFetch} />}
+      {/* Accountant's view — refunds actually paid out (not reflected in
+          "Revenue (paid)" above, which never moves once an invoice was
+          marked paid) and deferred revenue: money already collected for a
+          multi-session course that isn't fully delivered yet. */}
+      {isOwner &&
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard icon={RotateCcwIcon} label="Refunded" value={formatMoney(overview?.total_refunds ?? 0)} color="#DC2626" />
+          <KpiCard icon={DollarSignIcon} label="Net after refunds" value={formatMoney(overview?.net_revenue_after_refunds ?? 0)} color="#16A34A" />
+          <KpiCard icon={ClockIcon} label="Deferred revenue" value={formatMoney(overview?.deferred_revenue ?? 0)} color="#7C3AED" />
+          <Link to={DASHBOARD_ROUTES.refundRequests} className="block">
+            <KpiCard icon={ScaleIcon} label="Pending refund liability" value={formatMoney(overview?.pending_refund_liability ?? 0)} color="#F59E0B" />
+          </Link>
+        </div>
+      }
+
+      {authedFetch && <FinanceAgentCard authedFetch={authedFetch} authedFetchStream={authedFetchStream} />}
+
+      {/* Quick money actions (owner) */}
+      {isOwner && (overview?.pending_refund_requests_count ?? 0) > 0 &&
+      <div className="mt-6 overflow-hidden rounded-3xl border border-warning/20 bg-gradient-to-r from-warning/8 to-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-bold text-ink"><RotateCcwIcon className="h-4 w-4 text-warning" /> Refund requests waiting for review</p>
+              <p className="mt-0.5 text-xs text-ink-muted">{overview!.pending_refund_requests_count} request{overview!.pending_refund_requests_count > 1 ? "s" : ""} need a decision</p>
+            </div>
+            <Link to={DASHBOARD_ROUTES.refundRequests} className="flex items-center gap-1.5 rounded-xl bg-warning px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:opacity-90">
+              Review requests
+            </Link>
+          </div>
+        </div>
+      }
 
       {/* Quick money actions (owner) */}
       {isOwner && pendingInvoices.length > 0 &&

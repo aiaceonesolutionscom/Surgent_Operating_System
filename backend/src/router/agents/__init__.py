@@ -22,6 +22,9 @@ from src.router.procedures.procedures_router import router as procedures_router
 from src.router.clinical.clinical_router import router as clinical_router
 from src.router.patient_photos.patient_photos_router import router as patient_photos_router
 from src.router.consent.consent_router import router as consent_router
+from src.router.visit_documents.visit_documents_router import router as visit_documents_router
+from src.router.session_visits.session_visits_router import router as session_visits_router
+from src.router.refunds.refunds_router import router as refunds_router
 from src.router.billing.billing_router import router as billing_router
 from src.router.finance.finance_router import router as finance_router
 from src.router.wallet.wallet_router import router as wallet_router
@@ -70,6 +73,9 @@ agent_routers = [
     clinical_router,
     patient_photos_router,
     consent_router,
+    visit_documents_router,
+    session_visits_router,
+    refunds_router,
     billing_router,
     finance_router,
     wallet_router,

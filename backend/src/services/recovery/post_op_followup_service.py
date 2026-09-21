@@ -10,6 +10,7 @@ from src.models.surgery import Surgery, SurgeryStatus
 from src.models.patient import Patient
 from src.models.recovery_checkin import RecoveryCheckpoint
 from src.services.messaging.messaging_service import MessagingService
+from src.services.messaging.quiet_hours import MessageTiming
 from src.services.notifications.notification_service import NotificationService
 from src.services.recovery.recovery_services import RecoveryService
 
@@ -88,9 +89,19 @@ class PostOpFollowUpService:
                 "How are you feeling — any pain, swelling, or concerns? Reply here, or log a check-in on your patient portal."
             )
             try:
-                await self.messaging.send_and_log(db, surgery.practice_id, patient, "post_op_followup", text)
+                # REMINDER, not PROACTIVE: a clinical check-in is expected, but it
+                # still waits for the patient's own 09:00-21:00 window (SOP s11).
+                message = await self.messaging.send_and_log(
+                    db, surgery.practice_id, patient, "post_op_followup", text,
+                    timing=MessageTiming.REMINDER,
+                )
             except Exception:
                 logger.exception("Failed to send post-op follow-up for surgery %s (checkpoint %s)", surgery.id, checkpoint.value)
+                continue
+
+            if message is None:
+                # Held back by quiet hours — do NOT journal it as sent, so the
+                # next poll run (every 6h) picks the same checkpoint up again.
                 continue
 
             journal.notes = {

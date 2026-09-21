@@ -1,16 +1,75 @@
-node_modules/
+# --- Secrets / environment -------------------------------------------------
+# Only .env.example is tracked; real values stay local.
 *.env
+*.env.*
+!.env.example
+
+# --- Python / backend ------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+env/
+*.egg-info/
+*.egg
+build/
+dist/
+.tox/
+pip-wheel-metadata/
+*.sqlite
+*.db
+
+# --- Frontend --------------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
 *.local
+.vite/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+coverage/
 
-# Third-party Claude Code skill (tool used to build the cinematic hero) — not
-# part of the product, kept locally only.
+# --- Editor / OS junk ------------------------------------------------------
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*.swn
+*.sln
+*.ntvs*
+*.njsproj
+*.suo
+*.sw?
+.DS_Store
+Thumbs.db
+
+# --- AI assistant / agent tooling (local-only) -----------------------------
+# Empty tool config dirs left behind locally — never meant to be committed.
+.claude/
+.aider*
+.cursor/
+.gemini/
+.qodo/
+
+# --- Third-party / scratch assets (local-only) -----------------------------
+# Tool used to build the cinematic hero — not part of the product.
 lets-scroll-main/
-
-# Working notes / render prompts / scratch frames from building the cinematic
-# hero and avatar assets — useful during development, not project source.
 lets-scroll-assets/
 
-__pycache__/
-*.pyc
-.venv/
-venv/
+# --- Large binaries that shouldn't live in git -----------------------------
+# Business decks / pitch PDFs at repo root — keep out of version control.
+AIACEONE_Investment.pdf
+AIACEONE_Investment_Proposal.pdf

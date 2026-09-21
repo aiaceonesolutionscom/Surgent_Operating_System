@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ShieldCheckIcon, PlusIcon, PenLineIcon, XIcon, CheckIcon, MessageSquareIcon } from "lucide-react";
+import { ShieldCheckIcon, PlusIcon, PenLineIcon, XIcon, CheckIcon, MessageSquareIcon, FileDownIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
 import { useConsentDocuments } from "./useConsentDocuments";
 import { listConsentTemplates, type ConsentDocumentResponse, type ConsentTemplateResponse } from "../../../api/entities";
@@ -207,6 +207,16 @@ function DocumentRow({
           }
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {document.file_url &&
+          <a
+            href={document.file_url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 rounded-lg border border-sand-200 px-2.5 py-1 text-xs font-semibold text-ink-soft hover:border-teal-600/40 hover:text-teal-600">
+
+              <FileDownIcon className="h-3 w-3" /> PDF
+            </a>
+          }
           <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${STATUS_CLASS[document.status]}`}>{document.status}</span>
           {canManage && (document.status === "draft" || document.status === "sent") && !signing &&
           <>

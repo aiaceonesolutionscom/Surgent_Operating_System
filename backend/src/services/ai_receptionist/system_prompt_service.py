@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.practice import Practice
 from src.schemas.ai_receptionist import SystemPromptResponse
+from src.services.ai_receptionist.locale_service import LocaleService
 from src.services.channels.inbound_service import _system_prompt
 
 _SETTINGS_KEY = "ai_receptionist_system_prompt"
@@ -21,10 +22,13 @@ class SystemPromptService:
     inbound message. GET is available to anyone who can open the monitor
     (Owner/Doctor/Receptionist); PUT is Owner-only — enforced in the router."""
 
+    def __init__(self):
+        self.locale = LocaleService()
+
     async def get_system_prompt(self, db: AsyncSession, practice_id: UUID) -> SystemPromptResponse:
         practice = await db.get(Practice, practice_id)
         settings = (practice.settings or {}) if practice else {}
-        return self._to_response(settings)
+        return self._to_response(practice, settings)
 
     async def save_custom_instructions(
         self, db: AsyncSession, practice_id: UUID, custom_instructions: str, updated_by: UUID
@@ -39,18 +43,23 @@ class SystemPromptService:
         settings[_SETTINGS_UPDATED_BY_KEY] = str(updated_by)
         practice.settings = settings
         await db.commit()
-        return self._to_response(settings)
+        return self._to_response(practice, settings)
 
-    def _to_response(self, settings: dict) -> SystemPromptResponse:
+    def _to_response(self, practice: Practice | None, settings: dict) -> SystemPromptResponse:
         custom = settings.get(_SETTINGS_KEY) or ""
         # is_new_patient/today vary per conversation; the monitor shows the
         # standard new-patient form plus this practice's custom block — that
-        # is exactly the prompt a first-time caller gets.
+        # is exactly the prompt a first-time caller gets. The market block is
+        # this practice's own home market, the same one a first message from an
+        # unknown number routes to, so an owner can see the currency and price
+        # list their receptionist will actually quote from.
         effective = _system_prompt(
             is_new_patient=True,
             today=datetime.now(timezone.utc).date(),
             draft=None,
             extra_instructions=custom or None,
+            locale=self.locale.preview(practice) if practice else None,
+            practice_name=practice.name if practice else "the clinic",
         )
         return SystemPromptResponse(
             system_prompt=effective,

@@ -38,9 +38,21 @@ class PatientIntakeService:
             patient.smoking_status = data.smoking_status
         patient.previous_cosmetic_procedures = data.previous_cosmetic_procedures
 
+        await self.refresh_intake_summary(db, patient, additional_notes=data.additional_notes)
+        return patient
+
+    async def refresh_intake_summary(
+        self, db: AsyncSession, patient: Patient, additional_notes: str | None = None
+    ) -> Patient:
+        """Regenerate `intake_summary` from whatever structured intake fields
+        are CURRENTLY on `patient` — reads the live row rather than a
+        specific request payload, so it's reusable from any channel that
+        writes intake fields (the patient-portal form via submit_intake
+        above, and the AI-receptionist WhatsApp tool in inbound_service.py),
+        keeping one summary-generation implementation instead of two."""
         try:
             summary = await self.llm.chat(
-                messages=[{"role": "user", "content": self._format_intake(data)}],
+                messages=[{"role": "user", "content": self._format_intake(patient, additional_notes)}],
                 system_prompt=_SYSTEM_PROMPT,
                 tier="low",
             )
@@ -53,14 +65,18 @@ class PatientIntakeService:
         await db.refresh(patient)
         return patient
 
-    def _format_intake(self, data: PatientIntakeRequest) -> str:
+    def _format_intake(self, patient: Patient, additional_notes: str | None) -> str:
         parts = [
-            f"Allergies: {data.allergies or 'none reported'}",
-            f"Surgical history: {data.surgical_history or 'none reported'}",
-            f"Current medications: {data.current_medications or 'none reported'}",
-            f"Smoking status: {data.smoking_status or 'not specified'}",
-            f"Previous cosmetic procedures: {data.previous_cosmetic_procedures or 'none reported'}",
+            f"Gender: {patient.gender or 'not specified'}",
+            f"Pregnancy/nursing status: {patient.pregnancy_status.value if patient.pregnancy_status else 'not specified'}",
+            f"Allergies: {patient.allergies or 'none reported'}",
+            f"Surgical history: {patient.surgical_history or 'none reported'}",
+            f"Current medications: {patient.current_medications or 'none reported'}",
+            f"Smoking status: {patient.smoking_status or 'not specified'}",
+            f"Previous cosmetic procedures: {patient.previous_cosmetic_procedures or 'none reported'}",
         ]
-        if data.additional_notes:
-            parts.append(f"Additional notes from patient: {data.additional_notes}")
+        if patient.medical_history:
+            parts.append(f"Other medical history notes: {patient.medical_history}")
+        if additional_notes:
+            parts.append(f"Additional notes from patient: {additional_notes}")
         return "\n".join(parts)

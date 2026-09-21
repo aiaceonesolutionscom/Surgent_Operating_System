@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { CheckIcon, CircleIcon, SparklesIcon } from "lucide-react";
 import { usePracticeProfile } from "../profile/usePracticeProfile";
 import { useDoctors } from "../doctors/useDoctors";
+import { usePlan } from "../plan/PlanContext";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 
 interface ChecklistItem {
@@ -16,8 +17,9 @@ interface ChecklistItem {
 // end for someone who skipped the setup wizard (or arrived here before that
 // flow existed). Disappears once everything's done.
 export function SetupChecklist() {
-  const { profile } = usePracticeProfile();
-  const { doctors, loading } = useDoctors();
+  const { authedFetch } = usePlan();
+  const { profile } = usePracticeProfile(authedFetch);
+  const { doctors, loading } = useDoctors(authedFetch);
 
   if (loading) return null;
 

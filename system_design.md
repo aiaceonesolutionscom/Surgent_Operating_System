@@ -246,6 +246,61 @@ line, not a suggestion — consistent with why several "Consultation &
 Screening"-category agents were deliberately left unbuilt in the prior
 phase pending compliance review.
 
+### 6.4 WhatsApp receptionist — the locale routing layer (new)
+
+The front-desk SOP (now `backend/assets/knowledge_base/Front-Desk-Call-Script-SOP.pdf`,
+moved out of `src/` — it is content, not code) describes this product as
+**multi-market from the first message**: Pakistan, the UAE, Saudi Arabia, the US
+and the UK each have their own language, currency, clinic, regulator and
+advertising rules, and getting the market wrong makes everything downstream wrong.
+
+That routing decision now happens in code, before the reply is drafted:
+
+| Piece | Where | What it decides |
+|---|---|---|
+| Market registry | `services/ai_receptionist/markets.py` | Per-market language, currency, time zone, consultation format, regulator, advertising rule; the SOP s3.1 ranked detection signals (patient's own words > country code > script > formatting > campaign source) and the s3.2 decision rule (two agreeing signals act; conflicting ones ask once) |
+| Locale resolution | `services/ai_receptionist/locale_service.py` | Resolves one message, **remembers** the market on the conversation (`extra_data.locale`, no migration) and writes the language to `patients.preferred_language` only when confident; patient local time, quiet-hours and working-week facts |
+| Prompt blocks | `services/ai_receptionist/prompt_blocks.py` | Appendix A one-for-one: identity, locale routing, that market's currency/price list/clinic, tone, seven-step flow, objections, price rules, booking, guardrails, escalation, quiet hours, output format |
+
+The receptionist's own promise *never* to state a price that is not approved
+(s7, s10.1) is enforced by configuration, not by hope: prices, consultation fee
+and payment methods are read from `Practice.settings["markets"][<code>]`, and a
+practice that has not filled that in gets an explicit "do not state a figure"
+instruction instead of a plausible-sounding number. Practice-specific
+instructions are appended **without** being able to override the guardrails.
+
+That configuration is edited on the AI Receptionist monitor
+(`receptionist/MarketSettingsCard.tsx`), which shows all five markets with the
+currency, clinic city, approved price list, consultation fee and payment methods
+for each, and flags an unconfigured market for what it actually is — a market the
+AI is currently refusing to quote in. Readable by anyone who can open the monitor,
+writable by the Owner only (`GET/PUT/DELETE /api/v1/ai-receptionist/markets`).
+
+### 6.5 Outbound messages — the quiet-hours gate (new)
+
+SOP s11: proactive messaging goes out between 09:00 and 21:00 in the **patient's**
+local time, never the clinic's, against the patient's own time zone rather than
+the server's. `services/messaging/quiet_hours.py` now sits in front of every
+outbound send for every agent, and the kind of message decides how strict it is:
+
+| Kind | Used by | Gate |
+|---|---|---|
+| `ON_DEMAND` | booking confirmations, receipts, staff replies | none — someone is waiting |
+| `REMINDER` | appointment reminders, post-op check-ins | patient's 09:00-21:00 window |
+| `PROACTIVE` | lead nurture, offers, win-back | that window **and** the market's working week |
+
+A held message is not dropped: it is logged (`message_held_quiet_hours`) with the
+patient's local time and the next moment it may go out, and — because nurture and
+post-op follow-ups run on 12h/6h pollers — it is picked up on the next run. The
+patient's zone is resolved from what they themselves stated (stored by the locale
+layer on their conversation), then their record, then their market, then the
+clinic's. Reminder text is now rendered in their zone first and the clinic's
+second (s9.1, s12) instead of raw UTC.
+
+Detection and the gate are pure and unit-tested (`tests/test_locale_routing.py`,
+`tests/test_quiet_hours.py`, `tests/test_market_settings.py`) — no LLM, no DB, no
+network.
+
 ---
 
 ## 7. Credentials — free-tier-first strategy

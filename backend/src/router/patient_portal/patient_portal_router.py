@@ -208,9 +208,11 @@ async def update_my_profile(
     patient: Patient = Depends(get_current_portal_patient),
     db: AsyncSession = Depends(get_db),
 ):
-    """Patient self-service edit — name, email, and additional phone
-    numbers only. The primary phone (portal login identity, staff's
-    on-file number) is deliberately not editable here."""
+    """Patient self-service edit — name, email, additional phone numbers,
+    and demographic/contact depth (DOB, gender, pregnancy status, emergency
+    contact, regular physician, insurance, etc — see UpdateMyProfileRequest).
+    The primary phone (portal login identity, staff's on-file number) is
+    deliberately not editable here."""
     return await controller.update_my_profile(db, patient, data)
 
 

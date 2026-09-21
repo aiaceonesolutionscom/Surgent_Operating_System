@@ -23,6 +23,15 @@ from src.services.channels.whatsapp_green_api import WhatsAppGreenAPI
 from src.services.channels.booking_draft_store import BookingDraftStore
 from src.services.leads.lead_qualification_service import LeadQualificationService
 from src.services.patient_portal.patient_portal_auth_service import PatientPortalAuthService
+from src.services.patient_portal.patient_intake_service import PatientIntakeService
+from src.services.visit_documents.visit_document_service import VisitDocumentService
+from src.services.billing.refund_services import RefundService
+from src.services.ai_receptionist.human_availability_service import HumanAvailabilityService
+from src.models.refund_request import RefundRequestedByType
+from src.models.visit_document import VisitDocument, VisitDocumentGeneratedBy
+from src.models.patient import PregnancyStatus
+from src.services.ai_receptionist.locale_service import ConversationLocale, LocaleService
+from src.services.ai_receptionist.prompt_blocks import build_system_prompt, format_draft
 from src.utils.phone import normalize_phone
 
 logger = logging.getLogger(__name__)
@@ -85,64 +94,65 @@ def _extract_booking_hints(text: str, today: date_cls) -> dict:
     return hints
 
 
+def _parse_free_list(text: str, name_key: str) -> list[dict]:
+    """Best-effort split of a comma-separated free-text answer into the
+    structured {name: ...} shape Patient.allergies/current_medications
+    already use — deliberately conservative (no attempt to parse a dosage or
+    severity out of prose), same "don't get clever" philosophy as
+    _extract_booking_hints above. Anything more specific is left in the
+    plain-text form the intake tool captured it in, findable via
+    intake_summary."""
+    return [{name_key: part.strip()} for part in text.split(",") if part.strip()]
+
+
+def _intake_is_document_ready(patient: Patient) -> bool:
+    """Minimum field set before an auto-generated visit document is worth
+    sending. Name and phone always exist by the time a Patient row is
+    created (see _find_or_create_patient); `chief_complaint` isn't reliably
+    populated on this channel (the AI receptionist doesn't write it — only
+    the async LeadQualificationService's `qualification.interested_procedure`
+    approximates it, and only after 2+ patient messages), so gender — the
+    one new structured field this tool call just recorded — is the gate:
+    it's the earliest point a visit summary has real content beyond name and
+    phone, without waiting on a field this pipeline may never set."""
+    return bool(patient.gender)
+
+
 def _format_draft(draft: dict) -> str:
-    if not draft:
-        return "Nothing confirmed yet."
-    parts = []
-    if draft.get("date"):
-        parts.append(f"date={draft['date']}")
-    if draft.get("time"):
-        parts.append(f"time={draft['time']}")
-    if draft.get("appointment_type"):
-        parts.append(f"reason={draft['appointment_type']}")
-    return ", ".join(parts) if parts else "Nothing confirmed yet."
+    """Kept as the module-level name the rest of this file already uses; the
+    wording lives in prompt_blocks, next to the prompt that quotes it."""
+    return format_draft(draft)
 
 
 def _system_prompt(
-    is_new_patient: bool, today: date_cls, draft: dict | None = None, extra_instructions: str | None = None
+    is_new_patient: bool,
+    today: date_cls,
+    draft: dict | None = None,
+    extra_instructions: str | None = None,
+    *,
+    locale: ConversationLocale | None = None,
+    practice_name: str = "the clinic",
+    patient_name: str | None = None,
 ) -> str:
-    patient_context = (
-        "This is a NEW patient — you don't have any prior visit on file for them. "
-        "Greet them warmly and get their name if the conversation doesn't already make it clear."
-        if is_new_patient
-        else "This is a RETURNING patient — you already have their record. "
-        "Acknowledge that warmly (e.g. \"welcome back\") instead of asking who they are."
+    """The AI Receptionist's system prompt for one inbound message.
+
+    Every block now comes from `prompt_blocks.build_system_prompt`, which maps
+    the front-desk SOP's Appendix A one-for-one (identity, locale routing, the
+    market's own currency/price list/clinic, tone, guardrails, escalation, quiet
+    hours). `locale` is the market this conversation routed to — without it the
+    prompt falls back to the SOP's neutral-English behaviour rather than to any
+    one market's pricing, because a wrong currency on a quote is worse than no
+    currency at all.
+    """
+    return build_system_prompt(
+        practice_name=practice_name,
+        is_new_patient=is_new_patient,
+        today=today,
+        draft=draft,
+        locale=locale,
+        custom_instructions=extra_instructions,
+        patient_name=patient_name,
     )
-    base = (
-        "You are a warm, professional AI receptionist for a plastic surgery clinic, replying over WhatsApp. "
-        f"{patient_context}\n\n"
-        "You help with: booking appointments, questions about procedures (rhinoplasty, breast augmentation, "
-        "liposuction, facelift, Botox, dermal fillers, etc.), pricing, clinic hours, and general post-op questions.\n\n"
-        "BOOKING DETAILS CONFIRMED SO FAR (trust this, don't re-derive it from scrolling back through the "
-        f"conversation): {_format_draft(draft or {})}\n\n"
-        "When a patient wants to book:\n"
-        "1. If the line above already shows date, time, AND reason all confirmed, call book_appointment right "
-        "now (it's fine to call it with no arguments, or restating the confirmed values) — that completes the "
-        "booking. Do not ask another question first.\n"
-        "2. Otherwise, call book_appointment with whatever of date/time/appointment_type you can extract from "
-        "THIS message — even if it's only one field. The system merges it with what's already confirmed above "
-        "and tells you exactly what's still missing. Never ask again for something already listed as confirmed.\n"
-        "3. Once date, time, and reason are all confirmed, the same call books it for real. You do NOT need to "
-        "ask which doctor — the system automatically assigns whichever doctor actually has an opening.\n"
-        "4. If it succeeds, confirm the booking warmly, including which doctor they're seeing.\n"
-        "5. If no one is free at that requested time, apologize and ask ONLY for a different time — the date "
-        "and reason stay confirmed, don't re-ask for those.\n\n"
-        "If the patient explicitly asks for a real person, or you genuinely cannot help with something, call "
-        "request_human_handoff with a short reason, then let them know a team member will follow up shortly.\n\n"
-        f"Today's date is {today.isoformat()}.\n\n"
-        "STYLE — this matters: reply like a busy front-desk receptionist texting on WhatsApp, not a chatbot. "
-        "1-2 short sentences, plain language, no re-explaining things you already said. Ask exactly ONE question "
-        "per reply — never stack multiple questions or restate the full list of what you need. If a patient's "
-        "wording is ambiguous (e.g. 'may' as in 'maybe' vs. the month May), ask ONE short clarifying question "
-        "instead of guessing or listing both interpretations. "
-        "Never diagnose or give clinical medical advice — that's the doctor's job, not yours."
-    )
-    if extra_instructions and extra_instructions.strip():
-        base += (
-            "\n\nPRACTICE-SPECIFIC INSTRUCTIONS (set by this practice's owner — always follow these first):\n"
-            f"{extra_instructions.strip()}\n"
-        )
-    return base
 
 
 def _booking_tools() -> list[dict]:
@@ -174,6 +184,52 @@ def _booking_tools() -> list[dict]:
         {
             "type": "function",
             "function": {
+                "name": "record_intake_field",
+                "description": (
+                    "Record a basic medical-intake detail the patient just volunteered or answered — never call "
+                    "this to diagnose or assess anything, only to store exactly what they told you. Call it the "
+                    "same way as book_appointment: every time you learn one new field, even mid-conversation. Ask "
+                    "about pregnancy/nursing status ONLY if gender is female or the patient has otherwise made it "
+                    "relevant — never ask a male or undisclosed-gender patient this question."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "gender": {"type": "string", "enum": ["male", "female", "other", "declined_to_answer"]},
+                        "pregnancy_status": {
+                            "type": "string",
+                            "enum": ["pregnant", "nursing", "not_pregnant_or_nursing", "declined_to_answer"],
+                        },
+                        "allergies": {"type": "string", "description": "Free text of any allergies just mentioned, comma separated"},
+                        "current_medications": {"type": "string", "description": "Free text of current medications just mentioned"},
+                        "smoking_status": {"type": "string", "description": "e.g. 'non-smoker', 'smoker', 'former smoker', as the patient described it"},
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "request_refund_or_cancellation",
+                "description": (
+                    "Call this the moment a patient asks to cancel remaining treatment, stop a multi-session "
+                    "course partway through, or wants money back — for ANY reason. This only FILES the request for "
+                    "the clinic's own team to review; it never approves anything, never tells the patient an "
+                    "amount, and never promises a refund will happen. Always call this INSTEAD of trying to answer "
+                    "the request yourself, and always follow it with the holding line, same as human handoff."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {"type": "string", "description": "What the patient said, in their own words — why they want to cancel/get a refund"},
+                    },
+                    "required": ["reason"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "request_human_handoff",
                 "description": "Flag this conversation for a real staff member to take over.",
                 "parameters": {
@@ -198,6 +254,11 @@ class InboundService:
         self.booking_drafts = BookingDraftStore()
         self.lead_qualification = LeadQualificationService()
         self.portal_auth = PatientPortalAuthService()
+        self.patient_intake = PatientIntakeService()
+        self.visit_documents = VisitDocumentService()
+        self.refunds = RefundService()
+        self.human_availability = HumanAvailabilityService()
+        self.locale = LocaleService()
 
     async def handle_whatsapp_message(
         self,
@@ -312,6 +373,27 @@ class InboundService:
                 "ai_disabled": True,
             }
 
+        # 4b. Routing layer (SOP s3) — decide the market, language, currency and
+        # patient local time BEFORE drafting the first word of the reply, and
+        # remember them so every later message, quote and reminder uses the same
+        # market. Deliberately below the early exits: when a human has taken the
+        # thread over (or the practice switched the agent off) the AI must not be
+        # writing to the patient record.
+        # Failure here never blocks the reply — without a locale the prompt falls
+        # back to neutral English and quotes no price at all, which is strictly
+        # safer than guessing a market for a quote.
+        locale: ConversationLocale | None = None
+        try:
+            locale = self.locale.resolve(
+                practice, message_text=message_text, patient=patient, conversation=conversation
+            )
+            self.locale.remember(patient, conversation, locale)
+        except Exception:
+            logger.exception(
+                "Locale resolution failed for patient %s (conversation %s)",
+                patient.id, conversation.id,
+            )
+
         # 5. Generate AI reply using conversation history + real booking/
         # escalation tools — if this fails for any reason (LLM rate limit,
         # network blip, anything), the patient's message is already safely
@@ -319,7 +401,7 @@ class InboundService:
         # message or crashing the whole request.
         try:
             ai_reply, escalated, escalation_reason = await self._generate_reply(
-                db, practice, patient, conversation, message_text, is_new_patient
+                db, practice, patient, conversation, message_text, is_new_patient, locale
             )
         except Exception:
             logger.exception(
@@ -405,6 +487,9 @@ class InboundService:
                 "incoming_preview": message_text[:200],
                 "reply_preview": ai_reply[:200],
                 "sent": sent,
+                # The routing decision, so a human reviewing an odd quote can see
+                # which market the reply was written for and why.
+                "locale": self.locale.describe_for_log(locale) if locale else None,
             },
             performed_by="ai_agent",
         )
@@ -754,6 +839,95 @@ class InboundService:
                 False,
             )
 
+        if tool_name == "record_intake_field":
+            recorded: list[str] = []
+
+            gender = str(tool_args.get("gender") or "").strip().lower()
+            if gender in ("male", "female", "other", "declined_to_answer"):
+                patient.gender = gender
+                recorded.append("gender")
+
+            pregnancy_raw = str(tool_args.get("pregnancy_status") or "").strip().lower()
+            if pregnancy_raw in ("pregnant", "nursing", "not_pregnant_or_nursing", "declined_to_answer"):
+                patient.pregnancy_status = PregnancyStatus(pregnancy_raw)
+                recorded.append("pregnancy_status")
+
+            allergies_text = str(tool_args.get("allergies") or "").strip()
+            if allergies_text:
+                patient.allergies = [
+                    *(patient.allergies or []),
+                    *_parse_free_list(allergies_text, "name"),
+                ]
+                recorded.append("allergies")
+
+            medications_text = str(tool_args.get("current_medications") or "").strip()
+            if medications_text:
+                patient.current_medications = [
+                    *(patient.current_medications or []),
+                    *_parse_free_list(medications_text, "name"),
+                ]
+                recorded.append("current_medications")
+
+            smoking_status = str(tool_args.get("smoking_status") or "").strip()
+            if smoking_status:
+                patient.smoking_status = smoking_status
+                recorded.append("smoking_status")
+
+            if not recorded:
+                return "Nothing new to record from that.", False
+
+            await db.flush()
+            await self.agent_log.log(
+                db, practice.id, agent_type="ai_receptionist", action="whatsapp_intake_field_recorded",
+                details={"patient_id": str(patient.id), "fields": recorded}, performed_by="ai_agent",
+            )
+
+            # Best-effort — regenerates the doctor-facing summary from
+            # whatever's on the patient now, and (once enough exists) sends
+            # the auto-generated visit document. Never allowed to affect the
+            # conversational reply itself.
+            try:
+                await self.patient_intake.refresh_intake_summary(db, patient)
+            except Exception:
+                logger.exception("Intake summary refresh failed for patient %s", patient.id)
+            if _intake_is_document_ready(patient):
+                try:
+                    # Only the first time this patient crosses the readiness
+                    # threshold — without this check, every later intake
+                    # field recorded in the same conversation would re-fire
+                    # generation and re-send another PDF to the patient.
+                    existing = await db.execute(
+                        select(VisitDocument.id).where(VisitDocument.patient_id == patient.id).limit(1)
+                    )
+                    if existing.scalar_one_or_none() is None:
+                        await self.visit_documents.generate_and_send(
+                            db, practice.id, patient, generated_by=VisitDocumentGeneratedBy.AI_RECEPTIONIST,
+                        )
+                except Exception:
+                    logger.exception("Visit document generation failed for patient %s", patient.id)
+
+            return f"Recorded: {', '.join(recorded)}. Continue the conversation naturally.", False
+
+        if tool_name == "request_refund_or_cancellation":
+            reason = str(tool_args.get("reason") or "Patient asked to cancel/refund via WhatsApp.")
+            try:
+                await self.refunds.create_request(
+                    db, practice.id, patient.id, RefundRequestedByType.AI_RECEPTIONIST, reason,
+                )
+            except Exception:
+                logger.exception("Failed to file refund request for patient %s", patient.id)
+            await self.agent_log.log(
+                db, practice.id, agent_type="ai_receptionist", action="whatsapp_refund_requested",
+                details={"patient_id": str(patient.id), "reason": reason}, performed_by="ai_agent",
+            )
+            availability_note = await self._human_availability_note(db, practice.id)
+            return (
+                "A refund/cancellation request has been filed for the clinic's team to review — do not tell the "
+                "patient an amount or a timeline yourself, just reassure them the team will follow up. "
+                f"{availability_note}",
+                True,
+            )
+
         if tool_name == "request_human_handoff":
             reason = str(tool_args.get("reason") or "Patient requested a human / AI could not help.")
             await self.agent_log.log(
@@ -764,9 +938,29 @@ class InboundService:
                 details={"patient_id": str(patient.id), "reason": reason},
                 performed_by="ai_agent",
             )
-            return "A staff member has been notified and will follow up shortly.", True
+            availability_note = await self._human_availability_note(db, practice.id)
+            return f"A staff member has been notified. {availability_note}", True
 
         return f"Unknown tool: {tool_name}", False
+
+    async def _human_availability_note(self, db: AsyncSession, practice_id: UUID) -> str:
+        """Tells the model, in plain instructive text, whether front desk is
+        actually reachable right now — so "connecting you with our team now"
+        is never said when nobody is there to receive it (see
+        HumanAvailabilityService, Practice.settings['human_support_hours']).
+        Best-effort: a lookup failure falls back to the old unconditional
+        holding line rather than blocking escalation."""
+        try:
+            available_now, status_label = await self.human_availability.status_for_practice(db, practice_id)
+        except Exception:
+            logger.exception("Human-availability lookup failed for practice %s", practice_id)
+            return "Tell the patient a team member will follow up shortly."
+        if available_now:
+            return "Our team is available right now — tell the patient you're connecting them immediately."
+        return (
+            f"Our team is NOT available right now ({status_label}) — do not say you're connecting them this "
+            f"moment; instead tell the patient the team will get back to them ({status_label.lower()})."
+        )
 
     async def _generate_reply(
         self,
@@ -776,6 +970,7 @@ class InboundService:
         conversation: Conversation,
         new_message: str,
         is_new_patient: bool,
+        locale: ConversationLocale | None = None,
     ) -> tuple[str, bool]:
         """Generate an AI reply using the conversation history for context,
         with real booking/escalation tools available. Returns (reply_text,
@@ -805,7 +1000,16 @@ class InboundService:
         else:
             draft = await self.booking_drafts.get(conversation.id)
         custom = (practice.settings or {}).get("ai_receptionist_system_prompt") or None
-        system_prompt = _system_prompt(is_new_patient, today, draft, custom)
+        patient_name = " ".join(part for part in (patient.first_name, patient.last_name) if part) or None
+        system_prompt = _system_prompt(
+            is_new_patient,
+            today,
+            draft,
+            custom,
+            locale=locale,
+            practice_name=practice.name,
+            patient_name=patient_name,
+        )
         tools = _booking_tools()
 
         first = await self.llm.chat_with_tools(

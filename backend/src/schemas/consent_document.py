@@ -12,6 +12,7 @@ class CreateConsentDocumentRequest(BaseModel):
     # ignored in that case. Omit to raise an ad-hoc document with free-text
     # content instead (no template involved).
     template_id: UUID | None = None
+    treatment_plan_notes: str | None = None
 
 
 class SignConsentDocumentRequest(BaseModel):
@@ -35,6 +36,9 @@ class ConsentDocumentResponse(BaseModel):
     version: int
     template_id: UUID | None = None
     template_version: int | None = None
+    sections: dict | None = None
+    treatment_plan_notes: str | None = None
+    file_url: str | None = None
     status: str
     signed_at: datetime | None
     signed_by_name: str | None

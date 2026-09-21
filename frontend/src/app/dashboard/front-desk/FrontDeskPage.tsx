@@ -5,7 +5,6 @@ import { useFrontDesk } from "./useFrontDesk";
 import { ReceptionistFrontDesk } from "./ReceptionistFrontDesk";
 import { OwnerFrontDeskOverview } from "./OwnerFrontDeskOverview";
 import { getMyStaff } from "../../../api/entities";
-import { AttendanceCalendar } from "../attendance/AttendanceCalendar";
 
 // One route, one real data source (useFrontDesk), two different views —
 // Receptionist gets the operate-it workspace (check-in, waiting room,
@@ -47,9 +46,6 @@ export function FrontDeskPage() {
             <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">{todayStats}</p>
           </div>
           <ReceptionistFrontDesk {...frontDesk} />
-          <div className="mt-6">
-            <AttendanceCalendar />
-          </div>
         </>
       ) : (
         <>

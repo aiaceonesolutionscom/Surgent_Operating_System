@@ -52,3 +52,49 @@ export async function apiFetchBlob(path: string, init?: RequestInit): Promise<Bl
   }
   return res.blob();
 }
+
+// For the streaming agent endpoints (server/sse.py's `data: <json>\n\n`
+// wire format) — a browser EventSource can't be used here since it's
+// GET-only and can't carry a POST body or an Authorization header, so this
+// reads the fetch Response body's ReadableStream directly and yields each
+// parsed event as it arrives. Async generator so a caller does
+// `for await (const event of streamSSE(...))`.
+export async function* streamSSE<T = Record<string, unknown>>(path: string, init?: RequestInit): AsyncGenerator<T> {
+  const res = await fetch(`${BASE_URL}${path}`, init);
+  if (!res.ok || !res.body) {
+    let detail: string | null = null;
+    try {
+      const body = await res.clone().json();
+      if (body && typeof body.detail === "string") detail = body.detail;
+    } catch {
+      // Non-JSON or empty error body — fall through to the generic message.
+    }
+    throw new ApiError(res.status, detail || `${init?.method || "GET"} ${path} failed with ${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE frames are separated by a blank line; each frame's payload line
+      // starts with "data: ".
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() || "";
+      for (const frame of frames) {
+        const line = frame.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        try {
+          yield JSON.parse(line.slice(6)) as T;
+        } catch {
+          // A malformed frame shouldn't kill the whole stream.
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}

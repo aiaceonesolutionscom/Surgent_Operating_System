@@ -164,8 +164,12 @@ export function DoctorOverviewPage() {
         </div>
       }
 
-      <div className="mt-6">
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <TodayAgenda appointments={appointments} loading={loading} />
+        <div>
+          <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">My attendance</p>
+          <AttendanceCalendar />
+        </div>
       </div>
 
       {today && (today.pending_notes.length > 0 || today.pending_consent_count > 0 || today.alerts.length > 0) &&
@@ -174,10 +178,6 @@ export function DoctorOverviewPage() {
           <AlertsWidget alerts={today.alerts} />
         </div>
       }
-
-      <div className="mt-6">
-        <AttendanceCalendar />
-      </div>
 
       {myUpcomingSurgeries.length > 0 &&
       <div className="mt-6 rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">

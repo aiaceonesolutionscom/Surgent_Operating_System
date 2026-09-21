@@ -11,12 +11,18 @@ from src.schemas.ai_receptionist import (
     SendReminderResponse,
     AIReceptionistOverviewResponse,
     SystemPromptResponse,
+    MarketSettingsUpdate,
+    MarketsSettingsResponse,
+    HumanAvailabilityUpdate,
+    HumanAvailabilityResponse,
 )
 from src.services.ai_receptionist.voice_chat_service import VoiceChatService
 from src.services.ai_receptionist.reminder_service import ReminderService
 from src.services.ai_receptionist.translation_service import TranslationService
 from src.services.ai_receptionist.overview_service import AIReceptionistOverviewService
 from src.services.ai_receptionist.system_prompt_service import SystemPromptService
+from src.services.ai_receptionist.market_settings_service import MarketSettingsService
+from src.services.ai_receptionist.human_availability_service import HumanAvailabilityService
 
 
 class AIReceptionistController:
@@ -26,6 +32,8 @@ class AIReceptionistController:
         self.translation = TranslationService()
         self.overview = AIReceptionistOverviewService()
         self.system_prompt = SystemPromptService()
+        self.markets = MarketSettingsService()
+        self.human_availability = HumanAvailabilityService()
 
     async def handle_call(self, db: AsyncSession, user: User) -> HandleCallResponse:
         result = await self.voice_chat.handle_call(db, user.practice_id, performed_by="ai_agent")
@@ -51,3 +59,22 @@ class AIReceptionistController:
 
     async def update_system_prompt(self, db: AsyncSession, user: User, custom_instructions: str) -> SystemPromptResponse:
         return await self.system_prompt.save_custom_instructions(db, user.practice_id, custom_instructions, user.id)
+
+    async def get_market_settings(self, db: AsyncSession, user: User) -> MarketsSettingsResponse:
+        return await self.markets.get_settings(db, user.practice_id)
+
+    async def save_market_settings(
+        self, db: AsyncSession, user: User, code: str, payload: MarketSettingsUpdate
+    ) -> MarketsSettingsResponse:
+        return await self.markets.save_market(db, user.practice_id, code, payload, user.id)
+
+    async def clear_market_settings(self, db: AsyncSession, user: User, code: str) -> MarketsSettingsResponse:
+        return await self.markets.clear_market(db, user.practice_id, code, user.id)
+
+    async def get_human_availability(self, db: AsyncSession, user: User) -> HumanAvailabilityResponse:
+        return await self.human_availability.get_settings(db, user.practice_id)
+
+    async def save_human_availability(
+        self, db: AsyncSession, user: User, payload: HumanAvailabilityUpdate
+    ) -> HumanAvailabilityResponse:
+        return await self.human_availability.save_settings(db, user.practice_id, payload)

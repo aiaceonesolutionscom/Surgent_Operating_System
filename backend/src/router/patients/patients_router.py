@@ -127,6 +127,24 @@ async def restore_patient(
     return await controller.restore_patient(db, user, patient_id)
 
 
+@router.delete("/{patient_id}")
+async def delete_patient(
+    patient_id: UUID,
+    # Owner-only, unlike archive/restore — a permanent delete is a much
+    # higher-trust action than the front-desk's own archive workflow.
+    user: User = Depends(require_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently deletes an already-archived patient (see
+    PatientsService.delete_patient — only archived records qualify, and only
+    ones with no deeper clinical/financial history the ORM doesn't cascade).
+    If that patient comes back, front desk re-registers them from scratch.
+    Returns a small JSON body (not a bare 204) — apiFetch()'s frontend
+    wrapper always calls res.json(), which throws on an empty body."""
+    await controller.delete_patient(db, user, patient_id)
+    return {"deleted": True}
+
+
 @router.get("/{patient_id}/audit-log", response_model=list[PatientAuditLogEntry])
 async def get_patient_audit_log(
     patient_id: UUID,

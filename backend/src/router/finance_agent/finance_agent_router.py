@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
 from src.server.dependencies import get_current_practice_context, require_agent, PracticeContext
+from src.server.sse import sse_response
 from src.schemas.finance_agent import (
     AskFinanceAgentRequest,
     AskFinanceAgentResponse,
@@ -35,6 +36,15 @@ async def ask_finance_agent(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.ask(db, ctx, data)
+
+
+@router.post("/ask/stream")
+async def ask_finance_agent_stream(
+    data: AskFinanceAgentRequest,
+    ctx: PracticeContext = Depends(require_agent(FINANCE_AGENT_SLUG)),
+    db: AsyncSession = Depends(get_db),
+):
+    return sse_response(controller.ask_stream(db, ctx, data))
 
 
 @router.get("/sessions", response_model=list[FinanceAgentSessionSummary])

@@ -55,9 +55,19 @@ class TreatmentPlanItem(Base):
     phase_order: Mapped[int] = mapped_column(Integer, default=0)
     estimated_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True)
     status: Mapped[TreatmentPlanItemStatus] = mapped_column(Enum(TreatmentPlanItemStatus), default=TreatmentPlanItemStatus.PLANNED)
+    # How many visits this specific item takes for this specific patient —
+    # seeded from Procedure.default_session_count when the item is created,
+    # editable afterward (a doctor may decide a patient needs 8 laser
+    # sessions instead of the usual 6). 1 = the pre-existing single-visit
+    # behavior; every item created before this field existed reads as 1.
+    # The real per-visit records live in `session_visits` below — this is
+    # just the target count sessions are measured against.
+    sessions_total: Mapped[int] = mapped_column(Integer, default=1)
     # Set once this item is actually booked/performed — folded onto the item
     # itself rather than a separate "performed procedure" table, per the
-    # roadmap's own sequencing note.
+    # roadmap's own sequencing note. For a multi-session item this points at
+    # the LATEST session's appointment as a convenience; the authoritative
+    # per-visit history is `session_visits`.
     scheduled_appointment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("appointments.id"), nullable=True)
     performed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     actual_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True)
@@ -67,3 +77,7 @@ class TreatmentPlanItem(Base):
 
     treatment_plan = relationship("TreatmentPlan", back_populates="items")
     procedure = relationship("Procedure")
+    session_visits = relationship(
+        "SessionVisit", back_populates="treatment_plan_item", cascade="all, delete-orphan",
+        order_by="SessionVisit.session_index",
+    )

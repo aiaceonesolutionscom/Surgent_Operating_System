@@ -41,6 +41,7 @@ export const DASHBOARD_ROUTES = {
   messageThread: (conversationId: string) => `/dashboard/messages?thread=${conversationId}`,
   expenses: "/dashboard/finance/expenses",
   financeOverview: "/dashboard/finance/overview",
+  refundRequests: "/dashboard/finance/refunds",
   leadsFunnel: "/dashboard/leads",
   inventory: "/dashboard/inventory",
   inventoryItemDetail: (id: string) => `/dashboard/inventory/${id}`,

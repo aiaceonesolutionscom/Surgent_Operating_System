@@ -42,6 +42,8 @@ async def update_me(
     ctx: PracticeContext = Depends(get_current_practice_context),
     db: AsyncSession = Depends(get_db),
 ):
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can update practice details.")
     return await controller.update_me(db, ctx, body)
 
 

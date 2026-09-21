@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import String, Text, DateTime, Integer, Enum, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -37,6 +37,31 @@ class ConsentTemplate(Base):
     document_type: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1)
     body: Mapped[str] = mapped_column(Text, nullable=False)
+    # Structured, admin-configurable per-treatment-type clause groups —
+    # modeled on the clinic's real Consent-Form.pdf (Injectable/Botulinum
+    # Toxin/Dermal Filler-style sections). Nullable: an existing free-text-
+    # only template (body set, sections null) keeps working unchanged, and
+    # the consent PDF generator falls back to rendering `body` as plain
+    # paragraphs when sections is null. Shape:
+    # {
+    #   "header_fields": ["full_name", "date", "dob", "gp_contact_permission",
+    #                      "gp_name", "gp_address", "gp_phone",
+    #                      "emergency_contact_name", "emergency_contact_phone"],
+    #   "treatment_sections": [
+    #     {"treatment_type": "Botulinum Toxin Treatment",
+    #      "clause_groups": [{"heading": "I understand that:", "clauses": [...]}]}
+    #   ],
+    #   "photography_consent": {"records_consent_clause": "...",
+    #                            "marketing_consent_optional": true,
+    #                            "anonymization_optional": true},
+    #   "patient_statement": {"clauses": [...]},
+    #   "treatment_plan_block": {"include_face_diagram_placeholder": false}
+    # }
+    # `body` is kept in sync as a plain-text flattening of `sections`
+    # whenever the latter is written (see
+    # ConsentTemplateService.flatten_sections_to_text), so any code still
+    # reading `.body` directly never breaks.
+    sections: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -78,6 +103,18 @@ class ConsentDocument(Base):
     # template moves on to v2, v3, ...
     template_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("consent_templates.id"), nullable=True)
     template_version: Mapped[int] = mapped_column(Integer, nullable=True)
+    # Frozen snapshot of ConsentTemplate.sections at the moment this document
+    # was created — same "never rewrite what was signed" reasoning as
+    # `content` snapshotting `body`.
+    sections: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Free-text treatment plan for the record block of the generated PDF
+    # (clinician name/date live on discussed_by/discussed_at below).
+    treatment_plan_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Generated signed-consent PDF (ReportLab, rendered from `sections`/
+    # `content` at sign time) — set once by ConsentService.sign_document,
+    # never regenerated afterward so it stays the exact record of what was
+    # signed. Null until signed.
+    file_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     status: Mapped[ConsentDocumentStatus] = mapped_column(Enum(ConsentDocumentStatus), default=ConsentDocumentStatus.DRAFT)
     signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     signed_by_name: Mapped[str] = mapped_column(String(255), nullable=True)

@@ -124,6 +124,19 @@ class PatientsController:
         await db.commit()
         return PatientResponse.model_validate(patient)
 
+    async def delete_patient(self, db: AsyncSession, user: User, patient_id: UUID) -> None:
+        # Logged before the row is gone — resource_id on AuditLog isn't a
+        # real FK to patients (same reasoning as every other
+        # already-terminal audit entry here), but the Patient ORM object
+        # itself gets expired by the DELETE flush below, so read patient_id
+        # from the argument rather than the (about to be stale) object.
+        await self.audit.log(
+            db, user.practice_id, "user", "patient.deleted", actor_user_id=user.id,
+            resource_type="patient", resource_id=patient_id,
+        )
+        await self.service.delete_patient(db, user.practice_id, patient_id)
+        await db.commit()
+
     async def restore_patient(self, db: AsyncSession, user: User, patient_id: UUID) -> PatientResponse:
         patient = await self.service.restore_patient(db, user.practice_id, patient_id)
         await self.audit.log(

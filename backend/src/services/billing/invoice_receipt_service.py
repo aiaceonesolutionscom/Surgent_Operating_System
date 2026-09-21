@@ -13,6 +13,7 @@ from src.models.treatment_plan import TreatmentPlan
 from src.services.billing.invoice_pdf_service import generate_invoice_pdf
 from src.services.patients.patients_services import PatientsService
 from src.services.messaging.messaging_service import MessagingService
+from src.services.messaging.quiet_hours import MessageTiming
 from src.services.email.resend_service import ResendService
 from src.services.storage.storage_service import StorageService
 
@@ -74,14 +75,18 @@ class InvoiceReceiptService:
         # Plain-text confirmation always attempted first (works over SMS
         # too, not just WhatsApp) — the PDF document is a bonus on top.
         try:
-            await self.messaging.send_and_log(db, practice_id, patient, "billing_receipt", caption)
+            # ON_DEMAND: a receipt for the payment that was just recorded.
+            await self.messaging.send_and_log(
+                db, practice_id, patient, "billing_receipt", caption, timing=MessageTiming.ON_DEMAND
+            )
         except Exception as exc:
             logger.info("Receipt text not sent for invoice %s: %s", invoice.id, exc)
 
         try:
             upload = await self.storage.upload(pdf_bytes, f"invoice-{invoice.id}", folder="invoices", resource_type="raw")
             await self.messaging.send_document_and_log(
-                db, practice_id, patient, "billing_receipt", upload["url"], filename, caption
+                db, practice_id, patient, "billing_receipt", upload["url"], filename, caption,
+                timing=MessageTiming.ON_DEMAND,
             )
         except Exception as exc:
             logger.info("Receipt PDF not sent via WhatsApp for invoice %s: %s", invoice.id, exc)

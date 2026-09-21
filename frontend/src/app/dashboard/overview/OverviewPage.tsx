@@ -66,12 +66,16 @@ export function OverviewPage() {
           <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">{statusLine}</p>
         </div>
         <div className="flex shrink-0 gap-3">
-          <button className="flex items-center gap-2 rounded-xl border border-sand-200 bg-white px-5 py-3 text-sm font-semibold text-ink shadow-[0_1px_2px_rgba(11,29,38,0.04)] transition-colors hover:border-accent-500/30">
+          <Link
+            to={DASHBOARD_ROUTES.frontDesk}
+            className="flex items-center gap-2 rounded-xl border border-sand-200 bg-white px-5 py-3 text-sm font-semibold text-ink shadow-[0_1px_2px_rgba(11,29,38,0.04)] transition-colors hover:border-accent-500/30">
             <CalendarIcon className="h-4 w-4 text-accent-500" /> View schedule
-          </button>
-          <button className="flex items-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_-8px_rgba(37,99,235,0.5)] transition-colors hover:bg-accent-600">
+          </Link>
+          <Link
+            to={DASHBOARD_ROUTES.bookAppointment}
+            className="flex items-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_-8px_rgba(37,99,235,0.5)] transition-colors hover:bg-accent-600">
             <PlusIcon className="h-4 w-4" /> New consultation
-          </button>
+          </Link>
         </div>
       </div>
 

@@ -33,6 +33,9 @@ class CommandCenterController:
     async def ask(self, db: AsyncSession, ctx: PracticeContext, data: AskCommandCenterRequest) -> AskCommandCenterResponse:
         return await self.service.ask(db, ctx.practice.id, ctx.tier, data.question, data.session_id)
 
+    def ask_stream(self, db: AsyncSession, ctx: PracticeContext, data: AskCommandCenterRequest):
+        return self.service.ask_stream(db, ctx.practice.id, ctx.tier, data.question, data.session_id)
+
     async def list_sessions(self, db: AsyncSession, ctx: PracticeContext) -> list[CommandCenterSessionSummary]:
         conversations = await self.service.list_sessions(db, ctx.practice.id)
         return [CommandCenterSessionSummary(id=c.id, title=_title_for(c), updated_at=c.updated_at) for c in conversations]

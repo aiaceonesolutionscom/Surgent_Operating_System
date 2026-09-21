@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { apiFetch, apiFetchBlob, ApiError } from "./client";
+import { apiFetch, apiFetchBlob, streamSSE, ApiError } from "./client";
 
 // Closes the gap app/auth/README.md documents — apiFetch() never attached a
 // Clerk session token, so every backend route expecting Depends(get_current_user)
@@ -47,5 +47,22 @@ export function useAuthedFetch() {
     [getToken, isSignedIn]
   );
 
-  return { authedFetch, authedFetchBlob, isSignedIn, isLoaded };
+  // Sibling to authedFetch for the streaming agent endpoints — see
+  // client.ts's streamSSE for the wire-format details.
+  const authedFetchStream = useCallback(
+    function authedFetchStream<T = Record<string, unknown>>(path: string, init?: RequestInit): AsyncGenerator<T> {
+      async function* gen() {
+        if (!isSignedIn) throw new ApiError(401, "Not signed in");
+        const token = await getToken();
+        yield* streamSSE<T>(path, {
+          ...init,
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers }
+        });
+      }
+      return gen();
+    },
+    [getToken, isSignedIn]
+  );
+
+  return { authedFetch, authedFetchBlob, authedFetchStream, isSignedIn, isLoaded };
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeftIcon, CheckIcon, ScissorsIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
@@ -7,6 +7,7 @@ import { usePatients } from "../patients/usePatients";
 import { useProcedures } from "./useProcedures";
 import { getTreatmentPlan, updateTreatmentPlanItem, type TreatmentPlanResponse } from "../../../api/entities";
 import { DASHBOARD_ROUTES } from "../constants/routes";
+import { SessionVisitsPanel } from "./SessionVisitsPanel";
 
 const ITEM_STATUS_CLASS: Record<string, string> = {
   planned: "bg-sand-100 text-ink-soft",
@@ -98,41 +99,57 @@ export function TreatmentPlanPage() {
 
       <div className="rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
         <div className="divide-y divide-sand-100">
-          {plan.items.map((item) =>
-          <div key={item.id} className="flex items-center gap-3 px-5 py-4">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-ink">{procedureName(item.procedure_id)}</p>
-                <p className="text-xs text-ink-muted">
-                  {item.status === "completed" && item.actual_price != null ?
-                `Charged $${item.actual_price.toLocaleString()}` :
-                item.estimated_price != null ?
-                `Estimated $${item.estimated_price.toLocaleString()}` :
-                "No price set"}
-                </p>
-              </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${ITEM_STATUS_CLASS[item.status] || "bg-sand-100 text-ink-soft"}`}>
-                {item.status}
-              </span>
-              {role === "owner" && item.status !== "completed" && item.status !== "cancelled" &&
-            <Link
-              to={DASHBOARD_ROUTES.surgeryNew(plan.patient_id, item.procedure_id)}
-              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-sand-200 px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">
+          {plan.items.map((item) => {
+            const isMultiSession = item.sessions_total > 1;
+            return (
+              <div key={item.id} className="px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-ink">{procedureName(item.procedure_id)}</p>
+                    <p className="text-xs text-ink-muted">
+                      {isMultiSession ?
+                    `${item.session_visits.filter((s) => s.status === "completed").length} of ${item.sessions_total} sessions completed` :
+                    item.status === "completed" && item.actual_price != null ?
+                    `Charged $${item.actual_price.toLocaleString()}` :
+                    item.estimated_price != null ?
+                    `Estimated $${item.estimated_price.toLocaleString()}` :
+                    "No price set"}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${ITEM_STATUS_CLASS[item.status] || "bg-sand-100 text-ink-soft"}`}>
+                    {item.status}
+                  </span>
+                  {!isMultiSession && role === "owner" && item.status !== "completed" && item.status !== "cancelled" &&
+                <Link
+                  to={DASHBOARD_ROUTES.surgeryNew(plan.patient_id, item.procedure_id)}
+                  className="flex shrink-0 items-center gap-1.5 rounded-xl border border-sand-200 px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">
 
-                  <ScissorsIcon className="h-3.5 w-3.5" /> Schedule surgery
-                </Link>
-            }
-              {role === "doctor" && item.status !== "completed" && item.status !== "cancelled" &&
-            <button
-              type="button"
-              onClick={() => markCompleted(item.id, item.estimated_price)}
-              disabled={savingItemId === item.id}
-              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-sand-200 px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-success/40 hover:text-success disabled:opacity-50">
+                      <ScissorsIcon className="h-3.5 w-3.5" /> Schedule surgery
+                    </Link>
+                }
+                  {!isMultiSession && role === "doctor" && item.status !== "completed" && item.status !== "cancelled" &&
+                <button
+                  type="button"
+                  onClick={() => markCompleted(item.id, item.estimated_price)}
+                  disabled={savingItemId === item.id}
+                  className="flex shrink-0 items-center gap-1.5 rounded-xl border border-sand-200 px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-success/40 hover:text-success disabled:opacity-50">
 
-                  <CheckIcon className="h-3.5 w-3.5" /> {savingItemId === item.id ? "Saving…" : "Mark completed"}
-                </button>
-            }
-            </div>
-          )}
+                      <CheckIcon className="h-3.5 w-3.5" /> {savingItemId === item.id ? "Saving…" : "Mark completed"}
+                    </button>
+                }
+                </div>
+                {isMultiSession &&
+              <SessionVisitsPanel
+                item={item}
+                onChanged={async () => {
+                  const refreshed = await getTreatmentPlan(authedFetch!, plan.id);
+                  setPlan(refreshed);
+                }} />
+
+              }
+              </div>);
+
+          })}
         </div>
       </div>
     </>);

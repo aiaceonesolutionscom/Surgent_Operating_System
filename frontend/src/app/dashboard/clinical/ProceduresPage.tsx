@@ -42,6 +42,7 @@ export function ProceduresPage() {
                   <th className="px-5 py-3">Category</th>
                   <th className="px-5 py-3">Price</th>
                   <th className="px-5 py-3">Duration</th>
+                  <th className="px-5 py-3">Sessions</th>
                   <th className="px-5 py-3"></th>
                 </tr>
               </thead>
@@ -56,11 +57,18 @@ export function ProceduresPage() {
 
 }
 
-function AddForm({ onCreate, onDone }: { onCreate: (data: { name: string; category?: string | null; base_price?: number | null; duration_minutes?: number | null }) => Promise<boolean>; onDone: () => void }) {
+function AddForm({
+  onCreate, onDone
+}: {
+  onCreate: (data: { name: string; category?: string | null; base_price?: number | null; duration_minutes?: number | null; default_session_count?: number; default_checklist?: string[] }) => Promise<boolean>;
+  onDone: () => void;
+}) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [price, setPrice] = useState("");
   const [duration, setDuration] = useState("");
+  const [sessions, setSessions] = useState("1");
+  const [checklistText, setChecklistText] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,7 +81,9 @@ function AddForm({ onCreate, onDone }: { onCreate: (data: { name: string; catego
       name: name.trim(),
       category: category.trim() || null,
       base_price: price ? Number(price) : null,
-      duration_minutes: duration ? Number(duration) : null
+      duration_minutes: duration ? Number(duration) : null,
+      default_session_count: sessions ? Number(sessions) : 1,
+      default_checklist: checklistText.split("\n").map((l) => l.trim()).filter(Boolean)
     });
     setSaving(false);
     if (ok) onDone();
@@ -123,7 +133,29 @@ function AddForm({ onCreate, onDone }: { onCreate: (data: { name: string; catego
             className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white" />
 
         </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Sessions</span>
+          <input
+            type="number"
+            min="1"
+            value={sessions}
+            onChange={(e) => setSessions(e.target.value)}
+            title="How many visits this procedure normally takes (e.g. 6 for a laser hair removal course)"
+            className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white" />
+
+        </label>
       </div>
+
+      <label className="mt-4 block">
+        <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Pre-visit checklist (one item per line, optional)</span>
+        <textarea
+          rows={3}
+          value={checklistText}
+          onChange={(e) => setChecklistText(e.target.value)}
+          placeholder={"Confirm no recent Accutane use\nNumbing cream applied\nConsent form on file"}
+          className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-teal-600/40 focus:bg-white" />
+        <span className="mt-1 block text-[11px] text-ink-muted">Copied onto every session of this procedure — the doctor checks these off before/during the visit.</span>
+      </label>
 
       {error && <p className="mt-3 text-sm font-medium text-danger">{error}</p>}
 
@@ -143,12 +175,19 @@ function AddForm({ onCreate, onDone }: { onCreate: (data: { name: string; catego
 
 }
 
-function ProcedureRow({ procedure, onUpdate }: { procedure: ProcedureResponse; onUpdate: (id: string, data: { name?: string; category?: string | null; base_price?: number | null; duration_minutes?: number | null; is_active?: boolean }) => Promise<boolean> }) {
+function ProcedureRow({
+  procedure, onUpdate
+}: {
+  procedure: ProcedureResponse;
+  onUpdate: (id: string, data: { name?: string; category?: string | null; base_price?: number | null; duration_minutes?: number | null; default_session_count?: number; default_checklist?: string[]; is_active?: boolean }) => Promise<boolean>;
+}) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(procedure.name);
   const [category, setCategory] = useState(procedure.category || "");
   const [price, setPrice] = useState(procedure.base_price != null ? String(procedure.base_price) : "");
   const [duration, setDuration] = useState(procedure.duration_minutes != null ? String(procedure.duration_minutes) : "");
+  const [sessions, setSessions] = useState(String(procedure.default_session_count || 1));
+  const [checklistText, setChecklistText] = useState((procedure.default_checklist || []).join("\n"));
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -157,7 +196,9 @@ function ProcedureRow({ procedure, onUpdate }: { procedure: ProcedureResponse; o
       name: name.trim(),
       category: category.trim() || null,
       base_price: price ? Number(price) : null,
-      duration_minutes: duration ? Number(duration) : null
+      duration_minutes: duration ? Number(duration) : null,
+      default_session_count: sessions ? Number(sessions) : 1,
+      default_checklist: checklistText.split("\n").map((l) => l.trim()).filter(Boolean)
     });
     setSaving(false);
     if (ok) setEditing(false);
@@ -170,11 +211,18 @@ function ProcedureRow({ procedure, onUpdate }: { procedure: ProcedureResponse; o
         <td className="px-5 py-3"><input value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-lg border border-sand-200 px-2.5 py-1.5 text-sm outline-none focus:border-teal-600/40" /></td>
         <td className="px-5 py-3"><input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="w-24 rounded-lg border border-sand-200 px-2.5 py-1.5 text-sm outline-none focus:border-teal-600/40" /></td>
         <td className="px-5 py-3"><input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} className="w-20 rounded-lg border border-sand-200 px-2.5 py-1.5 text-sm outline-none focus:border-teal-600/40" /></td>
+        <td className="px-5 py-3"><input type="number" min="1" value={sessions} onChange={(e) => setSessions(e.target.value)} className="w-16 rounded-lg border border-sand-200 px-2.5 py-1.5 text-sm outline-none focus:border-teal-600/40" /></td>
         <td className="px-5 py-3">
           <div className="flex items-center gap-1.5">
             <button type="button" onClick={save} disabled={saving} className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"><CheckIcon className="h-3.5 w-3.5" /></button>
             <button type="button" onClick={() => setEditing(false)} className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-muted hover:bg-sand-100"><XIcon className="h-3.5 w-3.5" /></button>
           </div>
+        </td>
+        <td colSpan={6} className="px-5 pb-3">
+          <label className="block">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Pre-visit checklist (one item per line)</span>
+            <textarea rows={2} value={checklistText} onChange={(e) => setChecklistText(e.target.value)} className="w-full rounded-lg border border-sand-200 px-2.5 py-1.5 text-sm outline-none focus:border-teal-600/40" />
+          </label>
         </td>
       </tr>);
 
@@ -186,6 +234,7 @@ function ProcedureRow({ procedure, onUpdate }: { procedure: ProcedureResponse; o
       <td className="px-5 py-3 text-ink-soft">{procedure.category || "—"}</td>
       <td className="px-5 py-3 text-ink-soft">{procedure.base_price != null ? `$${procedure.base_price.toLocaleString()}` : "—"}</td>
       <td className="px-5 py-3 text-ink-soft">{procedure.duration_minutes != null ? `${procedure.duration_minutes} min` : "—"}</td>
+      <td className="px-5 py-3 text-ink-soft">{procedure.default_session_count > 1 ? `${procedure.default_session_count} visits` : "1 visit"}</td>
       <td className="px-5 py-3">
         <div className="flex items-center gap-1.5">
           <button type="button" onClick={() => setEditing(true)} className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-muted hover:bg-sand-100 hover:text-teal-600"><PencilIcon className="h-3.5 w-3.5" /></button>

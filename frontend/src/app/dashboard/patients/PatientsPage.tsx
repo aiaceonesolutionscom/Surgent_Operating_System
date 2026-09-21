@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { SearchIcon, UsersIcon, PlusIcon, ArchiveIcon, ShieldCheckIcon, ShieldOffIcon, StethoscopeIcon } from "lucide-react";
+import { SearchIcon, UsersIcon, PlusIcon, ArchiveIcon, ShieldCheckIcon, ShieldOffIcon, StethoscopeIcon, Trash2Icon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { usePatients } from "./usePatients";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 import type { Patient } from "./types";
 import { usePlan } from "../plan/PlanContext";
+import { deletePatient } from "../../../api/entities";
 
 const STATUS_CLASS: Record<Patient["status"], string> = {
   active: "bg-success/10 text-success",
@@ -64,8 +65,27 @@ export function PatientsPage() {
   const { authedFetch, role } = usePlan();
   const [showArchived, setShowArchived] = useState(false);
   const canSeeArchived = role === "owner" || role === "receptionist";
-  const { patients, loading } = usePatients(authedFetch, { includeArchived: canSeeArchived && showArchived });
+  const { patients, loading, refetch } = usePatients(authedFetch, { includeArchived: canSeeArchived && showArchived });
   const [query, setQuery] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function handleDelete(patient: Patient) {
+    if (!authedFetch) return;
+    if (!window.confirm(`Permanently delete ${patient.name}? This can't be undone — if they come back, front desk will need to register them again.`)) {
+      return;
+    }
+    setDeletingId(patient.id);
+    setDeleteError(null);
+    try {
+      await deletePatient(authedFetch, patient.id);
+      await refetch();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error && err.message ? err.message : "Couldn't delete this patient.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -114,6 +134,8 @@ export function PatientsPage() {
         }
       </div>
 
+      {deleteError && <p className="mb-3 text-sm font-medium text-danger">{deleteError}</p>}
+
       <div className="overflow-hidden rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
         {loading ?
         <p className="px-5 py-8 text-center text-sm text-ink-muted">Loading…</p> :
@@ -132,6 +154,7 @@ export function PatientsPage() {
                 <th className="px-5 py-3 font-semibold">Next appointment</th>
                 {role !== "owner" && <th className="px-5 py-3 font-semibold">Status</th>}
                 {role !== "doctor" && <th className="px-5 py-3 font-semibold">Portal</th>}
+                {role === "owner" && showArchived && <th className="px-5 py-3 font-semibold">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -170,6 +193,19 @@ export function PatientsPage() {
                   </td>
                   }
                   {role !== "doctor" && <td className="px-5 py-3.5"><PortalBadge patient={p} /></td>}
+                  {role === "owner" && showArchived &&
+                  <td className="px-5 py-3.5">
+                    {p.isArchived &&
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(p)}
+                      disabled={deletingId === p.id}
+                      className="flex items-center gap-1 rounded-lg border border-danger/30 px-2.5 py-1.5 text-xs font-semibold text-danger transition-colors hover:bg-danger/10 disabled:opacity-50">
+                        <Trash2Icon className="h-3.5 w-3.5" /> {deletingId === p.id ? "Deleting…" : "Delete"}
+                      </button>
+                    }
+                  </td>
+                  }
                 </tr>
               ))}
             </tbody>

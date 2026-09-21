@@ -46,6 +46,7 @@ const InvoiceFormPage = React.lazy(() => import("./billing-invoices/InvoiceFormP
 const InvoiceDetailPage = React.lazy(() => import("./billing-invoices/InvoiceDetailPage").then(m => ({ default: m.InvoiceDetailPage })));
 const ExpensesPage = React.lazy(() => import("./finance/ExpensesPage").then(m => ({ default: m.ExpensesPage })));
 const FinanceOverviewPage = React.lazy(() => import("./finance/FinanceOverviewPage").then(m => ({ default: m.FinanceOverviewPage })));
+const RefundRequestsPage = React.lazy(() => import("./finance/RefundRequestsPage").then(m => ({ default: m.RefundRequestsPage })));
 const FunnelPage = React.lazy(() => import("./leads/FunnelPage").then(m => ({ default: m.FunnelPage })));
 const InventoryPage = React.lazy(() => import("./inventory/InventoryPage").then(m => ({ default: m.InventoryPage })));
 const InventoryItemDetailPage = React.lazy(() => import("./inventory/InventoryItemDetailPage").then(m => ({ default: m.InventoryItemDetailPage })));
@@ -181,6 +182,7 @@ export function DashboardRouter() {
           <Route path="invoices/:id" element={<InvoiceDetailPage />} />
           <Route path="finance/expenses" element={<RequireReceptionist><ExpensesPage /></RequireReceptionist>} />
           <Route path="finance/overview" element={<RequireReceptionist><FinanceOverviewPage /></RequireReceptionist>} />
+          <Route path="finance/refunds" element={<RequireReceptionist><RefundRequestsPage /></RequireReceptionist>} />
           <Route path="leads" element={<FunnelPage />} />
           <Route path="inventory" element={<RequireReceptionist><InventoryPage /></RequireReceptionist>} />
           <Route path="inventory/:id" element={<RequireReceptionist><InventoryItemDetailPage /></RequireReceptionist>} />

@@ -20,6 +20,14 @@ class PatientLifecycleStage(str, enum.Enum):
     LOST = "lost"
 
 
+class PregnancyStatus(str, enum.Enum):
+    NOT_APPLICABLE = "not_applicable"
+    PREGNANT = "pregnant"
+    NURSING = "nursing"
+    NOT_PREGNANT_OR_NURSING = "not_pregnant_or_nursing"
+    DECLINED_TO_ANSWER = "declined_to_answer"
+
+
 class Patient(Base):
     __tablename__ = "patients"
 
@@ -82,6 +90,10 @@ class Patient(Base):
 
     # --- Patient profile depth (Week 2) ---------------------------------
     gender: Mapped[str] = mapped_column(String(30), nullable=True)
+    # Requested for a proper walk-in front-desk intake form — several
+    # markets' registration paperwork asks for it alongside the patient's
+    # own name; purely informational, no logic reads it.
+    father_name: Mapped[str] = mapped_column(String(255), nullable=True)
     emergency_contact_name: Mapped[str] = mapped_column(String(255), nullable=True)
     emergency_contact_phone: Mapped[str] = mapped_column(String(50), nullable=True)
     # List of {name, severity, reaction} — kept separate from the general
@@ -109,6 +121,31 @@ class Patient(Base):
     communication_preferences: Mapped[dict] = mapped_column(JSONB, default=dict)
     insurance_provider: Mapped[str] = mapped_column(String(255), nullable=True)
     insurance_number: Mapped[str] = mapped_column(String(100), nullable=True)
+
+    # --- Clinical intake depth (AI receptionist + visit-document project) ---
+    # Deliberately its own first-class column rather than a medical_history
+    # key: it's safety-critical (contraindication-relevant) and needs to be
+    # directly queryable by doctors, unlike the rest of the Aesthetics-Intake
+    # form fields below. NOT_APPLICABLE is the default for a patient whose
+    # gender doesn't make the question relevant — distinct from
+    # DECLINED_TO_ANSWER, which means it was asked and refused.
+    pregnancy_status: Mapped[PregnancyStatus | None] = mapped_column(Enum(PregnancyStatus), nullable=True)
+    occupation: Mapped[str] = mapped_column(String(255), nullable=True)
+    # Pairs with emergency_contact_name/phone above (Week 2) — added
+    # separately since those shipped without it.
+    emergency_contact_relationship: Mapped[str] = mapped_column(String(100), nullable=True)
+    regular_physician_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    regular_physician_phone: Mapped[str] = mapped_column(String(50), nullable=True)
+    height_cm: Mapped[Decimal] = mapped_column(Numeric(5, 1), nullable=True)
+    weight_kg: Mapped[Decimal] = mapped_column(Numeric(5, 1), nullable=True)
+    # Everything else from the clinic's Aesthetics-Intake form (recent
+    # antibiotic/AHA/Retin-A use, anti-coagulant use, seizure/cancer history,
+    # skin type, skin concerns, prior injectables tried, areas of concern,
+    # quality-of-life urgency score, office-policy acknowledgments, etc.)
+    # lives in the existing `medical_history` JSONB dict above under
+    # well-known keys rather than as 15+ new columns — promote a key to its
+    # own column only once it needs first-class querying/UI treatment, same
+    # as gender/allergies did in Week 2.
 
     # --- AI workflows (Week 4) ------------------------------------------
     # {interested_procedure, budget_signal, urgency, score (0-100), summary}
@@ -149,3 +186,4 @@ class Patient(Base):
     review_requests = relationship("ReviewRequest", back_populates="patient", cascade="all, delete-orphan")
     consent_documents = relationship("ConsentDocument", back_populates="patient", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="patient", cascade="all, delete-orphan")
+    visit_documents = relationship("VisitDocument", back_populates="patient", cascade="all, delete-orphan")

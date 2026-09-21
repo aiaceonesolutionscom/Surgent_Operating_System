@@ -57,3 +57,21 @@ class FinanceOverviewResponse(BaseModel):
     net: float
     invoice_count: int
     expense_count: int
+    # --- Accountant's view additions (refunds + deferred revenue) --------
+    # Actual cash paid back out — sum of every completed refund (negative
+    # Payment rows). total_revenue above (PAID invoices' total_amount) does
+    # NOT move when a refund happens later, so it overstates what the clinic
+    # actually kept — net_revenue_after_refunds is the corrected figure.
+    total_refunds: float = 0
+    net_revenue_after_refunds: float = 0
+    # Requests sitting at REQUESTED or APPROVED (money not moved yet) — a
+    # liability the clinic may still owe back, not yet reflected above.
+    pending_refund_requests_count: int = 0
+    pending_refund_liability: float = 0
+    # Money already collected (PAID/PARTIALLY_PAID invoices) for
+    # multi-session treatment-plan items whose sessions aren't all delivered
+    # yet — collected but not yet earned, the standard accrual-accounting
+    # concept this practice-management cash view didn't have before. An
+    # estimate: it prorates each such line item's paid share by
+    # sessions_remaining/sessions_total.
+    deferred_revenue: float = 0

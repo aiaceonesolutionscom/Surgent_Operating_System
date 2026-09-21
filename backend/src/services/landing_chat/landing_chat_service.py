@@ -105,11 +105,46 @@ class LandingChatService:
         message_text: str,
         context: str | None = None,
     ) -> dict:
+        practice, conversation = await self._start_turn(db, conversation_id, message_text, context)
+        reply = await self.llm.chat_fast(await self._recent_history(db, conversation.id), system_prompt=ARIA_SYSTEM_PROMPT, max_tokens=350)
+        return await self._finish_turn(db, practice, conversation, reply)
+
+    async def handle_message_stream(
+        self,
+        db: AsyncSession,
+        conversation_id: str | None,
+        message_text: str,
+        context: str | None = None,
+    ):
+        """SSE twin of handle_message() — yields the reply token-by-token as
+        it streams from the LLM, then (once the full reply is assembled)
+        runs the exact same post-reply pipeline handle_message() does
+        (flow classification, booking/sales-lead extraction, DB commit) and
+        yields one final "done" event with everything the non-streaming
+        response returns, so the frontend can render the same booking/lead
+        confirmation bubbles it always has."""
+        practice, conversation = await self._start_turn(db, conversation_id, message_text, context)
+        history = await self._recent_history(db, conversation.id)
+
+        chunks: list[str] = []
+        try:
+            async for delta in self.llm.chat_fast_stream(history, system_prompt=ARIA_SYSTEM_PROMPT, max_tokens=350):
+                chunks.append(delta)
+                yield {"type": "chunk", "text": delta}
+        except Exception as exc:
+            yield {"type": "error", "message": f"Aria hit a snag: {exc}"}
+            return
+
+        reply = "".join(chunks) or "Sorry, I hit a snag — please try again in a moment."
+        result = await self._finish_turn(db, practice, conversation, reply)
+        yield {"type": "done", **result}
+
+    async def _start_turn(
+        self, db: AsyncSession, conversation_id: str | None, message_text: str, context: str | None
+    ) -> tuple[Practice | None, Conversation]:
         result = await db.execute(select(Practice).order_by(Practice.created_at))
         practice = result.scalars().first()
-
         conversation = await self._find_or_create_conversation(db, practice.id if practice else None, conversation_id, context)
-
         db.add(
             Message(
                 conversation_id=conversation.id,
@@ -118,10 +153,10 @@ class LandingChatService:
                 content_type="text",
             )
         )
+        await db.flush()
+        return practice, conversation
 
-        history = await self._recent_history(db, conversation.id)
-        reply = await self.llm.chat_fast(history, system_prompt=ARIA_SYSTEM_PROMPT, max_tokens=350)
-
+    async def _finish_turn(self, db: AsyncSession, practice: Practice | None, conversation: Conversation, reply: str) -> dict:
         flow = conversation.extra_data.get("flow")
         booking_created = False
         lead_name: str | None = None

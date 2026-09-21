@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
 from src.server.dependencies import require_agent, PracticeContext
+from src.server.sse import sse_response
 from src.schemas.command_center import (
     AskCommandCenterRequest,
     AskCommandCenterResponse,
@@ -25,6 +26,15 @@ async def ask_command_center(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.ask(db, ctx, data)
+
+
+@router.post("/ask/stream")
+async def ask_command_center_stream(
+    data: AskCommandCenterRequest,
+    ctx: PracticeContext = Depends(require_agent("main_agent")),
+    db: AsyncSession = Depends(get_db),
+):
+    return sse_response(controller.ask_stream(db, ctx, data))
 
 
 @router.get("/sessions", response_model=list[CommandCenterSessionSummary])

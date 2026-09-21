@@ -7,9 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.consent_document import ConsentDocument, ConsentDocumentStatus, ConsentTemplate
 from src.models.patient import Patient
+from src.models.practice import Practice
+from src.models.user import User
 from src.schemas.consent_document import CreateConsentDocumentRequest
 from src.server.exceptions import NotFoundException, AppException
 from src.services.notifications.notification_service import NotificationService
+from src.services.storage.storage_service import StorageService
+from src.services.consent.consent_pdf_service import generate_consent_pdf
+
+import logging
+
+logger = logging.getLogger("aesthetixai.consent")
 
 
 class ConsentService:
@@ -22,6 +30,7 @@ class ConsentService:
 
     def __init__(self):
         self.notifications = NotificationService()
+        self.storage = StorageService()
 
     async def _get_patient(self, db: AsyncSession, practice_id: UUID, patient_id: UUID) -> Patient:
         result = await db.execute(select(Patient).where(Patient.id == patient_id, Patient.practice_id == practice_id))
@@ -50,6 +59,7 @@ class ConsentService:
         await self._get_patient(db, practice_id, patient_id)
 
         content = data.content
+        sections = None
         template_id = None
         template_version = None
         if data.template_id is not None:
@@ -62,6 +72,7 @@ class ConsentService:
             # Snapshot NOW — the whole point of versioning is that a later
             # edit to this template never rewrites what gets signed here.
             content = template.body
+            sections = template.sections
             template_id = template.id
             template_version = template.version
 
@@ -70,6 +81,8 @@ class ConsentService:
             patient_id=patient_id,
             document_type=data.document_type,
             content=content,
+            sections=sections,
+            treatment_plan_notes=data.treatment_plan_notes,
             template_id=template_id,
             template_version=template_version,
         )
@@ -120,7 +133,43 @@ class ConsentService:
         await db.refresh(document)
 
         await self._recompute_consent_status(db, practice_id, document.patient_id)
+        await self._generate_and_attach_pdf(db, practice_id, document)
         return document
+
+    async def _generate_and_attach_pdf(self, db: AsyncSession, practice_id: UUID, document: ConsentDocument) -> None:
+        """Renders the signed PDF from document's now-frozen snapshot and
+        uploads it — best-effort: signing itself must already have
+        succeeded and committed its DB state by the time this runs, so a PDF
+        or storage failure here must never undo or fail the signature."""
+        try:
+            patient = await self._get_patient(db, practice_id, document.patient_id)
+            practice_result = await db.execute(select(Practice).where(Practice.id == practice_id))
+            practice = practice_result.scalar_one_or_none()
+            witness = None
+            if document.witnessed_by is not None:
+                witness_result = await db.execute(select(User).where(User.id == document.witnessed_by))
+                witness = witness_result.scalar_one_or_none()
+            if practice is None:
+                return
+            pdf_bytes = generate_consent_pdf(document, patient, practice, witness)
+            upload = await self.storage.upload(
+                pdf_bytes, f"consent-{document.id}", folder="consent_documents", resource_type="raw"
+            )
+            document.file_url = upload["url"]
+            await db.flush()
+        except Exception:
+            logger.exception("Consent PDF generation/upload failed for document %s", document.id)
+            return
+
+        try:
+            await self.notifications.notify(
+                db, practice_id, "consent_signed",
+                title=f"Consent signed — {patient.first_name} {patient.last_name}",
+                body=f"A signed {document.document_type} consent PDF is ready for review.",
+                resource_type="consent_document", resource_id=document.id,
+            )
+        except Exception:
+            logger.exception("consent_signed notification failed for document %s", document.id)
 
     async def void_document(self, db: AsyncSession, practice_id: UUID, document_id: UUID) -> ConsentDocument:
         document = await self.get_document(db, practice_id, document_id)

@@ -5,7 +5,7 @@
 // get_current_practice_user like every other domain here.
 // ============================================================================
 
-import { BASE_URL, ApiError } from "./client";
+import { BASE_URL, ApiError, streamSSE } from "./client";
 
 type AuthedFetch = <T>(path: string, init?: RequestInit) => Promise<T>;
 
@@ -26,13 +26,21 @@ export interface PatientResponse {
   agent_status: string;
   has_upcoming_appointment: boolean;
   has_completed_appointment: boolean;
+  next_appointment_at: string | null;
+  last_appointment_at: string | null;
   lifecycle_stage: string;
   lost_reason: string | null;
   source: string | null;
   // --- profile depth (Week 2) ---
   gender: string | null;
+  father_name: string | null;
+  pregnancy_status: string | null;
+  occupation: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
+  emergency_contact_relationship: string | null;
+  regular_physician_name: string | null;
+  regular_physician_phone: string | null;
   allergies: Array<{ name?: string; severity?: string; reaction?: string }>;
   surgical_history: Array<{ procedure?: string; year?: number; facility?: string; notes?: string }>;
   current_medications: Array<{ name?: string; dosage?: string; frequency?: string }>;
@@ -71,10 +79,24 @@ export interface CreatePatientRequest {
   additional_phones?: Array<{ number?: string; label?: string }>;
   date_of_birth?: string | null;
   gender?: string | null;
+  father_name?: string | null;
+  pregnancy_status?: string | null;
+  occupation?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relationship?: string | null;
+  regular_physician_name?: string | null;
+  regular_physician_phone?: string | null;
   chief_complaint?: string | null;
   needs_surgery?: boolean;
   ai_agent_assigned?: string | null;
   source?: string | null;
+  // Assign the doctor right at walk-in intake instead of a separate call.
+  assigned_doctor_id?: string | null;
+  // "whatsapp" — seeds a WhatsApp conversation so the very first automated
+  // send (visit document, confirmation) goes out on WhatsApp instead of
+  // falling back to SMS for a patient with no message history yet.
+  preferred_channel?: "whatsapp" | null;
 }
 
 // Matches backend/src/router/patients/patients_router.py — a plain function
@@ -105,6 +127,7 @@ export interface UpdatePatientRequest {
   email?: string | null;
   phone?: string | null;
   additional_phones?: Array<{ number?: string; label?: string }>;
+  date_of_birth?: string | null;
   chief_complaint?: string | null;
   needs_surgery?: boolean;
   source?: string | null;
@@ -169,6 +192,15 @@ export function archivePatient(authedFetch: AuthedFetch, patientId: string, reas
 export function restorePatient(authedFetch: AuthedFetch, patientId: string) {
   return authedFetch<PatientResponse>(`/api/v1/patients/${patientId}/restore`, {
     method: "POST"
+  });
+}
+
+// Owner-only, and only for an already-archived patient — backend rejects
+// both (see patients_router.py's DELETE /patients/{id}). Permanent: if this
+// patient ever comes back, front desk re-registers them from scratch.
+export function deletePatient(authedFetch: AuthedFetch, patientId: string) {
+  return authedFetch<{ deleted: boolean }>(`/api/v1/patients/${patientId}`, {
+    method: "DELETE"
   });
 }
 
@@ -1090,6 +1122,13 @@ export interface ProcedureResponse {
   description: string | null;
   base_price: number | null;
   duration_minutes: number | null;
+  // How many visits this procedure normally takes (1 = a single-visit
+  // procedure like most Botox/filler; >1 seeds TreatmentPlanItem.sessions_total
+  // for a multi-visit course like laser hair removal or a hair transplant).
+  default_session_count: number;
+  // Template pre-visit checklist (plain strings) copied onto every new
+  // SessionVisit — see backend/src/models/session_visit.py.
+  default_checklist: string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -1101,6 +1140,8 @@ export interface CreateProcedureRequest {
   description?: string | null;
   base_price?: number | null;
   duration_minutes?: number | null;
+  default_session_count?: number;
+  default_checklist?: string[];
 }
 
 export interface UpdateProcedureRequest {
@@ -1109,6 +1150,8 @@ export interface UpdateProcedureRequest {
   description?: string | null;
   base_price?: number | null;
   duration_minutes?: number | null;
+  default_session_count?: number;
+  default_checklist?: string[];
   is_active?: boolean;
 }
 
@@ -1222,17 +1265,174 @@ export function transcribeDictation(authedFetch: AuthedFetch, audioBlob: Blob, f
   });
 }
 
+// --- session visits (multi-visit treatment tracking) ------------------------
+// Matches backend/src/router/session_visits/session_visits_router.py — one
+// real record per visit within a (possibly multi-visit) TreatmentPlanItem,
+// generalizing the Surgery checklist/status-machine pattern to every
+// procedure. See models/session_visit.py.
+export interface SessionVisitResponse {
+  id: string;
+  practice_id: string;
+  patient_id: string;
+  treatment_plan_item_id: string;
+  doctor_id: string | null;
+  appointment_id: string | null;
+  session_index: number;
+  status: "planned" | "scheduled" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show";
+  scheduled_date: string | null;
+  duration_minutes: number | null;
+  checklist: Array<{ item: string; checked: boolean; checked_by: string | null; checked_at: string | null }>;
+  products_used: Array<{ name?: string; quantity?: number; unit?: string; inventory_item_id?: string }>;
+  session_note: string | null;
+  price: number | null;
+  confirmed_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  cancelled_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScheduleSessionRequest {
+  doctor_id: string;
+  start_time: string;
+  appointment_type?: string | null;
+  notify_patient?: boolean;
+}
+
+export interface CompleteSessionRequest {
+  session_note?: string | null;
+  products_used?: Array<{ name?: string; quantity?: number; unit?: string; inventory_item_id?: string }>;
+  actual_price?: number | null;
+}
+
+export function listSessionsForItem(authedFetch: AuthedFetch, treatmentPlanItemId: string) {
+  return authedFetch<SessionVisitResponse[]>(`/api/v1/session-visits?treatment_plan_item_id=${treatmentPlanItemId}`);
+}
+
+export function listSessionsForPatient(authedFetch: AuthedFetch, patientId: string) {
+  return authedFetch<SessionVisitResponse[]>(`/api/v1/session-visits?patient_id=${patientId}`);
+}
+
+export function listMySessions(authedFetch: AuthedFetch) {
+  return authedFetch<SessionVisitResponse[]>("/api/v1/session-visits?scope=mine");
+}
+
+export function scheduleSession(authedFetch: AuthedFetch, sessionId: string, data: ScheduleSessionRequest) {
+  return authedFetch<SessionVisitResponse>(`/api/v1/session-visits/${sessionId}/schedule`, {
+    method: "POST",
+    body: JSON.stringify(data)
+  });
+}
+
+export function confirmSession(authedFetch: AuthedFetch, sessionId: string) {
+  return authedFetch<SessionVisitResponse>(`/api/v1/session-visits/${sessionId}/confirm`, { method: "POST" });
+}
+
+export function startSession(authedFetch: AuthedFetch, sessionId: string) {
+  return authedFetch<SessionVisitResponse>(`/api/v1/session-visits/${sessionId}/start`, { method: "POST" });
+}
+
+export function updateSessionChecklist(authedFetch: AuthedFetch, sessionId: string, checklist: SessionVisitResponse["checklist"]) {
+  return authedFetch<SessionVisitResponse>(`/api/v1/session-visits/${sessionId}/checklist`, {
+    method: "PATCH",
+    body: JSON.stringify({ checklist })
+  });
+}
+
+export function completeSession(authedFetch: AuthedFetch, sessionId: string, data: CompleteSessionRequest) {
+  return authedFetch<SessionVisitResponse>(`/api/v1/session-visits/${sessionId}/complete`, {
+    method: "POST",
+    body: JSON.stringify(data)
+  });
+}
+
+export function cancelSession(authedFetch: AuthedFetch, sessionId: string, reason?: string) {
+  return authedFetch<SessionVisitResponse>(`/api/v1/session-visits/${sessionId}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ reason })
+  });
+}
+
+// --- refund requests ---------------------------------------------------
+// Matches backend/src/router/refunds/refunds_router.py. Owner/Receptionist
+// only — the AI receptionist files a request through its own tool, never
+// through this API directly, and never approves/completes one.
+export interface RefundRequestResponse {
+  id: string;
+  practice_id: string;
+  patient_id: string;
+  invoice_id: string | null;
+  treatment_plan_item_id: string | null;
+  requested_by_type: "ai_receptionist" | "patient_portal" | "staff";
+  requested_by_user_id: string | null;
+  reason: string | null;
+  requested_amount: number | null;
+  calculation_basis: Record<string, unknown> | null;
+  approved_amount: number | null;
+  status: "requested" | "approved" | "rejected" | "completed" | "cancelled";
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateRefundRequestRequest {
+  patient_id: string;
+  invoice_id?: string | null;
+  treatment_plan_item_id?: string | null;
+  reason?: string | null;
+}
+
+export function createRefundRequest(authedFetch: AuthedFetch, data: CreateRefundRequestRequest) {
+  return authedFetch<RefundRequestResponse>("/api/v1/refund-requests", {
+    method: "POST",
+    body: JSON.stringify(data)
+  });
+}
+
+export function listRefundRequests(authedFetch: AuthedFetch, status?: RefundRequestResponse["status"]) {
+  return authedFetch<RefundRequestResponse[]>(`/api/v1/refund-requests${status ? `?status=${status}` : ""}`);
+}
+
+export function listRefundRequestsForPatient(authedFetch: AuthedFetch, patientId: string) {
+  return authedFetch<RefundRequestResponse[]>(`/api/v1/refund-requests?patient_id=${patientId}`);
+}
+
+export function approveRefundRequest(authedFetch: AuthedFetch, id: string, approvedAmount?: number | null, reviewNotes?: string | null) {
+  return authedFetch<RefundRequestResponse>(`/api/v1/refund-requests/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ approved_amount: approvedAmount, review_notes: reviewNotes })
+  });
+}
+
+export function rejectRefundRequest(authedFetch: AuthedFetch, id: string, reviewNotes?: string | null) {
+  return authedFetch<RefundRequestResponse>(`/api/v1/refund-requests/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ review_notes: reviewNotes })
+  });
+}
+
+export function completeRefundRequest(authedFetch: AuthedFetch, id: string) {
+  return authedFetch<RefundRequestResponse>(`/api/v1/refund-requests/${id}/complete`, { method: "POST" });
+}
+
 export interface TreatmentPlanItemResponse {
   id: string;
   treatment_plan_id: string;
   procedure_id: string;
   phase_order: number;
   estimated_price: number | null;
+  sessions_total: number;
   status: "planned" | "scheduled" | "completed" | "cancelled";
   scheduled_appointment_id: string | null;
   performed_at: string | null;
   actual_price: number | null;
   notes: string | null;
+  session_visits: SessionVisitResponse[];
   created_at: string;
   updated_at: string;
 }
@@ -1254,6 +1454,8 @@ export interface CreateTreatmentPlanItemRequest {
   procedure_id: string;
   phase_order?: number;
   estimated_price?: number | null;
+  // Omit to use the procedure's own default_session_count.
+  sessions_total?: number | null;
   notes?: string | null;
 }
 
@@ -1409,6 +1611,11 @@ export interface ConsentDocumentResponse {
   version: number;
   template_id: string | null;
   template_version: number | null;
+  // Structured clause-group snapshot + generated PDF — see
+  // backend/src/models/consent_document.py's ConsentDocument.sections/file_url.
+  sections: object | null;
+  treatment_plan_notes: string | null;
+  file_url: string | null;
   status: "draft" | "sent" | "signed" | "void";
   signed_at: string | null;
   signed_by_name: string | null;
@@ -1423,6 +1630,7 @@ export interface CreateConsentDocumentRequest {
   document_type: string;
   content?: string | null;
   template_id?: string | null;
+  treatment_plan_notes?: string | null;
 }
 
 // --- consent templates ----------------------------------------------------
@@ -1432,6 +1640,9 @@ export interface ConsentTemplateResponse {
   document_type: string;
   version: number;
   body: string;
+  // Admin-configurable per-treatment-type clause groups — see
+  // backend/src/models/consent_document.py's ConsentTemplate.sections.
+  sections: object | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -1440,10 +1651,12 @@ export interface ConsentTemplateResponse {
 export interface CreateConsentTemplateRequest {
   document_type: string;
   body: string;
+  sections?: object;
 }
 
 export interface UpdateConsentTemplateRequest {
   body?: string | null;
+  sections?: object | null;
   is_active?: boolean | null;
 }
 
@@ -1494,6 +1707,33 @@ export function markConsentDiscussed(authedFetch: AuthedFetch, id: string) {
   return authedFetch<ConsentDocumentResponse>(`/api/v1/consent-documents/${id}/mark-discussed`, {
     method: "POST"
   });
+}
+
+// --- visit documents ---------------------------------------------------
+// Matches backend/src/router/visit_documents/visit_documents_router.py —
+// the auto-generated "bring this to your visit" intake-summary PDF (see
+// VisitDocumentService). Read-only from the frontend: generation is always
+// server-triggered (appointment booking, AI-receptionist chat), never
+// created directly through this API.
+export interface VisitDocumentResponse {
+  id: string;
+  practice_id: string;
+  patient_id: string;
+  appointment_id: string | null;
+  doctor_id: string | null;
+  document_type: string;
+  file_url: string;
+  generated_by: "ai_receptionist" | "staff" | "system";
+  generated_at: string;
+  sent_to_patient_at: string | null;
+  sent_to_doctor_at: string | null;
+  sent_to_receptionist_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listVisitDocuments(authedFetch: AuthedFetch, patientId: string) {
+  return authedFetch<VisitDocumentResponse[]>(`/api/v1/patients/${patientId}/visit-documents`);
 }
 
 // --- surgery ---------------------------------------------------------------
@@ -1915,6 +2155,12 @@ export interface FinanceOverviewResponse {
   net: number;
   invoice_count: number;
   expense_count: number;
+  // Accountant's-view additions — see backend/src/services/finance/finance_services.py.
+  total_refunds: number;
+  net_revenue_after_refunds: number;
+  pending_refund_requests_count: number;
+  pending_refund_liability: number;
+  deferred_revenue: number;
 }
 
 export function createExpense(authedFetch: AuthedFetch, data: CreateExpenseRequest) {
@@ -2108,6 +2354,113 @@ export function updateAIReceptionistSystemPrompt(authedFetch: AuthedFetch, custo
   });
 }
 
+// --- per-market configuration -----------------------------------------------------
+// Backed by backend/src/router/ai_receptionist/ai_receptionist_router.py's
+// /markets endpoints, stored in Practice.settings["markets"][<code>]. This is
+// what the receptionist is allowed to quote: a market with no price list is
+// explicitly told NOT to state a figure (see services/ai_receptionist/
+// prompt_blocks.py), so an empty card is a real, visible behaviour change and
+// not just missing metadata.
+// Readable by anyone who can open the monitor; writable by the Owner only.
+export interface MarketSettings {
+  code: string;
+  label: string;
+  configured: boolean;
+  is_home: boolean;
+  currency: string;
+  default_currency: string;
+  language_label: string;
+  timezone: string;
+  regulator: string;
+  advertising_note: string;
+  consult_format: string;
+  video_first: boolean;
+  clinic_name: string | null;
+  // Legacy single-city field — still populated (from clinics[0].city) for
+  // any older caller not yet reading `clinics` below.
+  clinic_city: string | null;
+  clinics: ClinicLocation[];
+  consultation_fee: string | null;
+  payment_methods: string | null;
+  prices: Record<string, string>;
+  languages: string[];
+}
+
+// One physical branch within a market — a practice can run more than one
+// clinic in the same country (see backend/src/schemas/ai_receptionist.py's
+// ClinicLocation), each with its own city and full address.
+export interface ClinicLocation {
+  city: string;
+  address?: string | null;
+}
+
+export interface MarketsSettingsResponse {
+  home_market: string | null;
+  markets: MarketSettings[];
+  supported_currencies: string[];
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+export interface MarketSettingsUpdate {
+  currency?: string;
+  clinic_name?: string;
+  clinic_city?: string;
+  clinics?: ClinicLocation[];
+  consultation_fee?: string;
+  payment_methods?: string;
+  prices?: Record<string, string>;
+  languages?: string[];
+  is_home?: boolean;
+}
+
+export function getAIReceptionistMarkets(authedFetch: AuthedFetch) {
+  return authedFetch<MarketsSettingsResponse>("/api/v1/ai-receptionist/markets");
+}
+
+export function saveAIReceptionistMarket(authedFetch: AuthedFetch, code: string, update: MarketSettingsUpdate) {
+  return authedFetch<MarketsSettingsResponse>(`/api/v1/ai-receptionist/markets/${code}`, {
+    method: "PUT",
+    body: JSON.stringify(update)
+  });
+}
+
+export function clearAIReceptionistMarket(authedFetch: AuthedFetch, code: string) {
+  return authedFetch<MarketsSettingsResponse>(`/api/v1/ai-receptionist/markets/${code}`, {
+    method: "DELETE"
+  });
+}
+
+// --- human support hours -------------------------------------------------
+// Matches backend/src/router/ai_receptionist/ai_receptionist_router.py's
+// /human-hours — when the AI's escalation tools can honestly say
+// "connecting you now" versus "the team will follow up when they reopen".
+export interface HumanAvailabilityResponse {
+  start: string;
+  end: string;
+  days: number[];
+  timezone: string;
+  available_now: boolean;
+  status_label: string;
+}
+
+export interface HumanAvailabilityUpdate {
+  start: string;
+  end: string;
+  days: number[];
+}
+
+export function getHumanAvailability(authedFetch: AuthedFetch) {
+  return authedFetch<HumanAvailabilityResponse>("/api/v1/ai-receptionist/human-hours");
+}
+
+export function saveHumanAvailability(authedFetch: AuthedFetch, update: HumanAvailabilityUpdate) {
+  return authedFetch<HumanAvailabilityResponse>("/api/v1/ai-receptionist/human-hours", {
+    method: "PUT",
+    body: JSON.stringify(update)
+  });
+}
+
 // --- agent config ------------------------------------------------------------
 // Backed by backend/src/router/agent_config/ — GET read for any practice user,
 // PUT write for the Owner only. `config` JSONB holds per-agent knobs (tone,
@@ -2145,11 +2498,17 @@ export function translateText(authedFetch: AuthedFetch, text: string, targetLang
   });
 }
 
+// `held_until`/`hold_reason` are set when the reminder was deliberately NOT
+// sent because it is outside the patient's own 09:00-21:00 window (SOP s11) —
+// sent=false with a reason is an outcome, not an error.
 export function sendAppointmentReminder(authedFetch: AuthedFetch, appointmentId: string) {
-  return authedFetch<{ appointment_id: string; message_id: string; sent: boolean }>(
-    `/api/v1/ai-receptionist/appointments/${appointmentId}/reminder`,
-    { method: "POST" }
-  );
+  return authedFetch<{
+    appointment_id: string;
+    message_id: string;
+    sent: boolean;
+    held_until: string | null;
+    hold_reason: string | null;
+  }>(`/api/v1/ai-receptionist/appointments/${appointmentId}/reminder`, { method: "POST" });
 }
 
 // --- staff messages ---------------------------------------------------------------
@@ -2319,6 +2678,19 @@ export interface PortalPatientResponse {
   additional_phones: Array<{ number?: string; label?: string }>;
   chief_complaint: string | null;
   consent_status: boolean;
+  date_of_birth: string | null;
+  gender: string | null;
+  pregnancy_status: string | null;
+  father_name: string | null;
+  occupation: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  emergency_contact_relationship: string | null;
+  regular_physician_name: string | null;
+  regular_physician_phone: string | null;
+  preferred_language: string | null;
+  insurance_provider: string | null;
+  insurance_number: string | null;
   doctor: PortalDoctorInfo | null;
   appointments: PortalAppointment[];
   consent_documents: PortalConsentDocument[];
@@ -2491,6 +2863,19 @@ export interface UpdateMyProfileRequest {
   last_name?: string;
   email?: string | null;
   additional_phones?: Array<{ number?: string; label?: string }>;
+  date_of_birth?: string | null;
+  gender?: string | null;
+  pregnancy_status?: string | null;
+  father_name?: string | null;
+  occupation?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relationship?: string | null;
+  regular_physician_name?: string | null;
+  regular_physician_phone?: string | null;
+  preferred_language?: string | null;
+  insurance_provider?: string | null;
+  insurance_number?: string | null;
 }
 
 export function updateMyPortalProfile(portalToken: string, data: UpdateMyProfileRequest) {
@@ -2569,4 +2954,20 @@ export async function sendLandingChatMessage(data: LandingChatMessagePayload): P
     throw new Error(typeof body?.detail === "string" ? body.detail : "Couldn't reach the assistant. Please try again.");
   }
   return res.json();
+}
+
+// SSE event shapes from POST /landing-chat/message/stream (server/sse.py's
+// wire format) — a discriminated union on `type`. "done" carries everything
+// the non-streaming response above returns (conversation_id, booking/sales-
+// lead flags) so the frontend can still render those confirmation bubbles.
+export type LandingChatStreamEvent =
+  | { type: "chunk"; text: string }
+  | ({ type: "done" } & LandingChatMessageResponse)
+  | { type: "error"; message: string };
+
+export function sendLandingChatMessageStream(data: LandingChatMessagePayload) {
+  return streamSSE<LandingChatStreamEvent>("/api/v1/landing-chat/message/stream", {
+    method: "POST",
+    body: JSON.stringify(data)
+  });
 }

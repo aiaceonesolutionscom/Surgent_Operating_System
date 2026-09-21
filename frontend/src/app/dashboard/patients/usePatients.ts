@@ -35,12 +35,13 @@ function normalize(patient: Patient): Patient {
   };
 }
 
-// Backend Patient rows don't carry lastVisit, nextAppointment, procedures,
-// or assignmentReasoning yet (see backend/src/models/patient.py) — a patient
-// synced FROM the API defaults those to the same values PatientFormPage
-// already used locally on create, rather than fabricating fake-looking data.
-// `status` IS derivable now: has_upcoming_appointment/has_completed_appointment
-// come from real Appointment rows (see patients_services.py's
+// Backend Patient rows don't carry procedures or assignmentReasoning yet
+// (see backend/src/models/patient.py) — a patient synced FROM the API
+// defaults those to the same values PatientFormPage already used locally on
+// create, rather than fabricating fake-looking data. `status`, `lastVisit`
+// and `nextAppointment` ARE derivable now: has_upcoming_appointment/
+// has_completed_appointment/next_appointment_at/last_appointment_at come
+// from real Appointment rows (see patients_services.py's
 // _attach_appointment_flags()), so a patient with either is "active"; only a
 // patient with neither stays a "lead". Nothing here produces "inactive" —
 // same as before this change.
@@ -54,8 +55,8 @@ function fromApi(p: PatientResponse): Patient {
     email: p.email ?? "",
     phone: p.phone ?? "",
     status: p.has_upcoming_appointment || p.has_completed_appointment ? "active" : "lead",
-    lastVisit: null,
-    nextAppointment: null,
+    lastVisit: p.last_appointment_at,
+    nextAppointment: p.next_appointment_at,
     procedures: [],
     consentOnFile: p.consent_status,
     chiefComplaint: p.chief_complaint ?? "",
@@ -159,7 +160,21 @@ export function usePatients(authedFetch: AuthedFetch = null, options: { includeA
       // types.ts's own comment on why profile-depth fields stay
       // self-fetched rather than living on this type) — passed straight
       // through to the real create call only, same as chiefComplaint above.
-      extra?: { date_of_birth?: string | null; gender?: string | null; additional_phones?: Array<{ number?: string; label?: string }> }
+      extra?: {
+        date_of_birth?: string | null;
+        gender?: string | null;
+        additional_phones?: Array<{ number?: string; label?: string }>;
+        father_name?: string | null;
+        pregnancy_status?: string | null;
+        occupation?: string | null;
+        emergency_contact_name?: string | null;
+        emergency_contact_phone?: string | null;
+        emergency_contact_relationship?: string | null;
+        regular_physician_name?: string | null;
+        regular_physician_phone?: string | null;
+        assigned_doctor_id?: string | null;
+        preferred_channel?: "whatsapp" | null;
+      }
     ): Promise<Patient | null> => {
       let toSave = patient;
 
@@ -176,7 +191,17 @@ export function usePatients(authedFetch: AuthedFetch = null, options: { includeA
             ai_agent_assigned: patient.assignedAgentSlug,
             date_of_birth: extra?.date_of_birth || null,
             gender: extra?.gender || null,
-            additional_phones: extra?.additional_phones || []
+            additional_phones: extra?.additional_phones || [],
+            father_name: extra?.father_name || null,
+            pregnancy_status: extra?.pregnancy_status || null,
+            occupation: extra?.occupation || null,
+            emergency_contact_name: extra?.emergency_contact_name || null,
+            emergency_contact_phone: extra?.emergency_contact_phone || null,
+            emergency_contact_relationship: extra?.emergency_contact_relationship || null,
+            regular_physician_name: extra?.regular_physician_name || null,
+            regular_physician_phone: extra?.regular_physician_phone || null,
+            assigned_doctor_id: extra?.assigned_doctor_id || null,
+            preferred_channel: extra?.preferred_channel || null
           });
           // Keep the locally-known reasoning/categoryId (classifyPatient()'s
           // output) — the backend doesn't store those — but use its real id

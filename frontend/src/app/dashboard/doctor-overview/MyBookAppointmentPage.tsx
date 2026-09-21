@@ -74,8 +74,8 @@ export function MyBookAppointmentPage() {
         notes: notes.trim() || null
       });
       navigate(DASHBOARD_ROUTES.myCalendar);
-    } catch {
-      setError("Couldn't book this appointment — check the times and try again.");
+    } catch (err: unknown) {
+      setError(err instanceof Error && err.message ? err.message : "Couldn't book this appointment — check the times and try again.");
       setSaving(false);
     }
   }

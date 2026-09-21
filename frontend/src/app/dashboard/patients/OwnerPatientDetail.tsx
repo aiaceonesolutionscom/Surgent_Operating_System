@@ -13,6 +13,7 @@ import { ArchivePatientControl } from "./ArchivePatientControl";
 import { ClinicalSection } from "../clinical/ClinicalSection";
 import { PatientPhotosGallery } from "../clinical/PatientPhotosGallery";
 import { ConsentDocumentsList } from "../clinical/ConsentDocumentsList";
+import { VisitDocumentsList } from "../clinical/VisitDocumentsList";
 import { InvoicesSection } from "../billing-invoices/InvoicesSection";
 import { PatientMedicalProfile } from "./PatientMedicalProfile";
 import { PatientPortalLinkCard } from "./PatientPortalLinkCard";
@@ -40,7 +41,7 @@ export function OwnerPatientDetail({ patient: initialPatient }: { patient: Patie
     },
     { id: "appointments", label: "Appointments", icon: CalendarIcon, content: <PatientAppointmentsTab patientId={patient.id} /> },
     { id: "photos", label: "Photos", icon: CameraIcon, content: <PatientPhotosGallery patientId={patient.id} /> },
-    { id: "consents", label: "Consents & Documents", icon: FileTextIcon, content: <ConsentDocumentsList patientId={patient.id} /> },
+    { id: "consents", label: "Consents & Documents", icon: FileTextIcon, content: <div><VisitDocumentsList patientId={patient.id} /><ConsentDocumentsList patientId={patient.id} /></div> },
     { id: "billing", label: "Billing", icon: ReceiptIcon, content: <InvoicesSection patientId={patient.id} /> },
     {
       id: "communication", label: "Communication", icon: MessageCircleIcon, content: (

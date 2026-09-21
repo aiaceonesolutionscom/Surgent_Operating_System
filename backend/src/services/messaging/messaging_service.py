@@ -12,6 +12,8 @@ from src.models.practice import Practice
 from src.server.exceptions import AppException, NotFoundException
 from src.services.twilio.twilio_service import TwilioService
 from src.services.channels.whatsapp_green_api import WhatsAppGreenAPI
+from src.services.agent_log.agent_log_service import AgentLogService
+from src.services.messaging.quiet_hours import MessageTiming, evaluate_patient_timing
 
 
 class MessagingService:
@@ -34,6 +36,7 @@ class MessagingService:
 
     def __init__(self):
         self.twilio = TwilioService()
+        self.agent_log = AgentLogService()
 
     async def resolve_channel(self, db: AsyncSession, practice_id: UUID, patient: Patient) -> ConversationChannel:
         # No stored channel preference exists on Patient — infer from the
@@ -96,8 +99,43 @@ class MessagingService:
         return conversation
 
     async def send_and_log(
-        self, db: AsyncSession, practice_id: UUID, patient: Patient, agent_type: str, text: str
-    ) -> Message:
+        self,
+        db: AsyncSession,
+        practice_id: UUID,
+        patient: Patient,
+        agent_type: str,
+        text: str,
+        *,
+        timing: MessageTiming,
+    ) -> Message | None:
+        """Send one patient message, or hold it back until a civilised hour.
+
+        `timing` is keyword-only and has no default on purpose: every caller has
+        to state whether it is answering a person who just acted (ON_DEMAND),
+        reminding them of something booked (REMINDER), or chasing them
+        (PROACTIVE), because only the caller knows — and the SOP's quiet-hours
+        rule (s11) depends on the answer.
+
+        Returns None when the message was held. The callers that run on pollers
+        (nurture, post-op follow-ups) simply pick it up on their next run; that
+        is the whole reason a hold is safe rather than a lost message.
+        """
+        decision = await evaluate_patient_timing(db, practice_id, patient, timing)
+        if not decision.allowed:
+            await self.agent_log.log(
+                db,
+                practice_id,
+                agent_type=agent_type,
+                action="message_held_quiet_hours",
+                details={
+                    "patient_id": str(patient.id),
+                    "text_preview": text[:200],
+                    **decision.as_log_details(),
+                },
+                performed_by="system",
+            )
+            return None
+
         channel = await self.resolve_channel(db, practice_id, patient)
         if not patient.phone:
             raise AppException("Patient has no phone number on file to message")
@@ -134,13 +172,25 @@ class MessagingService:
 
     async def send_document_and_log(
         self, db: AsyncSession, practice_id: UUID, patient: Patient, agent_type: str,
-        file_url: str, filename: str, caption: str,
-    ) -> Message:
+        file_url: str, filename: str, caption: str, *, timing: MessageTiming,
+    ) -> Message | None:
         # WhatsApp-only — Green API is the only channel here that can carry
         # a document (see WhatsAppGreenAPI.send_file_by_url); Twilio SMS has
         # no attachment support in this codebase. Callers (invoice receipts)
         # already send a plain-text fallback through send_and_log first, so
         # this raising for a non-WhatsApp patient is expected, not fatal.
+        decision = await evaluate_patient_timing(db, practice_id, patient, timing)
+        if not decision.allowed:
+            await self.agent_log.log(
+                db,
+                practice_id,
+                agent_type=agent_type,
+                action="message_held_quiet_hours",
+                details={"patient_id": str(patient.id), "filename": filename, **decision.as_log_details()},
+                performed_by="system",
+            )
+            return None
+
         channel = await self.resolve_channel(db, practice_id, patient)
         if channel != ConversationChannel.WHATSAPP:
             raise AppException("Patient's channel isn't WhatsApp — can't send a document.")

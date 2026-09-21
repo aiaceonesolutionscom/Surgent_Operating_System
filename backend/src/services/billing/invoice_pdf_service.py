@@ -4,7 +4,7 @@ import io
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Flowable
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_RIGHT
 
@@ -12,25 +12,7 @@ from src.models.invoice import Invoice
 from src.models.patient import Patient
 from src.models.practice import Practice
 from src.models.doctor import Doctor
-
-_BRAND = colors.HexColor("#0D9488")  # teal-600, matches the app's own brand color
-_INK = colors.HexColor("#0F172A")
-_INK_SOFT = colors.HexColor("#475569")
-_SAND = colors.HexColor("#F8F5F0")
-
-
-class _TopBar(Flowable):
-    """A thin brand-color bar across the top of the page, matching the
-    reference invoice design's header stripe."""
-
-    def __init__(self, width, height=4 * mm):
-        super().__init__()
-        self.width = width
-        self.height = height
-
-    def draw(self):
-        self.canv.setFillColor(_BRAND)
-        self.canv.rect(0, 0, self.width, self.height, fill=1, stroke=0)
+from src.services.documents.pdf_brand import BRAND as _BRAND, INK as _INK, INK_SOFT as _INK_SOFT, SAND as _SAND, TopBar as _TopBar
 
 
 def _money(amount: float, currency: str) -> str:

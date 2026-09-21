@@ -55,8 +55,12 @@ export function BookAppointmentPage() {
         notes: notes.trim() || null
       });
       navigate(DASHBOARD_ROUTES.patientDetail(appointment.patient_id));
-    } catch {
-      setError("Couldn't book this appointment — check the times and try again.");
+    } catch (err: unknown) {
+      // Surface the real reason (e.g. "Dr. X doesn't work on Tuesdays", or
+      // an overlapping-appointment conflict) instead of a generic message —
+      // this is exactly what "found out too late the doctor wasn't
+      // available" needs to catch at booking time, not after.
+      setError(err instanceof Error && err.message ? err.message : "Couldn't book this appointment — check the times and try again.");
       setSaving(false);
     }
   }

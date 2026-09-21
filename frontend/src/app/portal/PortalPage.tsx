@@ -673,6 +673,14 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
     </button>);
 }
 
+function ProfileFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-0.5 text-sm text-ink-soft">{value}</p>
+    </div>);
+}
+
 function EmptyState({ icon, message }: { icon: React.ReactNode; message: string }) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-3xl border border-sand-200 bg-white p-10 text-center shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
@@ -1143,12 +1151,28 @@ function MessagesSection({ token, doctor }: { token: string; doctor: PortalDocto
 
 // --- Profile ----------------------------------------------------------------
 
+const GENDER_OPTIONS = ["", "female", "male", "other", "prefer_not_to_say"];
+const PREGNANCY_OPTIONS = ["", "not_applicable", "pregnant", "nursing", "not_pregnant_or_nursing", "declined_to_answer"];
+
 function ProfileSection({ data, token, onSaved }: { data: PortalPatientResponse; token: string; onSaved: (fresh: PortalPatientResponse) => void }) {
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState(data.first_name);
   const [lastName, setLastName] = useState(data.last_name);
   const [email, setEmail] = useState(data.email || "");
   const [additionalPhones, setAdditionalPhones] = useState<Array<{ number?: string; label?: string }>>(data.additional_phones);
+  const [dateOfBirth, setDateOfBirth] = useState(data.date_of_birth || "");
+  const [gender, setGender] = useState(data.gender || "");
+  const [pregnancyStatus, setPregnancyStatus] = useState(data.pregnancy_status || "");
+  const [fatherName, setFatherName] = useState(data.father_name || "");
+  const [occupation, setOccupation] = useState(data.occupation || "");
+  const [emergencyName, setEmergencyName] = useState(data.emergency_contact_name || "");
+  const [emergencyPhone, setEmergencyPhone] = useState(data.emergency_contact_phone || "");
+  const [emergencyRelationship, setEmergencyRelationship] = useState(data.emergency_contact_relationship || "");
+  const [physicianName, setPhysicianName] = useState(data.regular_physician_name || "");
+  const [physicianPhone, setPhysicianPhone] = useState(data.regular_physician_phone || "");
+  const [preferredLanguage, setPreferredLanguage] = useState(data.preferred_language || "");
+  const [insuranceProvider, setInsuranceProvider] = useState(data.insurance_provider || "");
+  const [insuranceNumber, setInsuranceNumber] = useState(data.insurance_number || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPinChange, setShowPinChange] = useState(false);
@@ -1189,6 +1213,19 @@ function ProfileSection({ data, token, onSaved }: { data: PortalPatientResponse;
     setLastName(data.last_name);
     setEmail(data.email || "");
     setAdditionalPhones(data.additional_phones);
+    setDateOfBirth(data.date_of_birth || "");
+    setGender(data.gender || "");
+    setPregnancyStatus(data.pregnancy_status || "");
+    setFatherName(data.father_name || "");
+    setOccupation(data.occupation || "");
+    setEmergencyName(data.emergency_contact_name || "");
+    setEmergencyPhone(data.emergency_contact_phone || "");
+    setEmergencyRelationship(data.emergency_contact_relationship || "");
+    setPhysicianName(data.regular_physician_name || "");
+    setPhysicianPhone(data.regular_physician_phone || "");
+    setPreferredLanguage(data.preferred_language || "");
+    setInsuranceProvider(data.insurance_provider || "");
+    setInsuranceNumber(data.insurance_number || "");
     setError(null);
     setEditing(true);
   }
@@ -1212,7 +1249,20 @@ function ProfileSection({ data, token, onSaved }: { data: PortalPatientResponse;
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         email: email.trim() || null,
-        additional_phones: additionalPhones.filter((p) => p.number?.trim())
+        additional_phones: additionalPhones.filter((p) => p.number?.trim()),
+        date_of_birth: dateOfBirth || null,
+        gender: gender || null,
+        pregnancy_status: gender === "female" ? pregnancyStatus || null : null,
+        father_name: fatherName.trim() || null,
+        occupation: occupation.trim() || null,
+        emergency_contact_name: emergencyName.trim() || null,
+        emergency_contact_phone: emergencyPhone.trim() || null,
+        emergency_contact_relationship: emergencyRelationship.trim() || null,
+        regular_physician_name: physicianName.trim() || null,
+        regular_physician_phone: physicianPhone.trim() || null,
+        preferred_language: preferredLanguage.trim() || null,
+        insurance_provider: insuranceProvider.trim() || null,
+        insurance_number: insuranceNumber.trim() || null
       });
       onSaved(fresh);
       setEditing(false);
@@ -1263,6 +1313,24 @@ function ProfileSection({ data, token, onSaved }: { data: PortalPatientResponse;
         <p className="mt-5 text-xs text-ink-muted">
           Your primary phone number is what your clinic has on file and can't be changed here — contact them to update it. You can edit your name, email, and add extra numbers above.
         </p>
+
+        <div className="mt-5 grid gap-3 border-t border-sand-100 pt-5 sm:grid-cols-2">
+          <ProfileFact label="Date of birth" value={formatDate(data.date_of_birth)} />
+          <ProfileFact label="Gender" value={data.gender || "Not set"} />
+          {data.gender === "female" && <ProfileFact label="Pregnancy / nursing" value={data.pregnancy_status || "Not set"} />}
+          <ProfileFact label="Father's name" value={data.father_name || "Not set"} />
+          <ProfileFact label="Occupation" value={data.occupation || "Not set"} />
+          <ProfileFact label="Preferred language" value={data.preferred_language || "Not set"} />
+          <ProfileFact
+            label="Emergency contact"
+            value={[data.emergency_contact_name, data.emergency_contact_phone, data.emergency_contact_relationship].filter(Boolean).join(" · ") || "Not set"} />
+          <ProfileFact
+            label="Regular physician"
+            value={[data.regular_physician_name, data.regular_physician_phone].filter(Boolean).join(" · ") || "Not set"} />
+          <ProfileFact
+            label="Insurance"
+            value={[data.insurance_provider, data.insurance_number].filter(Boolean).join(" · ") || "Not set"} />
+        </div>
 
         <div className="mt-5 border-t border-sand-100 pt-5">
           <button
@@ -1379,6 +1447,73 @@ function ProfileSection({ data, token, onSaved }: { data: PortalPatientResponse;
         <button type="button" onClick={addPhone} className="mt-2 text-xs font-semibold text-teal-600 hover:underline">
           + Add another number
         </button>
+      </div>
+
+      <div className="mt-5 grid gap-3 border-t border-sand-100 pt-5 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Date of birth</span>
+          <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Gender</span>
+          <select value={gender} onChange={(e) => setGender(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white">
+            {GENDER_OPTIONS.map((g) => <option key={g} value={g}>{g ? g.replace(/_/g, " ") : "Not set"}</option>)}
+          </select>
+        </label>
+        {gender === "female" &&
+        <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Pregnancy / nursing</span>
+            <select value={pregnancyStatus} onChange={(e) => setPregnancyStatus(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white">
+              {PREGNANCY_OPTIONS.map((p) => <option key={p} value={p}>{p ? p.replace(/_/g, " ") : "Not set"}</option>)}
+            </select>
+          </label>
+        }
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Father&apos;s name</span>
+          <input value={fatherName} onChange={(e) => setFatherName(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Occupation</span>
+          <input value={occupation} onChange={(e) => setOccupation(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Preferred language</span>
+          <input value={preferredLanguage} onChange={(e) => setPreferredLanguage(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+      </div>
+
+      <div className="mt-5 grid gap-3 border-t border-sand-100 pt-5 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Emergency contact name</span>
+          <input value={emergencyName} onChange={(e) => setEmergencyName(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Emergency contact phone</span>
+          <input value={emergencyPhone} onChange={(e) => setEmergencyPhone(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Relationship</span>
+          <input value={emergencyRelationship} onChange={(e) => setEmergencyRelationship(e.target.value)} placeholder="Spouse, parent…" className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+      </div>
+
+      <div className="mt-5 grid gap-3 border-t border-sand-100 pt-5 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Regular physician name</span>
+          <input value={physicianName} onChange={(e) => setPhysicianName(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Regular physician phone</span>
+          <input value={physicianPhone} onChange={(e) => setPhysicianPhone(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Insurance provider</span>
+          <input value={insuranceProvider} onChange={(e) => setInsuranceProvider(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">Insurance number</span>
+          <input value={insuranceNumber} onChange={(e) => setInsuranceNumber(e.target.value)} className="w-full rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+        </label>
       </div>
 
       {error && <p className="mt-3 text-sm font-medium text-danger">{error}</p>}

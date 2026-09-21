@@ -10,6 +10,8 @@ class CreateProcedureRequest(BaseModel):
     description: str | None = None
     base_price: float | None = None
     duration_minutes: int | None = None
+    default_session_count: int = 1
+    default_checklist: list[str] = []
 
 
 class UpdateProcedureRequest(BaseModel):
@@ -18,6 +20,8 @@ class UpdateProcedureRequest(BaseModel):
     description: str | None = None
     base_price: float | None = None
     duration_minutes: int | None = None
+    default_session_count: int | None = None
+    default_checklist: list[str] | None = None
     is_active: bool | None = None
 
 
@@ -29,6 +33,8 @@ class ProcedureResponse(BaseModel):
     description: str | None
     base_price: float | None
     duration_minutes: int | None
+    default_session_count: int
+    default_checklist: list
     is_active: bool
     created_at: datetime
     updated_at: datetime

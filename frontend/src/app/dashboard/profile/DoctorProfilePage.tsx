@@ -293,7 +293,7 @@ export function DoctorProfilePage() {
             <span className="rounded-xl bg-ink/5 px-3 py-1 text-xs font-semibold text-ink-soft">{fmtDuration(workedMinutesThisMonth)} worked</span>
           </div>
           <div className="mt-4">
-            <AttendanceCalendar />
+            <AttendanceCalendar compact />
           </div>
         </div>
       )}

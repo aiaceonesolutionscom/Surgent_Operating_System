@@ -12,12 +12,16 @@ from src.models.patient import Patient
 from src.models.procedure import Procedure
 from src.schemas.clinical import CreateTreatmentPlanRequest, UpdateTreatmentPlanRequest, UpdateTreatmentPlanItemRequest
 from src.server.exceptions import NotFoundException
+from src.services.clinical.session_visit_services import SessionVisitService
 
 
 class TreatmentPlanService:
     """Backs the Doctor's treatment-plan workflow — a titled plan made up of
     ordered Procedure line items, each trackable from planned through
     performed. Every method is practice-scoped."""
+
+    def __init__(self):
+        self.session_visits = SessionVisitService()
 
     async def _resolve_doctor(self, db: AsyncSession, practice_id: UUID, user_id: UUID) -> Doctor:
         result = await db.execute(select(Doctor).where(Doctor.practice_id == practice_id, Doctor.user_id == user_id))
@@ -51,17 +55,26 @@ class TreatmentPlanService:
             procedure_result = await db.execute(
                 select(Procedure).where(Procedure.id == item_data.procedure_id, Procedure.practice_id == practice_id)
             )
-            if procedure_result.scalar_one_or_none() is None:
+            procedure = procedure_result.scalar_one_or_none()
+            if procedure is None:
                 raise NotFoundException(f"Procedure {item_data.procedure_id} not found")
-            db.add(
-                TreatmentPlanItem(
-                    treatment_plan_id=plan.id,
-                    procedure_id=item_data.procedure_id,
-                    phase_order=item_data.phase_order,
-                    estimated_price=item_data.estimated_price,
-                    notes=item_data.notes,
-                )
+            item = TreatmentPlanItem(
+                treatment_plan_id=plan.id,
+                procedure_id=item_data.procedure_id,
+                phase_order=item_data.phase_order,
+                estimated_price=item_data.estimated_price,
+                # A doctor can still override how many sessions THIS patient
+                # needs; the procedure's own default is just the starting
+                # point (see Procedure.default_session_count).
+                sessions_total=item_data.sessions_total or procedure.default_session_count or 1,
+                notes=item_data.notes,
             )
+            db.add(item)
+            await db.flush()
+            # Pre-creates every session (1..sessions_total) up front — see
+            # SessionVisitService.create_sessions_for_item's own docstring
+            # for why this happens immediately rather than on first booking.
+            await self.session_visits.create_sessions_for_item(db, practice_id, data.patient_id, item, procedure)
 
         await db.flush()
         return await self.get_plan(db, practice_id, plan.id)
@@ -69,7 +82,7 @@ class TreatmentPlanService:
     async def list_for_patient(self, db: AsyncSession, practice_id: UUID, patient_id: UUID) -> list[TreatmentPlan]:
         query = (
             select(TreatmentPlan)
-            .options(selectinload(TreatmentPlan.items))
+            .options(selectinload(TreatmentPlan.items).selectinload(TreatmentPlanItem.session_visits))
             .where(TreatmentPlan.practice_id == practice_id, TreatmentPlan.patient_id == patient_id)
             .order_by(TreatmentPlan.created_at.desc())
         )
@@ -79,7 +92,7 @@ class TreatmentPlanService:
     async def get_plan(self, db: AsyncSession, practice_id: UUID, plan_id: UUID) -> TreatmentPlan:
         query = (
             select(TreatmentPlan)
-            .options(selectinload(TreatmentPlan.items))
+            .options(selectinload(TreatmentPlan.items).selectinload(TreatmentPlanItem.session_visits))
             .where(TreatmentPlan.id == plan_id, TreatmentPlan.practice_id == practice_id)
         )
         result = await db.execute(query)

@@ -29,16 +29,31 @@ export interface FinanceAgentReport {
   recent_invoices: FinanceAgentRecentInvoice[];
 }
 
+export interface FinanceAgentStep {
+  tool_label: string;
+  summary: string;
+}
+
 export interface AskFinanceAgentResponse {
   session_id: string;
   answer: string;
+  steps: FinanceAgentStep[];
 }
 
 export interface FinanceAgentMessage {
   role: "staff" | "agent";
   content: string;
+  steps: FinanceAgentStep[];
   created_at: string;
 }
+
+// SSE event shapes from POST /finance-agent/ask/stream (server/sse.py's
+// wire format) — a discriminated union on `type`.
+export type FinanceAgentStreamEvent =
+  | { type: "step"; step: FinanceAgentStep }
+  | { type: "chunk"; text: string }
+  | { type: "done"; session_id: string; steps: FinanceAgentStep[] }
+  | { type: "error"; message: string };
 
 export interface FinanceAgentSessionSummary {
   id: string;
@@ -53,6 +68,7 @@ export interface FinanceAgentSessionDetail {
 }
 
 type AuthedFetch = <T>(path: string, init?: RequestInit) => Promise<T>;
+type AuthedFetchStream = <T = Record<string, unknown>>(path: string, init?: RequestInit) => AsyncGenerator<T>;
 
 // Matches backend/src/router/finance_agent/finance_agent_router.py.
 export function getFinanceAgentReport(authedFetch: AuthedFetch) {
@@ -61,6 +77,13 @@ export function getFinanceAgentReport(authedFetch: AuthedFetch) {
 
 export function askFinanceAgent(authedFetch: AuthedFetch, question: string, sessionId?: string | null) {
   return authedFetch<AskFinanceAgentResponse>("/api/v1/finance-agent/ask", {
+    method: "POST",
+    body: JSON.stringify({ question, session_id: sessionId ?? null })
+  });
+}
+
+export function askFinanceAgentStream(authedFetchStream: AuthedFetchStream, question: string, sessionId?: string | null) {
+  return authedFetchStream<FinanceAgentStreamEvent>("/api/v1/finance-agent/ask/stream", {
     method: "POST",
     body: JSON.stringify({ question, session_id: sessionId ?? null })
   });

@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
 
+from src.schemas.session_visit import SessionVisitResponse
+
 
 # --- Consultation Notes (SOAP-structured) -----------------------------------
 
@@ -67,6 +69,9 @@ class CreateTreatmentPlanItemRequest(BaseModel):
     procedure_id: UUID
     phase_order: int = 0
     estimated_price: float | None = None
+    # Omit to use the procedure's own default_session_count — set explicitly
+    # when this particular patient needs more/fewer visits than usual.
+    sessions_total: int | None = None
     notes: str | None = None
 
 
@@ -96,11 +101,13 @@ class TreatmentPlanItemResponse(BaseModel):
     procedure_id: UUID
     phase_order: int
     estimated_price: float | None
+    sessions_total: int
     status: str
     scheduled_appointment_id: UUID | None
     performed_at: datetime | None
     actual_price: float | None
     notes: str | None
+    session_visits: list[SessionVisitResponse] = []
     created_at: datetime
     updated_at: datetime
 

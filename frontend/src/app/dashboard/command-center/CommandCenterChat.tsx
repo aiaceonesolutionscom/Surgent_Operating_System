@@ -4,7 +4,7 @@ import { SparklesIcon, SendIcon, LockIcon, Loader2Icon, PlusIcon, MessageSquareI
 import { DASHBOARD_ROUTES } from "../constants/routes";
 import { usePlan } from "../plan/PlanContext";
 import {
-  askCommandCenter,
+  askCommandCenterStream,
   listCommandCenterSessions,
   getCommandCenterSession,
   type CommandCenterStep,
@@ -29,14 +29,6 @@ interface Turn {
   error: string | null;
 }
 
-// The backend resolves the whole orchestration (which sub-agents to consult,
-// their results, the final answer) in one request — there's no SSE/WebSocket
-// infra in this codebase to stream it live (confirmed before building this).
-// This delay turns that single response into the step-by-step "which agent
-// is being consulted" reveal that was asked for, without new transport
-// infrastructure.
-const REVEAL_DELAY_MS = 650;
-
 function turnsFromSession(messages: { role: "staff" | "agent"; content: string; steps: CommandCenterStep[] }[]): Turn[] {
   const turns: Turn[] = [];
   let pending: Turn | null = null;
@@ -54,7 +46,7 @@ function turnsFromSession(messages: { role: "staff" | "agent"; content: string; 
 }
 
 export function CommandCenterChat() {
-  const { authedFetch } = usePlan();
+  const { authedFetch, authedFetchStream } = usePlan();
   const [question, setQuestion] = useState("");
   const [sending, setSending] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -98,7 +90,7 @@ export function CommandCenterChat() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const q = question.trim();
-    if (!q || sending || !authedFetch) return;
+    if (!q || sending || !authedFetchStream) return;
 
     const id = `t${Date.now()}`;
     setTurns((prev) => [...prev, { id, question: q, allSteps: [], revealedCount: 0, answer: null, error: null }]);
@@ -106,21 +98,24 @@ export function CommandCenterChat() {
     setSending(true);
 
     try {
-      const response = await askCommandCenter(authedFetch, q, activeSessionId);
-      const isNewSession = !activeSessionId;
-      if (isNewSession) setActiveSessionId(response.session_id);
-
-      setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, allSteps: response.steps } : t)));
-
-      for (let i = 0; i < response.steps.length; i++) {
-        await new Promise((resolve) => setTimeout(resolve, REVEAL_DELAY_MS));
-        setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, revealedCount: i + 1 } : t)));
+      // Real SSE — each "step" event lands the moment that sub-agent is
+      // actually consulted (not a fake setTimeout reveal), then "chunk"
+      // events stream the final answer token-by-token as the LLM produces
+      // it, instead of waiting for the whole response before showing anything.
+      for await (const ev of askCommandCenterStream(authedFetchStream, q, activeSessionId)) {
+        if (ev.type === "step") {
+          setTurns((prev) =>
+            prev.map((t) => (t.id === id ? { ...t, allSteps: [...t.allSteps, ev.step], revealedCount: t.allSteps.length + 1 } : t))
+          );
+        } else if (ev.type === "chunk") {
+          setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, answer: (t.answer ?? "") + ev.text } : t)));
+        } else if (ev.type === "done") {
+          if (!activeSessionId) setActiveSessionId(ev.session_id);
+          refreshSessions();
+        } else if (ev.type === "error") {
+          setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, error: ev.message } : t)));
+        }
       }
-      if (response.steps.length > 0) {
-        await new Promise((resolve) => setTimeout(resolve, REVEAL_DELAY_MS));
-      }
-      setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, answer: response.answer } : t)));
-      refreshSessions();
     } catch {
       setTurns((prev) =>
         prev.map((t) => (t.id === id ? { ...t, error: "Couldn't reach the Command Center — please try again." } : t))
@@ -228,7 +223,12 @@ export function CommandCenterChat() {
                     <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-600 text-white">
                       <SparklesIcon className="h-3.5 w-3.5" />
                     </span>
-                    {t.answer}
+                    <span>
+                      {t.answer}
+                      {sending && t.id === lastTurnId &&
+                    <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-ink-muted/60 align-middle" />
+                    }
+                    </span>
                   </div>
                 </div>
             }

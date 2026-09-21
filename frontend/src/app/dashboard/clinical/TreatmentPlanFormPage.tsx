@@ -12,6 +12,7 @@ import { DASHBOARD_ROUTES } from "../constants/routes";
 interface DraftItem {
   procedureId: string;
   estimatedPrice: string;
+  sessionsTotal: string;
 }
 
 export function TreatmentPlanFormPage() {
@@ -32,7 +33,7 @@ export function TreatmentPlanFormPage() {
   function addItem() {
     if (procedures.length === 0) return;
     const proc = procedures.find((p) => p.is_active) || procedures[0];
-    setItems((prev) => [...prev, { procedureId: proc.id, estimatedPrice: proc.base_price != null ? String(proc.base_price) : "" }]);
+    setItems((prev) => [...prev, { procedureId: proc.id, estimatedPrice: proc.base_price != null ? String(proc.base_price) : "", sessionsTotal: String(proc.default_session_count || 1) }]);
   }
 
   function updateItem(index: number, patch: Partial<DraftItem>) {
@@ -45,7 +46,11 @@ export function TreatmentPlanFormPage() {
 
   function onProcedureChange(index: number, procedureId: string) {
     const proc = procedures.find((p) => p.id === procedureId);
-    updateItem(index, { procedureId, estimatedPrice: proc?.base_price != null ? String(proc.base_price) : "" });
+    updateItem(index, {
+      procedureId,
+      estimatedPrice: proc?.base_price != null ? String(proc.base_price) : "",
+      sessionsTotal: String(proc?.default_session_count || 1)
+    });
   }
 
   const canSubmit = Boolean(title.trim() && patientId) && !saving;
@@ -62,7 +67,8 @@ export function TreatmentPlanFormPage() {
         items: items.map((it, i) => ({
           procedure_id: it.procedureId,
           phase_order: i,
-          estimated_price: it.estimatedPrice ? Number(it.estimatedPrice) : null
+          estimated_price: it.estimatedPrice ? Number(it.estimatedPrice) : null,
+          sessions_total: it.sessionsTotal ? Number(it.sessionsTotal) : null
         }))
       });
       if (!plan) throw new Error("no plan");
@@ -144,6 +150,16 @@ export function TreatmentPlanFormPage() {
                   value={item.estimatedPrice}
                   onChange={(e) => updateItem(i, { estimatedPrice: e.target.value })}
                   className="w-full rounded-xl border border-sand-200 bg-canvas py-2 pl-6 pr-3 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white" />
+
+                    </div>
+                    <div className="w-24 shrink-0" title="Number of visits this item takes for this patient">
+                      <input
+                  type="number"
+                  min="1"
+                  value={item.sessionsTotal}
+                  onChange={(e) => updateItem(i, { sessionsTotal: e.target.value })}
+                  className="w-full rounded-xl border border-sand-200 bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-teal-600/40 focus:bg-white"
+                  placeholder="Sessions" />
 
                     </div>
                     <button type="button" onClick={() => removeItem(i)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-sand-100 hover:text-danger">

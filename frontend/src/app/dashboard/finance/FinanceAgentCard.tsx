@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { BotIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { BotIcon, SendIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import {
-  askFinanceAgent, getFinanceAgentReport,
-  type AskFinanceAgentResponse, type FinanceAgentReport,
+  askFinanceAgentStream, getFinanceAgentReport,
+  type FinanceAgentReport, type FinanceAgentStep,
 } from "../../../api/financeAgent";
 
 type AuthedFetch = (<T>(path: string, init?: RequestInit) => Promise<T>) | null;
+type AuthedFetchStream = (<T = Record<string, unknown>>(path: string, init?: RequestInit) => AsyncGenerator<T>) | null;
 
 const QUICK_PROMPTS = [
   "Revenue this month",
@@ -14,12 +15,22 @@ const QUICK_PROMPTS = [
   "AI agent costs",
 ];
 
+interface ChatTurn {
+  id: number;
+  role: "staff" | "agent";
+  content: string;
+  steps: FinanceAgentStep[];
+  streaming?: boolean;
+}
+
 // The Finance Agent chat card — ask the practice's money questions in plain
-// language ("is month kis ko kitne paise mile?"). The backend answers from a
-// real snapshot of invoices/expenses/doctors. Owner + Receptionist use this;
-// the backend enforces the role gate.
-export function FinanceAgentCard({ authedFetch }: { authedFetch: AuthedFetch }) {
-  const [messages, setMessages] = useState<{ role: "staff" | "agent"; content: string }[]>([]);
+// language ("is month kis ko kitne paise mile?"). The backend picks which
+// get_* tool(s) actually answer the question (not one giant snapshot every
+// time — see finance_agent_services.py) and streams the answer live via
+// SSE, same "consulting X…" step reveal + token-by-token pattern as Command
+// Center. Owner + Receptionist use this; the backend enforces the role gate.
+export function FinanceAgentCard({ authedFetch, authedFetchStream }: { authedFetch: AuthedFetch; authedFetchStream: AuthedFetchStream }) {
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [report, setReport] = useState<FinanceAgentReport | null>(null);
   const [question, setQuestion] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -33,20 +44,33 @@ export function FinanceAgentCard({ authedFetch }: { authedFetch: AuthedFetch }) 
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [turns]);
 
   async function send(text: string) {
     const value = text.trim();
-    if (!authedFetch || !value || busy) return;
+    if (!authedFetchStream || !value || busy) return;
     setQuestion("");
-    setMessages((m) => [...m, { role: "staff", content: value }]);
+    setTurns((t) => [...t, { id: Date.now(), role: "staff", content: value, steps: [] }]);
+    const agentId = Date.now() + 1;
+    setTurns((t) => [...t, { id: agentId, role: "agent", content: "", steps: [], streaming: true }]);
     setBusy(true);
     try {
-      const res: AskFinanceAgentResponse = await askFinanceAgent(authedFetch, value, sessionId);
-      setSessionId(res.session_id);
-      setMessages((m) => [...m, { role: "agent", content: res.answer }]);
+      for await (const ev of askFinanceAgentStream(authedFetchStream, value, sessionId)) {
+        if (ev.type === "step") {
+          setTurns((t) => t.map((turn) => (turn.id === agentId ? { ...turn, steps: [...turn.steps, ev.step] } : turn)));
+        } else if (ev.type === "chunk") {
+          setTurns((t) => t.map((turn) => (turn.id === agentId ? { ...turn, content: turn.content + ev.text } : turn)));
+        } else if (ev.type === "done") {
+          setSessionId(ev.session_id);
+          setTurns((t) => t.map((turn) => (turn.id === agentId ? { ...turn, streaming: false } : turn)));
+        } else if (ev.type === "error") {
+          setTurns((t) => t.map((turn) => (turn.id === agentId ? { ...turn, content: ev.message, streaming: false } : turn)));
+        }
+      }
     } catch {
-      setMessages((m) => [...m, { role: "agent", content: "Couldn't get an answer — try again in a moment." }]);
+      setTurns((t) =>
+        t.map((turn) => (turn.id === agentId ? { ...turn, content: "Couldn't get an answer — try again in a moment.", streaming: false } : turn))
+      );
     } finally {
       setBusy(false);
     }
@@ -72,17 +96,34 @@ export function FinanceAgentCard({ authedFetch }: { authedFetch: AuthedFetch }) 
       </div>
 
       <div className="flex max-h-80 flex-col gap-3 overflow-y-auto px-5 py-4">
-        {messages.length === 0 && (
+        {turns.length === 0 && (
           <p className="text-sm text-ink-muted">
             Try: <span className="text-ink">"Is month kis doctor ne kitne ka treatment kiya?"</span>
           </p>
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${m.role === "staff" ? "ml-auto bg-teal-600 text-white" : "bg-sand-100 text-ink"}`}>
-            <span className="whitespace-pre-wrap">{m.content}</span>
+        {turns.map((t) => (
+          <div key={t.id} className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${t.role === "staff" ? "ml-auto bg-teal-600 text-white" : "bg-sand-100 text-ink"}`}>
+            {t.role === "agent" && t.steps.length > 0 && (
+              <div className="mb-1.5 flex flex-wrap gap-1.5">
+                {t.steps.map((s, i) => (
+                  <span key={i} className="rounded-full bg-teal-600/10 px-2 py-0.5 text-[11px] font-semibold text-teal-700">
+                    {s.tool_label}
+                  </span>
+                ))}
+              </div>
+            )}
+            {t.role === "agent" && t.streaming && !t.content && t.steps.length === 0 ? (
+              <span className="flex items-center gap-1.5 text-ink-muted">
+                <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> Thinking…
+              </span>
+            ) : (
+              <span className="whitespace-pre-wrap">
+                {t.content}
+                {t.streaming && <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-ink-muted/60 align-middle" />}
+              </span>
+            )}
           </div>
         ))}
-        {busy && <div className="w-fit rounded-2xl bg-sand-100 px-4 py-2.5 text-sm text-ink-muted">Thinking…</div>}
         <div ref={endRef} />
       </div>
 

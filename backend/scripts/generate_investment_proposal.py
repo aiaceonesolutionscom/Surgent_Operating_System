@@ -200,79 +200,198 @@ def build():
         "production-hardened, multi-market product.", S_BODY))
 
     deliv_rows = [
-        _header_row(["Phase", "Duration", "Deliverables", "Cost (work value)"]),
-        _row(["Phase 2 — Sellable Product", "3–4 weeks", "Green API paid plan, Meta (Instagram + Facebook Messenger), Twilio number + voice SDK, automated tenant-isolation tests, production VPS deploy, Sentry monitoring", "$2,500 – $5,000"]),
-        _row(["Phase 3 — Scale Infrastructure", "3–4 weeks", "Second WhatsApp number for the Owner's outbound agent (bulk onboarding, CRM automation), AWS S3 + CloudFront migration", "$2,000 – $5,000"]),
-        _row(["Phase 3 — Mobile App", "6–10 weeks", "Flutter app (Android + iOS) wrapping the already-built Patient Portal &amp; doctor APIs", "$3,000 – $8,000"]),
-        _row(["Total (work value, if built by an outside team)", "", "", "$7,500 – $18,000"], bold_first=True),
+        _header_row(["Phase", "Duration", "Deliverables"]),
+        _row(["Phase 2 — Sellable Product", "3–4 weeks", "Green API paid plan, Meta (Instagram + Facebook Messenger), Twilio number + voice SDK, automated tenant-isolation tests, production VPS deploy, Sentry monitoring"]),
+        _row(["Phase 3 — Scale Infrastructure", "3–4 weeks", "Second WhatsApp number for the Owner's outbound agent (bulk onboarding, CRM automation), AWS S3 + CloudFront migration"]),
+        _row(["Phase 3 — Mobile App", "6–10 weeks", "Flutter app (Android + iOS) wrapping the already-built Patient Portal &amp; doctor APIs"]),
     ]
-    story.append(_table(deliv_rows, [W * 0.24, W * 0.14, W * 0.44, W * 0.18]))
+    story.append(_table(deliv_rows, [W * 0.26, W * 0.16, W * 0.58]))
     story.append(Spacer(1, 6))
-    story.append(Paragraph(
-        "Note on the Mobile App line: earlier drafts of this document priced it up to $18,000, benchmarked "
-        "against a Western outsourced agency. Aiaceone's own in-house team can build it — same team, same "
-        "codebase, same APIs already live — for a realistic $3,000–$8,000. See Section 5 for the real-cash "
-        "version of this number.", S_FOOTNOTE))
+    story.append(Paragraph("The real cost of this work is the team's time — see Section 6 for the actual cash cost.", S_FOOTNOTE))
     story.append(PageBreak())
 
-    # ---------------- PRICING / INVESTMENT (the corrected core) ----------------
+    # ---------------- 5. WHAT'S NEEDED TO GO LIVE (sourced) ----------------
     story.append(_TopBar(letter[0]))
     story.append(Spacer(1, 10 * mm))
-    story.append(Paragraph("5. Pricing &amp; Investment — Two Honest Scenarios", S_H1))
+    story.append(Paragraph("5. What's Needed to Go Live — Sourced Technical Requirements", S_H1))
     story.append(Paragraph(
-        "The figures in Section 4 are <b>market work-value</b> — what this would cost if bought from an "
-        "outside agency. That is not the same as the real new cash a founder needs, since Aiaceone already "
-        "has an in-house team on salary. Both are shown below so neither number is misleading on its own.", S_BODY))
-
-    story.append(Paragraph("Scenario A — Real Cash Needed (team already on payroll, unaffected either way)", S_H2))
-    scenA = [
-        _header_row(["Item", "One-time", "Monthly"]),
-        _row(["App Store registrations (Apple $99/yr + Google Play $25 one-time)", "$124", "—"]),
-        _row(["Domain + SSL", "$50 – $100", "—"]),
-        _row(["Platform infrastructure (hosting, WhatsApp, LLM, S3, monitoring — scales with client count, see Section 7)", "—", "$190 – $1,290"]),
-        _row(["Real new cash needed", "$174 – $224", "$190 – $1,290"], bold_first=True),
+        "There is currently <b>no hired team</b> — the figures below are pure tool/infrastructure costs, "
+        "each priced from the vendor's own current published rate. Team and marketing costs are kept "
+        "completely separate (Section 6) since they are a different kind of decision.", S_BODY))
+    req_rows = [
+        _header_row(["Requirement", "Why It's Needed", "Real Cost", "Source"]),
+        _row(["WhatsApp — Green API paid plan", "Removes the free tier's message limits", "~$8/mo (690 RUB)", "green-api.com/en/docs/about-tariffs"]),
+        _row(["Instagram + Facebook Messenger", "Adds two more real channels", "Free (Meta App Review required)", "developers.facebook.com"]),
+        _row(["Twilio — phone number + voice", "Enables a real phone/voice channel", "$1.15/mo number + $0.0085–0.014/min", "twilio.com/en-us/voice/pricing/us"]),
+        _row(["Production hosting — Hetzner VPS", "Move off a dev machine onto a real server", "€5.49 – 14.86/mo (~$6 – 16/mo)", "hetzner.com/cloud"]),
+        _row(["AWS S3 + CloudFront", "Scalable storage for patient photos/documents", "$0.023/GB storage + $0.085/GB delivery", "aws.amazon.com/s3/pricing"]),
+        _row(["LLM — GPT-4.1-mini (production)", "Production-grade AI replies", "$0.40 / 1M input + $1.60 / 1M output tokens", "OpenAI API pricing"]),
+        _row(["Deepgram — voice transcription", "Voice-note and call transcription", "$0.0043/min pre-recorded", "deepgram.com/pricing"]),
+        _row(["LangSmith — AI monitoring", "Debug AI conversations, control LLM cost drift", "Free (5,000 traces/mo) → $39/seat/mo Plus", "langchain.com/pricing"]),
+        _row(["Sentry — error monitoring", "Catch bugs before customers do", "Free (5,000 errors/mo) → $26/mo Team", "sentry.io pricing"]),
+        _row(["Domain + SSL", "Real production URL, HTTPS", "~$12 – 15/yr (SSL itself is free — Let's Encrypt)", "standard registrar pricing"]),
     ]
-    story.append(_table(scenA, [W * 0.58, W * 0.21, W * 0.21]))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(
-        "The team's own build-hours (Phase 2/3/Mobile) are not an <i>additional</i> cost here — they are "
-        "already covered by the payroll below, whether or not this specific work is happening.", S_FOOTNOTE))
-
-    story.append(Paragraph("Scenario B — Full Investment (team payroll + marketing included)", S_H2))
-    scenB = [
-        _header_row(["Item", "One-time", "Monthly"]),
-        _row(["Team payroll — Senior Full-Stack Engineer, DevOps Engineer, ML/Data Engineer (see Section 6)", "—", "PKR 350,000 (~$1,270)"]),
-        _row(["Platform infrastructure", "—", "$190 – $1,290"]),
-        _row(["International launch marketing (landing page, paid ads, outreach, two pilot case studies)", "PKR 500,000 (~$1,800)", "—"]),
-        _row(["Real one-time non-labor cash (app store, domain)", "$174 – $224", "—"]),
-        _row(["Total", "≈ $2,000 – $2,050", "≈ $1,460 – $2,560 / month"], bold_first=True),
-    ]
-    story.append(_table(scenB, [W * 0.58, W * 0.21, W * 0.21]))
+    story.append(_table(req_rows, [W * 0.22, W * 0.28, W * 0.30, W * 0.20]))
     story.append(Spacer(1, 6))
-    story.append(Paragraph(
-        "Recommended framing for investors: present the <b>work already delivered</b> (Section 4 style "
-        "value, roughly $75,000–$150,000+ if this scope were purchased from an outside Pakistan-based agency "
-        "at $25–50/hr for an estimated 3,000–5,000 development hours) separately from the <b>forward cash "
-        "ask</b> (Scenario A or B above) — conflating the two, as an earlier draft did, is what made a "
-        "<i>$6,000–$28,500</i> total read as inconsistent with an <i>$8,000–$15,000</i> figure elsewhere in "
-        "the same document.", S_BODY))
+    story.append(Paragraph("Real Monthly Infrastructure Cost — At Two Honest Scale Points", S_H2))
+    scale_rows = [
+        _header_row(["Scale", "What It Covers", "Monthly Cost (sourced)"]),
+        _row(["Pilot (1–5 clinics, getting started)", "Light usage of every item above — realistic for the first few real customers", "≈ $35 – $60/mo"]),
+        _row(["Growth (10–25 clinics)", "Heavier LLM/voice/storage usage as message volume scales up", "≈ $200 – $800/mo"]),
+    ]
+    story.append(_table(scale_rows, [W * 0.28, W * 0.44, W * 0.28]))
     story.append(PageBreak())
 
-    # ---------------- TEAM & TECH STACK ----------------
+    # ---------------- 6. TEAM & 3-MONTH PLAN (separate, since no team exists) ----------------
     story.append(_TopBar(letter[0]))
     story.append(Spacer(1, 10 * mm))
-    story.append(Paragraph("6. Team &amp; Technology Stack", S_H1))
-    story.append(Paragraph("Founding Team (Monthly, PKR)", S_H2))
+    story.append(Paragraph("6. If Hiring a Team — 3-Month Plan &amp; Cost", S_H1))
+    story.append(Paragraph(
+        "This is a genuinely <b>new, additive cost</b> — no one is currently on payroll for this project. "
+        "The roles and salaries below are realistic full-time Pakistan tech salaries (not freelance/agency "
+        "rates, which run higher per hour).", S_BODY))
     team_rows = [
-        _header_row(["Role", "Monthly Salary (PKR)", "Responsibility"]),
-        _row(["Senior Full-Stack Engineer", "150,000", "Backend + frontend core"]),
-        _row(["DevOps Engineer", "100,000", "VPS, CI/CD, monitoring, scaling"]),
-        _row(["Data Scientist / ML Engineer", "100,000", "Agents, prompts, evals, LLM cost control"]),
-        _row(["Team total", "350,000 (~$1,270/mo)", ""], bold_first=True),
+        _header_row(["Role", "Monthly Salary (PKR)", "3 Months (PKR / USD)", "Responsibility"]),
+        _row(["Senior Full-Stack Engineer", "150,000", "450,000 (~$1,624)", "Backend + frontend core work"]),
+        _row(["DevOps Engineer", "100,000", "300,000 (~$1,083)", "VPS, CI/CD, monitoring, scaling"]),
+        _row(["Data Scientist / ML Engineer", "100,000", "300,000 (~$1,083)", "Agents, prompts, evals, LLM cost control"]),
+        _row(["3-person team, 3 months", "350,000/mo", "1,050,000 (~$3,790)", ""], bold_first=True),
+        _row(["+ Optional: Flutter Mobile Developer", "120,000 – 150,000", "360,000 – 450,000 (~$1,300 – 1,624)", "Only if the mobile app is wanted in this same window"]),
     ]
-    story.append(_table(team_rows, [W * 0.32, W * 0.28, W * 0.40]))
+    story.append(_table(team_rows, [W * 0.24, W * 0.16, W * 0.26, W * 0.34]))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("What 3 Months of Work Realistically Delivers", S_H2))
+    month_rows = [
+        _header_row(["Month", "Deliverables"]),
+        _row(["Month 1", "Finance/accounting module completed end-to-end; AWS S3 migration; automated tenant-isolation &amp; auth tests"]),
+        _row(["Month 2", "Production VPS deploy (Hetzner), domain + SSL, Sentry + LangSmith wired in; Instagram + Facebook Messenger channels; Twilio voice pilot"]),
+        _row(["Month 3", "Two real pilot clinics onboarded in Pakistan; bug fixes from real usage; polish and documentation for an international launch"]),
+    ]
+    story.append(_table(month_rows, [W * 0.18, W * 0.82]))
+    story.append(PageBreak())
 
-    story.append(Paragraph("Technology Stack", S_H2))
+    # ---------------- 7. MARKETING ----------------
+    story.append(_TopBar(letter[0]))
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("7. Marketing Investment — When It's Spent &amp; What It Returns", S_H1))
+    story.append(Paragraph(
+        "This is spent <b>after</b> the 3-month build (Section 6), not during it — there is nothing ready to "
+        "market until Month 3's pilot clinics are live. It is not PKR 500,000 in one go; it is spread across "
+        "Months 4–6 as below. The total can come in lower if early ad tests perform well, or the contingency "
+        "line gets used if they don't — it is a planning budget, not a fixed bill.", S_BODY))
+    mkt_rows = [
+        _header_row(["Item", "Budget (PKR)", "When It's Spent"]),
+        _row(["Multi-language landing page (EN / AR / UR)", "80,000", "Month 4, week 1 — one-off, before any ads run"]),
+        _row(["Product demo videos / pilot clinic testimonial", "50,000", "Month 4 — one-off, needs the Month 3 pilot clinics' footage"]),
+        _row(["LinkedIn + Meta lead-gen ads (US / UK / Dubai)", "200,000", "Months 4–6 — spread ~67,000/month as campaigns run"]),
+        _row(["Cold outreach — email + LinkedIn sequences to clinics", "30,000", "Months 4–6 — ongoing, ~10,000/month"]),
+        _row(["Google + clinic-directory SEO / launch activity", "60,000", "Months 4–6 — mostly upfront setup, some ongoing"]),
+        _row(["Two discounted pilot clinics + live case study", "60,000", "Months 3–4 — a discount given, not cash paid to a vendor"]),
+        _row(["Ad-test contingency (5%)", "20,000", "Held in reserve, spent only if needed"]),
+        _row(["Total", "500,000 (~$1,800)"], bold_first=True),
+    ]
+    story.append(_table(mkt_rows, [W * 0.44, W * 0.18, W * 0.38]))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("What This Realistically Returns", S_H2))
+    story.append(Paragraph(
+        "Using published B2B SaaS benchmarks (not Aiaceone-specific data, since there's no ad history yet): "
+        "healthcare B2B SaaS lead-to-paying-customer conversion runs 2–5%, and healthcare trial-to-paid "
+        "conversion runs ~21.5% once someone actually starts a trial.", S_BODY))
+    story.append(_bullets([
+        "PKR 200,000 (~$720) in ads, at a typical $20–50 cost-per-lead for B2B healthcare software → roughly 15–35 leads.",
+        "At 2–5% lead-to-customer conversion → realistically <b>1–2 paying clinics</b> directly from the ad spend alone.",
+        "Combined with cold outreach, SEO, and the two discounted pilot clinics already live → a realistic total of <b>8–12 paying clinics by the end of Month 6</b> — this is what Section 13's \"Break-even\" and \"Conservative\" scenarios are built from.",
+    ]))
+    story.append(PageBreak())
+
+    # ---------------- 8. TOTAL INVESTMENT SUMMARY ----------------
+    story.append(_TopBar(letter[0]))
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("8. Total Investment Summary", S_H1))
+    total_rows = [
+        _header_row(["Item", "Cost (USD)"]),
+        _row(["3-person team, 3 months (Section 6)", "$3,790"]),
+        _row(["Infrastructure, 3 months at pilot scale (Section 5)", "$105 – $180"]),
+        _row(["Marketing launch budget (Section 7)", "$1,800"]),
+        _row(["TOTAL — without mobile app", "≈ $5,700 – $5,800"], bold_first=True),
+        _row(["+ Flutter Mobile Developer, 3 months (optional)", "$1,300 – $1,624"]),
+        _row(["TOTAL — with mobile app included", "≈ $7,000 – $7,400"], bold_first=True),
+    ]
+    story.append(_table(total_rows, [W * 0.7, W * 0.3]))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Monthly Cost After the 3 Months (Ongoing, If the Business Is Live)", S_H2))
+    ongoing_rows = [
+        _header_row(["Item", "Monthly Cost"]),
+        _row(["Team, if retained", "PKR 350,000 (~$1,270)"]),
+        _row(["Infrastructure (pilot → growth scale)", "$35 – $800"]),
+        _row(["TOTAL ongoing monthly", "≈ $1,300 – $2,070/mo"], bold_first=True),
+    ]
+    story.append(_table(ongoing_rows, [W * 0.7, W * 0.3]))
+    story.append(PageBreak())
+
+    # ---------------- 9. PER-CLINIC REAL COST ----------------
+    story.append(_TopBar(letter[0]))
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("9. What It Really Costs to Serve One Clinic", S_H1))
+    story.append(Paragraph(
+        "Green API (WhatsApp) is <b>not</b> Aiaceone's cost — each clinic connects their own Green API account "
+        "(~$8/mo, paid by them directly to Green API) from Settings → Integrations. What Aiaceone pays for, "
+        "per clinic, is the AI (LLM), the optional voice add-on, and a share of the fixed server/monitoring "
+        "cost. Both usage levels below are stated assumptions, not measured data — there is no live client yet.", S_BODY))
+
+    story.append(Paragraph("AI (LLM) Cost Per Clinic", S_H2))
+    llm_rows = [
+        _header_row(["Clinic Activity", "Assumption", "LLM Cost / Month"]),
+        _row(["Light clinic", "~300 AI conversations/mo, ~4 AI replies each", "≈ $1 – $2"]),
+        _row(["Active clinic", "~1,000 AI conversations/mo, ~4 AI replies each", "≈ $4 – $6"]),
+    ]
+    story.append(_table(llm_rows, [W * 0.28, W * 0.44, W * 0.28]))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Computed from GPT-4.1-mini's real rate ($0.40/1M input + $1.60/1M output tokens), assuming ~2,000 input tokens (system prompt + booking tools + conversation history) and ~150 output tokens per AI reply.", S_FOOTNOTE))
+
+    story.append(Paragraph("Voice Add-On Cost Per Clinic (Optional Tier)", S_H2))
+    voice_rows = [
+        _header_row(["Clinic Activity", "Assumption", "Voice Cost / Month"]),
+        _row(["Light voice usage", "~300 call minutes/mo + 1 Twilio number", "≈ $5 – $6"]),
+        _row(["Active voice usage", "~800 call minutes/mo + 1 Twilio number", "≈ $13 – $14"]),
+    ]
+    story.append(_table(voice_rows, [W * 0.28, W * 0.44, W * 0.28]))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Twilio number $1.15/mo + $0.0085–0.014/min, plus Deepgram transcription at $0.0043/min — both real vendor rates (Section 5).", S_FOOTNOTE))
+
+    story.append(Paragraph("Shared Fixed Cost (Server, Storage, Monitoring)", S_H2))
+    story.append(Paragraph(
+        "The VPS, S3 storage, and monitoring tools do not grow per clinic — the same server serves 1 clinic or "
+        "15. This shared cost is roughly <b>$16 – $26/month total</b>, whoever is using the platform.", S_BODY))
+    story.append(PageBreak())
+
+    story.append(_TopBar(letter[0]))
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("Total Real Cost: 1 Clinic vs. 10 Clinics", S_H2))
+    cost_compare_rows = [
+        _header_row(["", "1 Clinic (chatbot only)", "10 Clinics (chatbot only)"]),
+        _row(["LLM cost", "$1 – $6", "$10 – $60"]),
+        _row(["Shared fixed cost (this client's full share vs. split 10 ways)", "$16 – $26 (100% on one client)", "$16 – $65 (some tools cross into paid tier)"]),
+        _row(["Total monthly cost to Aiaceone", "$18 – $32", "$40 – $125"]),
+        _row(["Cost per clinic", "$18 – $32/clinic", "$4 – $12.50/clinic"], bold_first=True),
+    ]
+    story.append(_table(cost_compare_rows, [W * 0.34, W * 0.33, W * 0.33]))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(
+        "The per-clinic cost drops sharply with scale — the fixed server/monitoring cost barely changes "
+        "whether it's serving 1 client or 10. This is why margin improves as the client count grows.", S_BODY))
+
+    story.append(Paragraph("Cost of a Free Trial", S_H2))
+    story.append(Paragraph(
+        "For a 14-day free trial, the real cost is that clinic's share of the \"1 Clinic\" row above, prorated "
+        "for half a month: <b>≈ $9 – $16 per trial clinic</b>. Three simultaneous free trials cost Aiaceone "
+        "roughly <b>$27 – $48 total</b> — cheap enough to give away freely to get real case studies.", S_BODY))
+    story.append(PageBreak())
+
+    # ---------------- TECH STACK ----------------
+    story.append(_TopBar(letter[0]))
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("10. Technology Stack", S_H1))
     tech_rows = [
         _header_row(["Layer", "Technology"]),
         _row(["Backend", "FastAPI, async SQLAlchemy 2.0, PostgreSQL, Alembic, Pydantic v2"]),
@@ -287,33 +406,10 @@ def build():
     story.append(_table(tech_rows, [W * 0.26, W * 0.74]))
     story.append(PageBreak())
 
-    # ---------------- MONTHLY PLATFORM COST ----------------
-    story.append(_TopBar(letter[0]))
-    story.append(Spacer(1, 10 * mm))
-    story.append(Paragraph("7. Estimated Monthly Platform Cost (all clients combined)", S_H1))
-    plat_rows = [
-        _header_row(["Item", "Cost (USD/mo)"]),
-        _row(["Green API × 2 numbers", "24"]),
-        _row(["Hosting (Hetzner VPS) + database", "20 – 50"]),
-        _row(["S3 + CloudFront", "10 – 30"]),
-        _row(["LLM (GPT-4.1-mini, agentic use)", "50 – 400"]),
-        _row(["Deepgram (speech-to-text / text-to-speech)", "20 – 120"]),
-        _row(["Twilio numbers + voice usage", "20 – 500"]),
-        _row(["LangSmith (Plus)", "39 – 80"]),
-        _row(["Sentry / monitoring / uptime", "0 – 30"]),
-        _row(["Email (Resend)", "0 – 30"]),
-        _row(["Domains / SSL / backups", "6 – 25"]),
-        _row(["Platform total (10–25 clinics on the platform)", "≈ 190 – 1,290"], bold_first=True),
-    ]
-    story.append(_table(plat_rows, [W * 0.7, W * 0.3]))
-    story.append(Spacer(1, 6))
-    story.append(Paragraph("Per-clinic delivery cost: chatbot-only ≈ $20–45/clinic/month; chatbot + voice ≈ $60–180/clinic/month (voice-volume dependent).", S_BODY))
-    story.append(PageBreak())
-
     # ---------------- COMPETITORS ----------------
     story.append(_TopBar(letter[0]))
     story.append(Spacer(1, 10 * mm))
-    story.append(Paragraph("8. Competitor Pricing (Verified)", S_H1))
+    story.append(Paragraph("11. Competitor Pricing (Verified)", S_H1))
     comp_rows = [
         _header_row(["Provider", "Price", "Market"]),
         _row(["S10.AI", "$99/mo + usage", "US — medical AI receptionist"]),
@@ -335,7 +431,7 @@ def build():
     # ---------------- SELLING PRICE ----------------
     story.append(_TopBar(letter[0]))
     story.append(Spacer(1, 10 * mm))
-    story.append(Paragraph("9. Recommended Selling Price", S_H1))
+    story.append(Paragraph("12. Recommended Selling Price", S_H1))
     sell_rows = [
         _header_row(["Market", "Target Customer", "Monthly Price", "One-time Setup Fee"]),
         _row(["Pakistan", "Solo / small aesthetic, dental, dermatology clinics", "PKR 15,000 – 25,000 (chatbot); PKR 60,000+ (+voice)", "None — self-serve"]),
@@ -356,26 +452,79 @@ def build():
     # ---------------- ROI ----------------
     story.append(_TopBar(letter[0]))
     story.append(Spacer(1, 10 * mm))
-    story.append(Paragraph("10. Revenue &amp; ROI Projection", S_H1))
-    roi_rows = [
-        _header_row(["Scenario", "Clinics (mix)", "Monthly Revenue", "Monthly Profit"]),
-        _row(["Break-even", "~8–10", "~$2,000", "~$50 – 100"]),
-        _row(["Conservative", "15 (5 US / 5 UK / 5 Dubai)", "~$5,100", "~$3,150 (~PKR 870k)"]),
-        _row(["Moderate", "30 (12 / 10 / 8)", "~$10,500", "~$8,500 (~PKR 2.3M)"]),
-        _row(["Scale", "60 (25 / 20 / 15)", "~$22,500", "~$20,500 (~PKR 5.6M)"]),
+    story.append(Paragraph("13. Revenue &amp; ROI Projection — How These Numbers Are Built", S_H1))
+
+    story.append(Paragraph("Step 1 — The Fixed Monthly Cost Baseline", S_H2))
+    story.append(Paragraph(
+        "Team, if retained (Section 6): PKR 350,000 (~$1,270/mo) + shared infrastructure (Section 9): "
+        "$16–$26/mo → <b>fixed cost ≈ $1,286 – $1,296/month</b>, before counting any per-clinic LLM/voice cost.", S_BODY))
+
+    story.append(Paragraph("Step 2 — Revenue Per Clinic by Market (from Section 12)", S_H2))
+    rev_rows = [
+        _header_row(["Market", "Chatbot Price", "In USD"]),
+        _row(["Pakistan", "PKR 15,000 – 25,000/mo", "$54 – $90"]),
+        _row(["US", "$199 – 249/mo", "$199 – $249"]),
+        _row(["UK", "£199 – 249/mo (GBP/USD ≈ 1.34)", "$267 – $334"]),
+        _row(["Dubai", "AED 2,500 – 3,000/mo (AED/USD ≈ 3.6725)", "$681 – $817"]),
     ]
-    story.append(_table(roi_rows, [W * 0.2, W * 0.28, W * 0.26, W * 0.26]))
+    story.append(_table(rev_rows, [W * 0.2, W * 0.4, W * 0.4]))
+
+    story.append(Paragraph("Step 3 — Break-Even Point (Depends Heavily on Market Mix)", S_H2))
+    story.append(Paragraph(
+        "Break-even clinic count = fixed cost ÷ average revenue per clinic. This varies a lot by market:", S_BODY))
+    be_rows = [
+        _header_row(["If Selling Only To...", "Avg. Revenue / Clinic", "Clinics Needed to Break Even"]),
+        _row(["Pakistan only", "~$72", "~18 clinics"]),
+        _row(["US only", "~$224", "~6 clinics"]),
+        _row(["Dubai only", "~$749", "~2 clinics"]),
+        _row(["Realistic early mix (2 PK + 2 US + 1 Dubai)", "~$310 blended", "~4 – 5 clinics"]),
+    ]
+    story.append(_table(be_rows, [W * 0.4, W * 0.3, W * 0.3]))
+
+    story.append(Paragraph("Step 4 — Growth Scenarios (Explicit Math)", S_H2))
+    roi_rows = [
+        _header_row(["Scenario", "Clinics (mix)", "Revenue Math", "Monthly Revenue", "Monthly Profit"]),
+        _row(["Conservative", "15 (5 US / 5 UK / 5 Dubai)", "5×$249 + 5×$334 + 5×$817", "≈ $7,000", "≈ $5,600 (~PKR 1.55M)"]),
+        _row(["Moderate", "30 (12 US / 10 UK / 8 Dubai)", "12×$249 + 10×$334 + 8×$817", "≈ $12,900", "≈ $11,500 (~PKR 3.2M)"]),
+        _row(["Scale", "60 (25 US / 20 UK / 15 Dubai)", "25×$249 + 20×$334 + 15×$817", "≈ $25,200", "≈ $23,600 (~PKR 6.5M)"]),
+    ]
+    story.append(_table(roi_rows, [W * 0.14, W * 0.20, W * 0.30, W * 0.18, W * 0.18]))
     story.append(Spacer(1, 6))
     story.append(Paragraph(
-        "Payback on the Scenario B forward investment (Section 5): roughly 1–2 months at the conservative "
-        "scenario, given the real monthly cash need is $1,460–$2,560 against a $5,100 conservative-scenario "
-        "revenue.", S_BODY))
+        "Profit = Revenue − fixed cost (~$1,290/mo) − LLM/voice cost at that client count (Section 9, roughly "
+        "$0.30–$6/clinic/month, small enough not to change these totals meaningfully).", S_FOOTNOTE))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(
+        "Payback on the $5,700–$7,400 build investment (Section 8): under the Conservative scenario "
+        "(~$5,600/mo profit), roughly <b>1–1.5 months</b>.", S_BODY))
+    story.append(PageBreak())
+
+    # ---------------- SOURCES ----------------
+    story.append(_TopBar(letter[0]))
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("14. Sources", S_H1))
+    story.append(Paragraph("Every cost figure in Section 5 was checked against the vendor's own current pricing (September 2026):", S_BODY))
+    story.append(_bullets([
+        "Green API — green-api.com/en/docs/about-tariffs",
+        "Twilio Voice — twilio.com/en-us/voice/pricing/us",
+        "Hetzner Cloud — hetzner.com/cloud",
+        "AWS S3 — aws.amazon.com/s3/pricing",
+        "OpenAI API (GPT-4.1-mini) — developers.openai.com/api/docs/pricing",
+        "Deepgram — deepgram.com/pricing",
+        "LangSmith — langchain.com/pricing",
+        "Sentry — sentry.io (pricing page)",
+        "Flutter/mobile dev rates — Cleveroad, Solguruz, Vivasoft (2026 Flutter cost guides)",
+        "Pakistan software dev rates — Payscale, SalaryExpert, GoodFirms (Pakistan, 2026)",
+        "Competitor prices (Section 11) — each provider's own pricing page, checked September 2026",
+        "GBP/USD and AED/USD exchange rates — checked September 2026",
+        "B2B SaaS / healthcare conversion benchmarks (Section 7) — LeanLabs, Orbix Studio industry reports, 2026",
+    ]))
     story.append(PageBreak())
 
     # ---------------- NEXT STEPS ----------------
     story.append(_TopBar(letter[0]))
     story.append(Spacer(1, 10 * mm))
-    story.append(Paragraph("11. Next Steps", S_H1))
+    story.append(Paragraph("15. Next Steps", S_H1))
     story.append(_bullets([
         "<b>Weeks 1–3:</b> Finance/accounting module end-to-end, S3 migration, LangSmith live evaluation.",
         "<b>Weeks 3–4:</b> Production VPS deploy, domain + SSL, Sentry, Redis, tenant-isolation tests, verified backups.",

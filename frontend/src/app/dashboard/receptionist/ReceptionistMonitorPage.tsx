@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { PhoneCallIcon, BellRingIcon, LanguagesIcon, DollarSignIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { KpiCard } from "../components/KpiCard";
@@ -8,6 +8,8 @@ import { BookingPipelineFunnel } from "./BookingPipelineFunnel";
 import { OmnichannelHubCard } from "./OmnichannelHubCard";
 import { SystemHealthCard } from "./SystemHealthCard";
 import { SystemPromptCard } from "./SystemPromptCard";
+import { MarketSettingsCard } from "./MarketSettingsCard";
+import { HumanAvailabilityCard } from "./HumanAvailabilityCard";
 import { usePlan } from "../plan/PlanContext";
 import { getAIReceptionistOverview, type AIReceptionistOverviewResponse } from "../../../api/entities";
 
@@ -98,6 +100,8 @@ export function ReceptionistMonitorPage() {
         </>
       )}
 
+      <MarketSettingsCard />
+      <HumanAvailabilityCard />
       <SystemPromptCard />
     </>
   );

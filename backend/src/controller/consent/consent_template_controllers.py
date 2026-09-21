@@ -17,7 +17,7 @@ class ConsentTemplateController:
         self.service = ConsentTemplateService()
 
     async def create_template(self, db: AsyncSession, user: User, data: CreateConsentTemplateRequest) -> ConsentTemplateResponse:
-        template = await self.service.create_template(db, user.practice_id, data.document_type, data.body)
+        template = await self.service.create_template(db, user.practice_id, data.document_type, data.body, data.sections)
         return ConsentTemplateResponse.model_validate(template)
 
     async def list_templates(self, db: AsyncSession, user: User) -> list[ConsentTemplateResponse]:
@@ -27,5 +27,7 @@ class ConsentTemplateController:
     async def update_template(
         self, db: AsyncSession, user: User, template_id: UUID, data: UpdateConsentTemplateRequest
     ) -> ConsentTemplateResponse:
-        template = await self.service.update_template(db, user.practice_id, template_id, data.body, data.is_active)
+        template = await self.service.update_template(
+            db, user.practice_id, template_id, data.body, data.is_active, data.sections
+        )
         return ConsentTemplateResponse.model_validate(template)

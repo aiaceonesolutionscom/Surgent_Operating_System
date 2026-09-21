@@ -1,24 +1,30 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { LayoutDashboardIcon, CalendarIcon, FileTextIcon, ReceiptIcon, CalendarPlusIcon, SendIcon } from "lucide-react";
+import { LayoutDashboardIcon, CalendarIcon, FileTextIcon, ReceiptIcon, CalendarPlusIcon, SendIcon, UserIcon } from "lucide-react";
 import type { Patient } from "./types";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 import { PatientHeaderCard } from "./PatientHeaderCard";
 import { PatientTabShell, type PatientTab } from "./PatientTabShell";
 import { PatientOverviewTab } from "./PatientOverviewTab";
 import { PatientAppointmentsTab } from "./PatientAppointmentsTab";
+import { PatientMedicalProfile } from "./PatientMedicalProfile";
 import { DoctorAssignmentControl } from "./DoctorAssignmentControl";
 import { ArchivePatientControl } from "./ArchivePatientControl";
 import { ConsentDocumentsList } from "../clinical/ConsentDocumentsList";
+import { VisitDocumentsList } from "../clinical/VisitDocumentsList";
 import { InvoicesSection } from "../billing-invoices/InvoicesSection";
 import { usePlan } from "../plan/PlanContext";
 import { enablePatientPortal, resendPatientPortalInvite } from "../../../api/entities";
 
-// Receptionist's Front-Desk Operations view — no clinical notes, no medical
-// profile, no clinical photos ("do not render empty cards... if the
-// receptionist does not have permission, simply don't render those
-// sections" — matches the backend's own Owner/Doctor-only gate on those
-// domains, so there's nothing here to even fetch).
+// Receptionist's Front-Desk Operations view — no clinical notes, no clinical
+// photos ("do not render empty cards... if the receptionist does not have
+// permission, simply don't render those sections" — matches the backend's
+// own Owner/Doctor-only gate on those domains, so there's nothing here to
+// even fetch). PatientMedicalProfile IS shown (front desk needs to edit
+// name/contact/DOB/emergency contact/insurance at check-in) but with
+// hideClinicalFields — the backend rejects any write touching allergies/
+// medications/surgical history/smoking status/previous procedures from this
+// role (see patients_controllers.py's _CLINICAL_FIELDS).
 export function ReceptionistPatientDetail({ patient: initialPatient }: { patient: Patient }) {
   const { authedFetch } = usePlan();
   const [patient, setPatient] = useState(initialPatient);
@@ -47,8 +53,9 @@ export function ReceptionistPatientDetail({ patient: initialPatient }: { patient
 
   const tabs: PatientTab[] = [
     { id: "overview", label: "Overview", icon: LayoutDashboardIcon, content: <PatientOverviewTab patient={patient} variant="receptionist" /> },
+    { id: "profile", label: "Profile", icon: UserIcon, content: <PatientMedicalProfile patientId={patient.id} /> },
     { id: "appointments", label: "Appointments", icon: CalendarIcon, content: <PatientAppointmentsTab patientId={patient.id} /> },
-    { id: "consents", label: "Consents / Forms", icon: FileTextIcon, content: <ConsentDocumentsList patientId={patient.id} /> },
+    { id: "consents", label: "Consents / Forms", icon: FileTextIcon, content: <div><VisitDocumentsList patientId={patient.id} /><ConsentDocumentsList patientId={patient.id} /></div> },
     { id: "billing", label: "Billing", icon: ReceiptIcon, content: <InvoicesSection patientId={patient.id} /> }
   ];
 
