@@ -270,17 +270,15 @@ async def stripe_webhook(
     except (stripe.error.SignatureVerificationError, ValueError) as exc:
         raise AppException(f"Invalid Stripe webhook signature: {exc}", status_code=400)
 
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
+    event_type = event["type"]
+    data = event["data"]["object"]
+
+    # --- checkout.session.completed (existing) ---
+    if event_type == "checkout.session.completed":
+        session = data
         metadata = session.get("metadata") or {}
 
         if metadata.get("type") == "invoice_payment" and metadata.get("invoice_id"):
-            # Patient-facing one-off invoice payment — a completely separate
-            # flow from the PendingSignup/subscription path below, sharing
-            # only this endpoint (see PaymentService.create_invoice_checkout_session).
-            # No user/practice context exists in a webhook call, so the
-            # invoice's own practice_id (not a client-supplied one) is what
-            # scopes this write.
             invoice_id = UUID(metadata["invoice_id"])
             result = await db.execute(select(Invoice).where(Invoice.id == invoice_id))
             invoice_row = result.scalar_one_or_none()
@@ -313,11 +311,106 @@ async def stripe_webhook(
             )
             pending = result.scalar_one_or_none()
             if pending is not None:
-                # Marks the checkout as paid. Provisioning the real Practice/
-                # User/Subscription from this record is a deliberate follow-up —
-                # see the NOTE in models/pending_signup.py for why a Subscription
-                # row can't be written directly here yet.
                 pending.completed_at = datetime.now(timezone.utc)
                 await db.flush()
+
+    # --- customer.subscription.created ---
+    elif event_type == "customer.subscription.created":
+        sub = data
+        sub_id = sub["id"]
+        # Find the practice by matching the subscription to a pending signup
+        # or by the practice's existing subscription
+        result = await db.execute(
+            select(Subscription).where(Subscription.stripe_subscription_id == sub_id)
+        )
+        subscription = result.scalar_one_or_none()
+        if subscription is None:
+            # Try to find via pending signup (client_reference_id = pending.id)
+            # This happens when checkout completes and subscription is created
+            pending_id = sub.get("metadata", {}).get("pending_signup_id")
+            if pending_id:
+                result = await db.execute(select(PendingSignup).where(PendingSignup.id == UUID(pending_id)))
+                pending = result.scalar_one_or_none()
+                if pending and pending.practice_id:
+                    result = await db.execute(
+                        select(Subscription).where(Subscription.practice_id == pending.practice_id)
+                    )
+                    subscription = result.scalar_one_or_none()
+        if subscription:
+            subscription.stripe_subscription_id = sub_id
+            subscription.price = (sub.get("items", {}).get("data", [{}])[0].get("price", {}).get("unit_amount") or 0) / 100
+            # If subscription has a trial_end, use it; otherwise keep our calculated end_date
+            trial_end = sub.get("trial_end")
+            if trial_end:
+                subscription.end_date = datetime.fromtimestamp(trial_end, tz=timezone.utc).date()
+            # Status will be updated by customer.subscription.updated when trial ends
+            logger.info("Linked Stripe subscription %s to practice %s", sub_id, subscription.practice_id)
+
+    # --- customer.subscription.updated ---
+    elif event_type == "customer.subscription.updated":
+        sub = data
+        sub_id = sub["id"]
+        result = await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == sub_id))
+        subscription = result.scalar_one_or_none()
+        if subscription:
+            status = sub.get("status")
+            if status == "active":
+                subscription.status = SubscriptionStatus.ACTIVE
+            elif status == "trialing":
+                subscription.status = SubscriptionStatus.TRIAL
+            elif status == "past_due":
+                subscription.status = SubscriptionStatus.PAST_DUE
+            elif status == "canceled":
+                subscription.status = SubscriptionStatus.CANCELLED
+            elif status == "unpaid":
+                subscription.status = SubscriptionStatus.EXPIRED
+
+            # Update price if changed
+            price_data = sub.get("items", {}).get("data", [{}])[0].get("price", {})
+            if price_data.get("unit_amount"):
+                subscription.price = price_data["unit_amount"] / 100
+
+            # Update trial end if present
+            trial_end = sub.get("trial_end")
+            if trial_end:
+                subscription.end_date = datetime.fromtimestamp(trial_end, tz=timezone.utc).date()
+
+            logger.info("Updated subscription %s status=%s", sub_id, subscription.status.value)
+
+    # --- customer.subscription.deleted ---
+    elif event_type == "customer.subscription.deleted":
+        sub = data
+        sub_id = sub["id"]
+        result = await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == sub_id))
+        subscription = result.scalar_one_or_none()
+        if subscription:
+            subscription.status = SubscriptionStatus.CANCELLED
+            logger.info("Cancelled subscription %s", sub_id)
+
+    # --- invoice.paid ---
+    elif event_type == "invoice.paid":
+        invoice = data
+        sub_id = invoice.get("subscription")
+        if sub_id:
+            result = await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == sub_id))
+            subscription = result.scalar_one_or_none()
+            if subscription:
+                # Record payment for the subscription renewal
+                amount_paid = (invoice.get("amount_paid") or 0) / 100
+                if amount_paid > 0:
+                    subscription.status = SubscriptionStatus.ACTIVE
+                    # Could create a payment record here for audit trail
+                    logger.info("Invoice paid for subscription %s, amount=%s", sub_id, amount_paid)
+
+    # --- invoice.payment_failed ---
+    elif event_type == "invoice.payment_failed":
+        invoice = data
+        sub_id = invoice.get("subscription")
+        if sub_id:
+            result = await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == sub_id))
+            subscription = result.scalar_one_or_none()
+            if subscription:
+                subscription.status = SubscriptionStatus.PAST_DUE
+                logger.warning("Invoice payment failed for subscription %s", sub_id)
 
     return {"received": True}

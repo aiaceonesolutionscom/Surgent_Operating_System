@@ -38,7 +38,8 @@ class CheckoutService:
         # DB-backed lookup (models/plan.py) — an admin editing this plan's
         # price/stripe_price_id in the admin panel changes what checkout
         # actually charges, with no code change or deploy required.
-        plan = await self.plans.get_plan_by_tier(db, tier)
+        # Use _normalize_for_checkout so SOLO (hidden trial) maps to PRACTICE
+        plan = await self.plans.get_plan_by_tier(db, self.plans._normalize_for_checkout(tier))
         if plan is None or not plan.is_active:
             raise AppException(f"Unknown or unsupported plan tier: {plan_tier}")
         if plan.is_custom_pricing:

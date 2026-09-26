@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.practice import Practice, PracticeStatus
 from src.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
+from src.models.plan import Plan
 from src.models.agent_config import AgentConfig
 from src.models.agent_costing import AgentCosting
 from src.models.user import User
@@ -82,6 +83,10 @@ class AdminService:
         subs_by_practice = await self._active_subscriptions(db)
         enabled_counts = await self._enabled_agent_counts(db)
 
+        # Fetch all plans for fallback pricing
+        plans_result = await db.execute(select(Plan))
+        plans_by_tier = {p.tier: p for p in plans_result.scalars().all()}
+
         # Per-practice agent configs, batched.
         practice_ids = [p.id for p in practices]
         configs_result = await db.execute(select(AgentConfig).where(AgentConfig.practice_id.in_(practice_ids))) if practice_ids else None
@@ -97,7 +102,12 @@ class AdminService:
                 continue
             configs = configs_by_practice.get(practice.id, [])
             cost = self.estimated_monthly_cost_for_configs(configs, costing_map)
-            revenue = sub.price if (sub and sub.price is not None) else Decimal("0")
+            plan = plans_by_tier.get(sub.tier) if sub else None
+            revenue = (
+                float(sub.price) if (sub and sub.price is not None)
+                else float(plan.price) if (plan and plan.price is not None)
+                else 0.0
+            )
             rows.append({
                 "id": practice.id,
                 "name": practice.name,
@@ -108,6 +118,7 @@ class AdminService:
                 "agents_enabled_count": enabled_counts.get(practice.id, 0),
                 "estimated_monthly_cost": cost,
                 "estimated_monthly_revenue": revenue,
+                "estimated_monthly_revenue_is_estimate": sub is None or sub.price is None,
                 "joined_at": practice.created_at,
             })
         return rows
@@ -178,6 +189,12 @@ class AdminService:
             )
         ).scalars().first()
 
+        # Fetch Plan for fallback pricing
+        plan = None
+        if sub:
+            plan_result = await db.execute(select(Plan).where(Plan.tier == sub.tier))
+            plan = plan_result.scalar_one_or_none()
+
         costing_map = await self._agent_costing_map(db)
         configs = (await db.execute(select(AgentConfig).where(AgentConfig.practice_id == practice_id))).scalars().all()
 
@@ -202,7 +219,12 @@ class AdminService:
             "address": practice.address,
             "plan_tier": sub.tier.value if sub else SubscriptionTier.PRACTICE.value,
             "subscription_status": sub.status.value if sub else "none",
-            "estimated_monthly_revenue": sub.price if (sub and sub.price is not None) else Decimal("0"),
+            "estimated_monthly_revenue": (
+                float(sub.price) if (sub and sub.price is not None)
+                else float(plan.price) if (plan and plan.price is not None)
+                else 0.0
+            ),
+            "estimated_monthly_revenue_is_estimate": sub is None or sub.price is None,
             "estimated_monthly_cost": self.estimated_monthly_cost_for_configs(configs, costing_map),
             "agent_breakdown": breakdown,
             "joined_at": practice.created_at,

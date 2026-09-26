@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -104,9 +105,16 @@ class LandingChatService:
         conversation_id: str | None,
         message_text: str,
         context: str | None = None,
+        practice_id: UUID | None = None,
     ) -> dict:
-        practice, conversation = await self._start_turn(db, conversation_id, message_text, context)
-        reply = await self.llm.chat_fast(await self._recent_history(db, conversation.id), system_prompt=ARIA_SYSTEM_PROMPT, max_tokens=350)
+        practice, conversation = await self._start_turn(db, conversation_id, message_text, context, practice_id)
+        # Use tier="low" to route through Mistral (not Groq's reasoning model)
+        reply = await self.llm.chat(
+            await self._recent_history(db, conversation.id),
+            system_prompt=ARIA_SYSTEM_PROMPT,
+            tier="low",
+            max_tokens=350,
+        )
         return await self._finish_turn(db, practice, conversation, reply)
 
     async def handle_message_stream(
@@ -115,6 +123,7 @@ class LandingChatService:
         conversation_id: str | None,
         message_text: str,
         context: str | None = None,
+        practice_id: UUID | None = None,
     ):
         """SSE twin of handle_message() — yields the reply token-by-token as
         it streams from the LLM, then (once the full reply is assembled)
@@ -123,12 +132,18 @@ class LandingChatService:
         yields one final "done" event with everything the non-streaming
         response returns, so the frontend can render the same booking/lead
         confirmation bubbles it always has."""
-        practice, conversation = await self._start_turn(db, conversation_id, message_text, context)
+        practice, conversation = await self._start_turn(db, conversation_id, message_text, context, practice_id)
         history = await self._recent_history(db, conversation.id)
 
         chunks: list[str] = []
         try:
-            async for delta in self.llm.chat_fast_stream(history, system_prompt=ARIA_SYSTEM_PROMPT, max_tokens=350):
+            # Use chat_stream with tier="low" to use Mistral (not Groq's reasoning model)
+            async for delta in self.llm.chat_stream(
+                messages=history,
+                system_prompt=ARIA_SYSTEM_PROMPT,
+                tier="low",
+                max_tokens=350,
+            ):
                 chunks.append(delta)
                 yield {"type": "chunk", "text": delta}
         except Exception as exc:
@@ -140,10 +155,14 @@ class LandingChatService:
         yield {"type": "done", **result}
 
     async def _start_turn(
-        self, db: AsyncSession, conversation_id: str | None, message_text: str, context: str | None
+        self, db: AsyncSession, conversation_id: str | None, message_text: str, context: str | None, practice_id: UUID | None = None
     ) -> tuple[Practice | None, Conversation]:
-        result = await db.execute(select(Practice).order_by(Practice.created_at))
-        practice = result.scalars().first()
+        if practice_id:
+            practice = await db.get(Practice, practice_id)
+        else:
+            # Fallback to oldest practice for backward compatibility
+            result = await db.execute(select(Practice).order_by(Practice.created_at))
+            practice = result.scalars().first()
         conversation = await self._find_or_create_conversation(db, practice.id if practice else None, conversation_id, context)
         db.add(
             Message(
@@ -368,6 +387,8 @@ class LandingChatService:
         if not name or not email:
             raise AppException("Sales lead is incomplete — ask the buyer for their name and email.", status_code=400)
 
+        from datetime import datetime, timedelta, timezone
+
         lead = SalesLead(
             full_name=name,
             email=email,
@@ -377,6 +398,7 @@ class LandingChatService:
             source=SalesLeadSource.ARIA_LANDING_CHAT,
             status=SalesLeadStatus.NEW,
             conversation_id=conversation.id,
+            sla_deadline=datetime.now(timezone.utc) + timedelta(hours=24),
         )
         db.add(lead)
         db.flush()

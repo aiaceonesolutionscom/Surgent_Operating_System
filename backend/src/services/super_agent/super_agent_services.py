@@ -126,6 +126,41 @@ class SuperAgentService:
         await db.flush()
         return AskSuperAgentResponse(session_id=conversation.id, answer=answer)
 
+    async def ask_stream(
+        self, db: AsyncSession, question: str, session_id: UUID | None = None
+    ):
+        """SSE streaming twin of ask() — streams the answer token-by-token."""
+        conversation = await self._get_or_create_session(db, session_id)
+        db.add(Message(conversation_id=conversation.id, role=MessageRole.STAFF, content=question))
+        await db.flush()
+
+        snapshot = await self.build_snapshot(db)
+        fallback_answer = self._fallback_answer(snapshot, question)
+
+        chunks: list[str] = []
+        try:
+            async for delta in self.llm.chat_stream(
+                messages=[{"role": "user", "content": question}],
+                system_prompt=(
+                    SYSTEM_PROMPT + "\n\nCurrent platform snapshot (JSON):\n" + json.dumps(snapshot, default=str)
+                ),
+                tier="low",
+                max_tokens=400,
+            ):
+                chunks.append(delta)
+                yield {"type": "chunk", "text": delta}
+        except Exception:
+            # Fallback to deterministic answer on streaming failure
+            for ch in fallback_answer:
+                yield {"type": "chunk", "text": ch}
+            answer = fallback_answer
+        else:
+            answer = "".join(chunks) or fallback_answer
+
+        db.add(Message(conversation_id=conversation.id, role=MessageRole.AGENT, content=answer))
+        await db.commit()
+        yield {"type": "done", "session_id": str(conversation.id)}
+
     async def _get_or_create_session(self, db: AsyncSession, session_id: UUID | None) -> Conversation:
         if session_id is not None:
             result = await db.execute(

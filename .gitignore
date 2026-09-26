@@ -69,6 +69,10 @@ Thumbs.db
 lets-scroll-main/
 lets-scroll-assets/
 
+# --- PDF extraction artifacts (local-only) -----------------------------------
+# Extracted text from PDFs — not source code, safe to delete/re-extract.
+*_extracted.txt
+
 # --- Large binaries that shouldn't live in git -----------------------------
 # Business decks / pitch PDFs at repo root — keep out of version control.
 AIACEONE_Investment.pdf

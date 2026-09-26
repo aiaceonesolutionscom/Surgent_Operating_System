@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,8 @@ class LandingChatMessageRequest(BaseModel):
     # Optional context blob from the marketing site (e.g. the hero headline
     # the visitor clicked on), saved onto the conversation.
     context: Optional[str] = None
+    # Optional practice_id for practice-aware routing (from subdomain/URL param)
+    practice_id: Optional[uuid.UUID] = None
 
 
 @router.post("/message")
@@ -38,6 +40,7 @@ async def landing_chat_message(
         str(data.conversation_id) if data.conversation_id else None,
         data.message,
         context=data.context,
+        practice_id=data.practice_id,
     )
 
 
@@ -52,5 +55,6 @@ async def landing_chat_message_stream(
             str(data.conversation_id) if data.conversation_id else None,
             data.message,
             context=data.context,
+            practice_id=data.practice_id,
         )
     )

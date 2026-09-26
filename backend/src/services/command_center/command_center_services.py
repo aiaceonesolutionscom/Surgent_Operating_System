@@ -13,6 +13,7 @@ from src.models.message import Message, MessageRole
 from src.models.recovery_journal import RecoveryJournal
 from src.models.invoice import Invoice, InvoiceStatus
 from src.models.subscription import SubscriptionTier
+from src.models.agent_config import AgentConfig
 from src.services.llm.llm_service import LLMService
 from src.services.practice.plan_capabilities import allows_category
 from src.schemas.command_center import AskCommandCenterResponse, CommandCenterStep
@@ -285,10 +286,18 @@ class CommandCenterService:
             )
         )
         attention_count = attention_result.scalar_one()
+        
+        # Get active agent configs for this practice
+        agent_configs = await db.execute(
+            select(AgentConfig).where(AgentConfig.practice_id == practice_id, AgentConfig.enabled == True)
+        )
+        active_agents = list(agent_configs.scalars().all())
+        agent_names = [a.agent_type for a in active_agents]
+        
         if not patients:
-            return f"No patients on file yet. {attention_count} conversations currently need staff attention."
+            return f"No patients on file yet. {attention_count} conversations currently need staff attention. Active agents: {', '.join(agent_names) if agent_names else 'None configured'}."
         names = ", ".join(f"{p.first_name} {p.last_name}" for p in patients)
-        return f"{len(patients)} most recent patients: {names}. {attention_count} conversations currently need staff attention."
+        return f"{len(patients)} most recent patients: {names}. {attention_count} conversations currently need staff attention. Active agents: {', '.join(agent_names) if agent_names else 'None configured'}."
 
     async def _handle_consultation(self, db: AsyncSession, practice_id: UUID) -> str:
         now = datetime.now(timezone.utc)
@@ -314,6 +323,17 @@ class CommandCenterService:
             select(func.count()).select_from(Patient).where(Patient.practice_id == practice_id, Patient.needs_surgery.is_(True))
         )
         surgery_count = surgery_count_result.scalar_one()
+        
+        # Get agent configs for consultation category
+        agent_configs = await db.execute(
+            select(AgentConfig).where(
+                AgentConfig.practice_id == practice_id, 
+                AgentConfig.enabled == True,
+                AgentConfig.agent_type.in_(["lead_qualification", "patient_intake", "consultation_assistant"])
+            )
+        )
+        active_agents = list(agent_configs.scalars().all())
+        agent_names = [a.agent_type for a in active_agents]
 
         parts = []
         if patients:
@@ -323,6 +343,8 @@ class CommandCenterService:
             parts.append(f"{len(appointments)} upcoming appointments scheduled.")
         if surgery_count:
             parts.append(f"{surgery_count} patients flagged as needing surgery.")
+        if agent_names:
+            parts.append(f"Active consultation agents: {', '.join(agent_names)}")
         return " ".join(parts) if parts else "No consultation records (chief complaints), upcoming appointments, or surgery-flagged patients on file yet."
 
     async def _handle_post_care(self, db: AsyncSession, practice_id: UUID) -> str:
@@ -334,11 +356,28 @@ class CommandCenterService:
             .limit(5)
         )
         journals = list(result.scalars().all())
+        
+        # Get agent configs for post-care category
+        agent_configs = await db.execute(
+            select(AgentConfig).where(
+                AgentConfig.practice_id == practice_id, 
+                AgentConfig.enabled == True,
+                AgentConfig.agent_type.in_(["post_op_recovery", "marketing_retention"])
+            )
+        )
+        active_agents = list(agent_configs.scalars().all())
+        agent_names = [a.agent_type for a in active_agents]
+        
         if not journals:
-            return "No recovery journals on file yet."
-        scored = [j.healing_score for j in journals if j.healing_score is not None]
-        avg_note = f" Average healing score {sum(scored) / len(scored):.0f}." if scored else ""
-        return f"{len(journals)} active recovery journals on file.{avg_note}"
+            result_str = "No recovery journals on file yet."
+        else:
+            scored = [j.healing_score for j in journals if j.healing_score is not None]
+            avg_note = f" Average healing score {sum(scored) / len(scored):.0f}." if scored else ""
+            result_str = f"{len(journals)} active recovery journals on file.{avg_note}"
+        
+        if agent_names:
+            result_str += f" Active post-care agents: {', '.join(agent_names)}"
+        return result_str
 
     async def list_sessions(self, db: AsyncSession, practice_id: UUID) -> list[Conversation]:
         result = await db.execute(
@@ -371,7 +410,24 @@ class CommandCenterService:
             )
         )
         invoices = list(result.scalars().all())
+        
+        # Get agent configs for business category
+        agent_configs = await db.execute(
+            select(AgentConfig).where(
+                AgentConfig.practice_id == practice_id, 
+                AgentConfig.enabled == True,
+                AgentConfig.agent_type.in_(["finance_agent", "main_agent"])
+            )
+        )
+        active_agents = list(agent_configs.scalars().all())
+        agent_names = [a.agent_type for a in active_agents]
+        
         if not invoices:
-            return "No pending or overdue invoices on file yet."
-        total = sum(float(inv.total_amount) for inv in invoices)
-        return f"{len(invoices)} pending/overdue invoices totaling ${total:,.2f}."
+            result_str = "No pending or overdue invoices on file yet."
+        else:
+            total = sum(float(inv.total_amount) for inv in invoices)
+            result_str = f"{len(invoices)} pending/overdue invoices totaling ${total:,.2f}."
+        
+        if agent_names:
+            result_str += f" Active business agents: {', '.join(agent_names)}"
+        return result_str

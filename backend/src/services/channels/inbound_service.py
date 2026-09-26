@@ -27,6 +27,7 @@ from src.services.patient_portal.patient_intake_service import PatientIntakeServ
 from src.services.visit_documents.visit_document_service import VisitDocumentService
 from src.services.billing.refund_services import RefundService
 from src.services.ai_receptionist.human_availability_service import HumanAvailabilityService
+from src.services.ai_receptionist.emergency_triage_service import EmergencyTriageService
 from src.models.refund_request import RefundRequestedByType
 from src.models.visit_document import VisitDocument, VisitDocumentGeneratedBy
 from src.models.patient import PregnancyStatus
@@ -258,6 +259,7 @@ class InboundService:
         self.visit_documents = VisitDocumentService()
         self.refunds = RefundService()
         self.human_availability = HumanAvailabilityService()
+        self.emergency_triage = EmergencyTriageService()
         self.locale = LocaleService()
 
     async def handle_whatsapp_message(
@@ -393,6 +395,27 @@ class InboundService:
                 "Locale resolution failed for patient %s (conversation %s)",
                 patient.id, conversation.id,
             )
+
+        # --- EMERGENCY TRIAGE ---
+        # Check for medical emergencies BEFORE generating AI reply.
+        # If emergency detected, conversation is flagged NEEDS_ATTENTION and
+        # staff are notified immediately. The AI will NOT generate a reply.
+        is_emergency, emergency_reason = await self.emergency_triage.check_for_emergency(
+            db, practice.id, patient, conversation, message_text
+        )
+        if is_emergency:
+            # Emergency was escalated - log and return without AI reply
+            await db.commit()
+            return {
+                "handled": True,
+                "practice_id": str(practice.id),
+                "patient_id": str(patient.id),
+                "conversation_id": str(conversation.id),
+                "reply": None,
+                "sent": False,
+                "emergency_escalated": True,
+                "emergency_reason": emergency_reason,
+            }
 
         # 5. Generate AI reply using conversation history + real booking/
         # escalation tools — if this fails for any reason (LLM rate limit,

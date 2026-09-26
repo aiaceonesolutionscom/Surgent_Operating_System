@@ -9,9 +9,7 @@ import {
   BarChart3Icon,
   SettingsIcon,
   UserCircleIcon,
-  ActivityIcon,
   ChevronDownIcon,
-  LayersIcon,
   CreditCardIcon,
   LockIcon,
   PhoneCallIcon,
@@ -25,7 +23,6 @@ import {
   SparklesIcon,
   FileTextIcon
 } from "lucide-react";
-import { AGENT_CATEGORIES } from "../../../data/agents";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 import { usePlan } from "../plan/PlanContext";
 import type { Role } from "../../../data/roles";
@@ -222,7 +219,7 @@ function SectionLabel({ collapsed, children }: { collapsed: boolean; children: R
 }
 
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
-  const { allowsCategory, can, role, permissions } = usePlan();
+  const { can, role, permissions } = usePlan();
   const { summary, refetch: refetchOverview } = useOverview();
   const needsAttentionCount = summary?.needs_attention ?? 0;
 
@@ -248,22 +245,6 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const moneyChildren: NavItem[] = [
   { label: "Finance", to: DASHBOARD_ROUTES.financeOverview, icon: WalletIcon, allowedRoles: ["owner", "receptionist"] }];
 
-
-  const CATEGORY_LOGOS: Record<string, string> = {
-    "front-desk": "/agent-logos/Front Desk & Intake.png",
-    "consultation": "/agent-logos/Consultation & Screening.png",
-    "surgery": "/agent-logos/Surgery Management.png",
-    "post-care": "/agent-logos/Post-Surgery Care.png",
-    "business": "/agent-logos/Business & Operations.png",
-  };
-
-  const agentChildren: NavItem[] = AGENT_CATEGORIES.map((c) => ({
-    label: c.label,
-    to: DASHBOARD_ROUTES.agentCategory(c.id),
-    icon: ActivityIcon,
-    imgSrc: CATEGORY_LOGOS[c.id],
-    locked: !allowsCategory(c.id)
-  }));
 
   const analyticsItem: NavItem[] = [
   { label: "Analytics", to: DASHBOARD_ROUTES.analytics, icon: BarChart3Icon, locked: !can("analytics"), allowedRoles: ["owner", "doctor"], requiresPermission: "view_analytics" }];
@@ -309,8 +290,11 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           </div>
         </div>
 
-        {/* OPERATIONS — the back-office layer: money, analytics, the agent
-            catalogue, and settings. */}
+        {/* OPERATIONS — the back-office layer: money, analytics and
+            settings. The per-category "Agents" nav group was removed: the
+            command centre (Main Agent) is the single entry point for
+            everything the agents do, so the sidebar no longer duplicates
+            them. */}
         <div className="mt-5">
           <SectionLabel collapsed={collapsed}>Operations</SectionLabel>
           <div className={collapsed ? "mt-0 space-y-0.5" : "mt-2 space-y-0.5"}>
@@ -318,7 +302,6 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
             <CollapsibleNavGroup label="Money" icon={WalletIcon} collapsed={collapsed} children={visibleMoney} />
             }
             {visibleFor(analyticsItem, role, permissions).map((item) => <NavRow key={item.to} item={item} collapsed={collapsed} />)}
-            <CollapsibleNavGroup label="Agents" icon={LayersIcon} imgSrc="/agent-logos/agents.png" collapsed={collapsed} children={visibleFor(agentChildren, role, permissions)} />
           </div>
           {visibleSettings.length > 0 &&
           <div className="mt-4">

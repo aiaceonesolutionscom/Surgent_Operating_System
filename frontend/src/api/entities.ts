@@ -2202,9 +2202,15 @@ export interface InventoryItemResponse {
   category: string | null;
   unit: string | null;
   reorder_threshold: number | null;
+  is_implant: boolean;
   is_active: boolean;
+  unit_cost: number | null;
+  // Computed from the item's batches (see InventoryService), not a stored
+  // column — always the current real sum, never stale.
   on_hand_quantity: number;
   is_low_stock: boolean;
+  // Calculated: on_hand_quantity * unit_cost (null if unit_cost not set)
+  total_value: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -2215,6 +2221,8 @@ export interface CreateInventoryItemRequest {
   category?: string | null;
   unit?: string | null;
   reorder_threshold?: number | null;
+  is_implant?: boolean;
+  unit_cost?: number | null;
 }
 
 export interface UpdateInventoryItemRequest {
@@ -2223,7 +2231,9 @@ export interface UpdateInventoryItemRequest {
   category?: string | null;
   unit?: string | null;
   reorder_threshold?: number | null;
+  is_implant?: boolean;
   is_active?: boolean;
+  unit_cost?: number | null;
 }
 
 export interface InventoryBatchResponse {

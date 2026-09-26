@@ -26,6 +26,14 @@ class PlanService:
         # Solo was retired (migration b1a2c3d4e5f6): every solo subscription
         # became practice. A stale solo tier must resolve to the Practice plan,
         # NOT the deactivated SOLO Plan row still in the table.
+        # EXCEPTION: The repurposed SOLO tier is now a hidden 3-day Free Trial
+        # (migration 2260ede5e824) — only grantable by Super Admin. For public
+        # checkout/normalization, SOLO still maps to PRACTICE.
+        return SubscriptionTier.PRACTICE if tier == SubscriptionTier.SOLO else tier
+
+    @staticmethod
+    def _normalize_for_checkout(tier: SubscriptionTier) -> SubscriptionTier:
+        """Normalize tier for public checkout — SOLO always maps to PRACTICE."""
         return SubscriptionTier.PRACTICE if tier == SubscriptionTier.SOLO else tier
 
     async def get_plan_by_tier(self, db: AsyncSession, tier: SubscriptionTier | str) -> Plan | None:

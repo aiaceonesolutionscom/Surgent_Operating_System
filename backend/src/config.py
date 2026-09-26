@@ -144,7 +144,26 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
+    def validate_production(self) -> None:
+        """Fail fast in production if dev defaults are still in use."""
+        if self.app_env == "production":
+            errors: list[str] = []
+            if self.admin_password == "Aceone":
+                errors.append("ADMIN_PASSWORD must be changed from default in production")
+            if self.admin_jwt_secret == "aiaceone-admin-jwt-dev-secret-change-in-production":
+                errors.append("ADMIN_JWT_SECRET must be changed from default in production")
+            if self.patient_portal_jwt_secret == "aiaceone-patient-portal-jwt-dev-secret-change-in-production":
+                errors.append("PATIENT_PORTAL_JWT_SECRET must be changed from default in production")
+            if self.stripe_secret_key and "xxxx" in self.stripe_secret_key:
+                errors.append("STRIPE_SECRET_KEY appears to be a placeholder")
+            if self.stripe_webhook_secret and "xxxx" in self.stripe_webhook_secret:
+                errors.append("STRIPE_WEBHOOK_SECRET appears to be a placeholder")
+            if errors:
+                raise RuntimeError("Production config validation failed:\n- " + "\n- ".join(errors))
+
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    settings.validate_production()
+    return settings

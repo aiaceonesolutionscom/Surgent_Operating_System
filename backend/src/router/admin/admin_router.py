@@ -248,6 +248,17 @@ async def ask_super_agent(
     return await super_agent_service.ask(db, body.question, body.session_id)
 
 
+@router.post("/super-agent/ask/stream")
+async def ask_super_agent_stream(
+    body: AskSuperAgentRequest,
+    admin: AdminPrincipal = Depends(require_admin_token),
+    db: AsyncSession = Depends(get_db),
+):
+    """SSE streaming twin of ask_super_agent — streams the answer token-by-token."""
+    from src.server.sse import sse_response
+    return sse_response(super_agent_service.ask_stream(db, body.question, body.session_id))
+
+
 @router.get("/super-agent/sessions", response_model=list[SuperAgentSessionSummary])
 async def list_super_agent_sessions(
     admin: AdminPrincipal = Depends(require_admin_token),

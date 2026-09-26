@@ -65,9 +65,19 @@ Legend: ✅ Real & verified · 🟡 Real but partial/rough edges · 🔴 Mock/st
 | The AI agent layer (updated) | ✅ | **Re-architected since 2026-09-04.** Now 9 real agents across 4 categories — every one has a working backend endpoint answering with real data: receptionist (Aria), appointment_reminder, patient_intake, lead_qualification, consultation_assistant, main_agent (Command Center), finance_agent, post_op_recovery, marketing_retention. Plus a platform-wide **Super Agent** (`/super-admin/super-agent`) and **Aria** (marketing-site chat). All gated server-side by the practice's plan tier |
 | Owner Overview / Analytics dashboard | 🔴 | Deliberately still on mock data — an earlier, explicit decision in this project, not an oversight |
 | Post-op recovery journal | ✅ | Real now (was schema-only): `RecoveryJournal` tied to each `Surgery`, checkpoint-based (Day 1/3/7/14/1mo), plus a `post_op_recovery` agent and recovery dashboard |
-| Notification engine (SMS/email/WhatsApp/in-app unified) | 🔴 | Not built (Week 3) |
-| Audit logging | 🔴 | Not built (Week 4) |
+| Notification engine (SMS/email/WhatsApp/in-app unified) | 🟡 | Per-channel sends real (WhatsApp, SMS, Email); unified queue/engine still roadmapping (Week 3) |
+| Audit logging | ✅ | Real — `audit_logs` table + `AuditLogService` + Super Admin `/admin/audit-logs` (migration f44c25bdbd98) |
 | Automated test suite / CI | 🔴 | Not built (Week 4) — verification this whole month has been real, live, manual (real DB smoke scripts + real browser sessions), not automated regression tests |
+| Sentry error monitoring | ✅ | Integrated in `main.py:25-40`, `SENTRY_DSN` in config, `send_default_pii=False` |
+| Stripe subscription lifecycle | ✅ | Webhooks for `checkout.session.completed`, `customer.subscription.*`, `invoice.*` — trial→active, cancel/resume/upgrade routes at `/api/v1/billing/` |
+| Cancel/Resume/Upgrade | ✅ | Standard SaaS `cancel_at_period_end=true` via `PaymentService.cancel_subscription()` + `/billing` router |
+| Emergency Triage | ✅ | Keyword+LLM confirm → `NEEDS_ATTENTION` + staff notify; runs pre-reply in WhatsApp inbound flow |
+| Super Agent streaming | ✅ | `ask_stream` SSE endpoint at `/api/v1/super-admin/super-agent/ask/stream` |
+| SOLO tier repurposed | ✅ | Hidden 3-day Free Trial (Super Admin grant only, `display_order=-1`, `is_custom_pricing=true`) |
+| Plan trial_period_days | ✅ | Admin-configurable per plan (default 14), used in provisioning for `Subscription.end_date` |
+| Admin MRR fix | ✅ | NULL price falls back to `Plan.price`; `is_estimate` flag in response |
+| Landing chat practice-aware routing | ✅ | Optional `practice_id` param (subdomain/URL param) |
+| Lead funnel consolidation | ✅ | `DemoRequest` → `SalesLead` (source `demo_form`), `book_consultation` source added, 24hr SLA `sla_deadline` |
 
 **Bottom line:** the core clinical/operational workflow of a real clinic — from a
 patient's first contact through booking, check-in, consultation, treatment planning,
@@ -298,15 +308,16 @@ on someone (me, or whoever tests manually) happening to exercise that exact path
 
 | Risk | Why it breaks | Fix |
 |---|---|---|
-| Rate limiting is in-memory | Works for one backend process. The moment there are 2+ backend instances (needed for real uptime/scale), each has its own separate counter — a determined attacker (or just normal multi-instance load balancing) defeats it entirely | **Done (updated):** rate limiting is now Redis-backed (`RedisRateLimiter`) and **fails open** when Redis is unreachable — good enough for local dev, real protection once Redis runs in the deployment |
-| Green API WhatsApp poller is one background loop in one process | Same problem as above — two backend replicas would both poll the same WhatsApp instance, double-processing every incoming message (a patient could get two AI replies, or two staff notifications) | Needs a proper job queue (e.g. one dedicated worker process, or a leader-election lock) before running more than one backend instance |
+| Rate limiting is in-memory | Works for one backend process. The moment there are 2+ backend instances (needed for real uptime/scale), each has its own separate counter — a determined attacker (or just normal multi-instance load balancing) defeats it entirely | **Fixed (updated):** rate limiting is now Redis-backed (`RedisRateLimiter`) and **fails open** when Redis is unreachable — good enough for local dev, real protection once Redis runs in the deployment |
+| Green API WhatsApp poller is one background loop in one process | Same problem as above — two backend replicas would both poll the same WhatsApp instance, double-processing every incoming message (a patient could get two AI replies, or two staff notifications) | **Fixed:** poller now uses Redis-based distributed lock (`redis.set(..., nx=True, ex=...)`) — only one instance polls at a time. Needs proper job queue (Celery) for full multi-instance safety. |
 | The poller loops over **every** practice's WhatsApp instance every 3 seconds, in sequence | Fine for a handful of pilot clinics. At real scale (dozens+ practices) this becomes a slow, serial bottleneck and increases message-handling latency practice by practice | Needs to become concurrent (one task per instance) or move off polling to real webhooks once there's a public HTTPS endpoint (the webhook route already exists in code, just unused locally) |
-| No caching layer | Every dashboard load re-queries Postgres directly. Fine at pilot scale. Will need Redis-backed caching for hot read paths (Overview, Command Center) at real scale | Partial (updated): a Redis-backed landing-chat cache and OTP/book-draft stores now exist; broader caching of hot read paths is still premature |
+| No caching layer | Every dashboard load re-queries Postgres directly. Fine at pilot scale. Will need Redis-backed caching for hot read paths (Overview, Command Center) at real scale | **Partial (updated):** Redis-backed landing-chat cache, OTP store, booking-draft store now exist; broader caching of hot read paths is still premature |
 | Single Postgres instance, no read replicas | A single clinic won't notice. Dozens of clinics on one database will, eventually | Standard managed-Postgres scaling (read replicas, connection pooling) — a hosting-provider-level decision, not urgent yet |
 | Frontend ships as one large JavaScript bundle (~1MB) | Every visitor downloads the whole app on first load, including admin-only agent pages they may never use | Code-splitting (dynamic imports) — flagged by the build tool on every build already, straightforward but not yet done |
-| No error monitoring / alerting | Right now, "did anything break in production" means someone has to notice or a user has to complain | Add Sentry (or equivalent) before real customers — cheap, fast, should happen early in productionization |
+| No error monitoring / alerting | Right now, "did anything break in production" means someone has to notice or a user has to complain | **Fixed:** Sentry integrated (`main.py:25-40`, `SENTRY_DSN` in config) |
 | Real LLM/API costs aren't tracked per-use | The cost-estimation infrastructure exists (`AgentCosting`) but its actual usage counter is documented in the code itself as never incremented — there's a pricing *display*, not a real running spend total | Needs real per-call cost logging before this can honestly be shown to a paying clinic as "here's what your AI usage is costing" |
 | No automated backups verified | Whatever the hosting provider does by default, untested | Confirm and test a real backup/restore process before any real patient data is at stake |
+| No automated test suite / CI | Manual verification only — bugs like §5 only caught by live testing | Focused automated tests on highest-risk paths (tenant isolation, auth, billing math, consent immutability) before multi-clinic launch |
 
 None of this is a reason not to sell the product to a pilot clinic or two — it's
 exactly the list of what has to be true before selling to *many* clinics
@@ -427,8 +438,17 @@ updated for the 2026-09-12 rearchitecture:
    session.
 2. **Run Redis locally (WSL)** so rate limiting / OTP / booking-draft / cache paths
    stop failing open and can be exercised for real.
-3. **Security + hardening**: audit logging, the focused test suite, and a real
-   `CLERK_WEBHOOK_SECRET` — the highest-leverage items left.
+3. **Focused automated tests** — the highest-risk paths: tenant isolation (Clinic A can
+   never see Clinic B's data, even by guessing IDs), auth for all four roles,
+   billing math, and consent-signing immutability. This is the single highest-
+   leverage thing to build next, because §5's bug list is exactly the class of
+   bug this would catch automatically going forward.
+4. **Voice Inbound** — wire Twilio webhook (`/webhooks/twilio/voice`) with real
+   `<Gather>` + Deepgram STT + Groq LLM + Twilio TTS so "24/7 phone answering"
+   marketing claim becomes honest.
+5. **Security + hardening**: audit logging (already built), focused test suite,
+   real `CLERK_WEBHOOK_SECRET`, and a basic penetration-test-style review of
+   tenant isolation specifically.
 
 ---
 

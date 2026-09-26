@@ -5,8 +5,6 @@ import { ScrollToTop } from "./components/layout";
 // ── Lazy-loaded page components ──────────────────────────────────────────
 // Each import creates a separate chunk that is only fetched when the route
 // is actually visited — dramatically reducing the initial JS payload.
-const AgentsPage = React.lazy(() => import("./pages/AgentsPage").then(m => ({ default: m.AgentsPage })));
-const AgentDetailPage = React.lazy(() => import("./pages/AgentDetailPage").then(m => ({ default: m.AgentDetailPage })));
 const ChannelsPage = React.lazy(() => import("./pages/ChannelsPage").then(m => ({ default: m.ChannelsPage })));
 const DemoPage = React.lazy(() => import("./pages/DemoPage").then(m => ({ default: m.DemoPage })));
 const DashboardRouter = React.lazy(() => import("./app/dashboard/DashboardRouter").then(m => ({ default: m.DashboardRouter })));
@@ -55,8 +53,6 @@ export function App() {
         <DoctorApplyRecovery />
         <Routes>
           <Route path="/" element={<RoleHome />} />
-          <Route path="/agents" element={<AgentsPage />} />
-          <Route path="/agents/:slug" element={<AgentDetailPage />} />
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/demo" element={<DemoPage />} />
           <Route path="/sign-in/*" element={<SignInPage />} />

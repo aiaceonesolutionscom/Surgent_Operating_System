@@ -141,3 +141,29 @@ class PaymentService:
     async def cancel_subscription(self, stripe_subscription_id: str) -> dict:
         subscription = stripe.Subscription.modify(stripe_subscription_id, cancel_at_period_end=True)
         return {"status": subscription.status, "current_period_end": subscription.current_period_end}
+
+    async def resume_subscription(self, stripe_subscription_id: str) -> dict:
+        subscription = stripe.Subscription.modify(stripe_subscription_id, cancel_at_period_end=False)
+        return {"status": subscription.status, "current_period_end": subscription.current_period_end}
+
+    async def change_subscription_plan(self, stripe_subscription_id: str, new_price_id: str) -> dict:
+        # Get current subscription to find the subscription item to replace
+        subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+        item_id = subscription["items"]["data"][0]["id"]
+        # Replace the price
+        subscription = stripe.Subscription.modify(
+            stripe_subscription_id,
+            items=[{"id": item_id, "price": new_price_id}],
+            proration_behavior="create_prorations",
+        )
+        return {"status": subscription.status, "current_period_end": subscription.current_period_end}
+
+    async def get_subscription(self, stripe_subscription_id: str) -> dict:
+        subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+        return {
+            "id": subscription.id,
+            "status": subscription.status,
+            "current_period_end": subscription.current_period_end,
+            "cancel_at_period_end": subscription.cancel_at_period_end,
+            "items": subscription["items"]["data"],
+        }

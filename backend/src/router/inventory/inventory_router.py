@@ -38,10 +38,11 @@ async def create_item(
 
 @router.get("/items", response_model=list[InventoryItemResponse])
 async def list_items(
+    include_archived: bool = False,
     user: User = Depends(require_role(*_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    return await controller.list_items(db, user)
+    return await controller.list_items(db, user, include_archived=include_archived)
 
 
 @router.get("/items/{item_id}", response_model=InventoryItemResponse)

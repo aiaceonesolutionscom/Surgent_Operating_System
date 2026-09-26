@@ -2,6 +2,8 @@ from __future__ import annotations
 from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime, date
+from decimal import Decimal
+from typing import Optional
 
 
 class CreateInventoryItemRequest(BaseModel):
@@ -11,6 +13,7 @@ class CreateInventoryItemRequest(BaseModel):
     unit: str | None = None
     reorder_threshold: int | None = None
     is_implant: bool = False
+    unit_cost: Decimal | None = None
 
 
 class UpdateInventoryItemRequest(BaseModel):
@@ -21,6 +24,7 @@ class UpdateInventoryItemRequest(BaseModel):
     reorder_threshold: int | None = None
     is_implant: bool | None = None
     is_active: bool | None = None
+    unit_cost: Decimal | None = None
 
 
 class InventoryItemResponse(BaseModel):
@@ -33,10 +37,13 @@ class InventoryItemResponse(BaseModel):
     reorder_threshold: int | None
     is_implant: bool = False
     is_active: bool
+    unit_cost: Decimal | None = None
     # Computed from the item's batches (see InventoryService), not a stored
     # column — always the current real sum, never stale.
     on_hand_quantity: int = 0
     is_low_stock: bool = False
+    # Calculated: on_hand_quantity * unit_cost (null if unit_cost not set)
+    total_value: Decimal | None = None
     created_at: datetime
     updated_at: datetime
 

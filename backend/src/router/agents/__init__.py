@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from src.router.v1.webhooks.webhook_router import router as webhook_router
+from src.router.v1.billing.billing_router import router as subscription_billing_router
 from src.router.conversations.conversations_router import router as conversations_router
 from src.router.checkout.checkout_router import router as checkout_router
 from src.router.demo.demo_router import router as demo_router
@@ -52,6 +53,7 @@ agent_routers = [
     inbound_router,
     staff_message_router,
     webhook_router,
+    subscription_billing_router,
     conversations_router,
     checkout_router,
     demo_router,

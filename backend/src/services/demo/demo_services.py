@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.demo_request import DemoRequest
+from src.models.sales_lead import SalesLead, SalesLeadSource, SalesLeadStatus
 from src.services.email.resend_service import ResendService
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,22 @@ class DemoService:
             message=message,
         )
         db.add(request)
+        await db.flush()
+
+        # Also create a SalesLead for the platform sales team to track
+        # 24-hour SLA commitment
+        sla_deadline = datetime.now(timezone.utc) + timedelta(hours=24)
+        sales_lead = SalesLead(
+            full_name=name,
+            email=email,
+            phone=phone,
+            company=practice_name,
+            message=message,
+            source=SalesLeadSource.DEMO_FORM,
+            status=SalesLeadStatus.NEW,
+            sla_deadline=sla_deadline,
+        )
+        db.add(sales_lead)
         await db.flush()
 
         # The request is already captured at this point — a confirmation

@@ -25,8 +25,8 @@ class InventoryController:
         item = await self.service.create_item(db, user.practice_id, data)
         return InventoryItemResponse.model_validate(item)
 
-    async def list_items(self, db: AsyncSession, user: User) -> list[InventoryItemResponse]:
-        items = await self.service.list_items(db, user.practice_id)
+    async def list_items(self, db: AsyncSession, user: User, include_archived: bool = False) -> list[InventoryItemResponse]:
+        items = await self.service.list_items(db, user.practice_id, include_inactive=include_archived)
         return [InventoryItemResponse.model_validate(i) for i in items]
 
     async def get_item(self, db: AsyncSession, user: User, item_id: UUID) -> InventoryItemResponse:

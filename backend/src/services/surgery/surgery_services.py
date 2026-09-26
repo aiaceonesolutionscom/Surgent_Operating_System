@@ -230,7 +230,7 @@ class SurgeryService:
             await self.assert_doctor_available(db, practice_id, assistant_doctor_id, scheduled_date, duration_estimate_minutes)
 
         # An appointment link must be real, practice-local, and for the same
-        # patient — you can't pin a surgery for Furqan onto Salma's check-up.
+        # patient — you can't pin a surgery for one patient onto another's check-up.
         if scheduled_appointment_id is not None:
             appointment_result = await db.execute(
                 select(Appointment).where(

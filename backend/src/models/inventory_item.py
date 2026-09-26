@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
+from typing import ClassVar
 
-from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, func, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +24,8 @@ class InventoryItem(Base):
     sku: Mapped[str] = mapped_column(String(100), nullable=True)
     category: Mapped[str] = mapped_column(String(100), nullable=True)
     unit: Mapped[str] = mapped_column(String(50), nullable=True)  # e.g. "box", "vial", "pair"
+    # Unit cost for inventory valuation — optional, used for total value calculations
+    unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     # Below this on-hand quantity, the item shows as low-stock. Null means
     # no threshold has been set — never flagged low.
     reorder_threshold: Mapped[int] = mapped_column(Integer, nullable=True)
@@ -35,6 +39,14 @@ class InventoryItem(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Computed fields (not stored in DB, attached by service)
+    on_hand_quantity: int = 0
+    is_low_stock: bool = False
+    total_value: Decimal | None = None
+
+    # Tell SQLAlchemy these are not mapped columns
+    __allow_unmapped__ = True
 
     practice = relationship("Practice", back_populates="inventory_items")
     batches = relationship("InventoryBatch", back_populates="item", cascade="all, delete-orphan")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select, func
@@ -25,6 +26,7 @@ class InventoryService:
             sku=data.sku,
             category=data.category,
             unit=data.unit,
+            unit_cost=data.unit_cost,
             reorder_threshold=data.reorder_threshold,
             is_implant=data.is_implant,
         )
@@ -34,9 +36,14 @@ class InventoryService:
         await self._attach_on_hand(db, [item])
         return item
 
-    async def list_items(self, db: AsyncSession, practice_id: UUID) -> list[InventoryItem]:
-        query = select(InventoryItem).where(InventoryItem.practice_id == practice_id).order_by(InventoryItem.name)
-        result = await db.execute(query)
+    async def list_items(self, db: AsyncSession, practice_id: UUID, include_inactive: bool = False) -> list[InventoryItem]:
+        query = select(InventoryItem).where(InventoryItem.practice_id == practice_id)
+        if not include_inactive:
+            # Soft-deleted items (is_active = False) are archived, not shown in
+            # the working catalog — otherwise a deleted item keeps reappearing
+            # in the list and still looks actionable.
+            query = query.where(InventoryItem.is_active.is_(True))
+        result = await db.execute(query.order_by(InventoryItem.name))
         items = list(result.scalars().all())
         await self._attach_on_hand(db, items)
         return items
@@ -174,3 +181,8 @@ class InventoryService:
             on_hand = totals.get(item.id, 0)
             item.on_hand_quantity = on_hand
             item.is_low_stock = item.reorder_threshold is not None and on_hand <= item.reorder_threshold
+            # Calculate total value if unit_cost is set
+            if item.unit_cost is not None:
+                item.total_value = item.unit_cost * on_hand
+            else:
+                item.total_value = None

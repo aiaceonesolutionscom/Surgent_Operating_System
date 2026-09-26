@@ -18,6 +18,8 @@ class SalesLeadStatus(str, enum.Enum):
 
 class SalesLeadSource(str, enum.Enum):
     ARIA_LANDING_CHAT = "aria_landing_chat"
+    DEMO_FORM = "demo_form"
+    BOOK_CONSULTATION = "book_consultation"
 
 
 class SalesLead(Base):
@@ -44,5 +46,7 @@ class SalesLead(Base):
     )
     # The landing-chat conversation thread this lead came from.
     conversation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # SLA tracking: 24-hour response commitment from sales team
+    sla_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

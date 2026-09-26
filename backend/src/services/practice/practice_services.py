@@ -1,5 +1,6 @@
 from __future__ import annotations
 import secrets
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,7 +26,14 @@ class PracticeService:
 
     async def tier_for(self, db: AsyncSession, practice_id) -> SubscriptionTier:
         sub = await self.active_subscription_for(db, practice_id)
-        return sub.tier if sub else SubscriptionTier.PRACTICE
+        if sub:
+            # If trial has expired, treat as no subscription
+            if sub.status == SubscriptionStatus.TRIAL and sub.end_date and sub.end_date < date.today():
+                return SubscriptionTier.CUSTOM  # Restricted/expired trial
+            return sub.tier
+        # No subscription at all — return CUSTOM (restricted) instead of PRACTICE
+        # This forces the practice to go through proper signup/trial grant flow
+        return SubscriptionTier.CUSTOM
 
     async def get_practice(self, db: AsyncSession, practice_id) -> Practice | None:
         result = await db.execute(select(Practice).where(Practice.id == practice_id))

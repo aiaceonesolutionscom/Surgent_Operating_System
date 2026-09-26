@@ -23,7 +23,7 @@ export function useInventory(authedFetch: AuthedFetch) {
     try {
       setLoading(true);
       const data = await listInventoryItems(authedFetch);
-      setItems(data);
+      setItems(data || []);
     } catch {
       setItems([]);
     } finally {

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,7 @@ from src.models.pending_signup import PendingSignup
 from src.models.practice import Practice, PracticeStatus
 from src.models.user import User, UserRole
 from src.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
+from src.models.plan import Plan
 from src.models.agent_config import AgentConfig
 from src.services.practice.plan_capabilities import allowed_agent_slugs
 from src.server.exceptions import AppException
@@ -140,14 +141,26 @@ class ProvisioningService:
         if existing:
             return existing
 
+        # Look up the Plan for trial_period_days and price
+        tier_enum = SubscriptionTier(plan_tier)
+        plan_result = await db.execute(select(Plan).where(Plan.tier == tier_enum))
+        plan = plan_result.scalar_one_or_none()
+
+        trial_days = plan.trial_period_days if plan else 14
+        plan_price = float(plan.price) if plan and plan.price is not None else None
+
+        start_date = date.today()
+        end_date = start_date + timedelta(days=trial_days)
+
         subscription = Subscription(
             id=uuid.uuid4(),
             practice_id=practice.id,
-            tier=SubscriptionTier(plan_tier),
-            # 14-day free trial, not an immediate charge — see checkout_services.py's
-            # trial_period_days once real Stripe keys are configured.
+            tier=tier_enum,
             status=SubscriptionStatus.TRIAL,
-            start_date=date.today(),
+            start_date=start_date,
+            end_date=end_date,
+            price=plan_price,
+            # stripe_subscription_id will be populated via Stripe webhook
         )
         db.add(subscription)
         await db.flush()

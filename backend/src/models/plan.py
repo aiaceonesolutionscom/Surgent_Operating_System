@@ -39,6 +39,7 @@ class Plan(Base):
     max_social_channels: Mapped[int] = mapped_column(Integer, nullable=True)  # null == unlimited
     max_locations: Mapped[int] = mapped_column(Integer, nullable=True)        # null == unlimited
     has_analytics: Mapped[bool] = mapped_column(Boolean, default=False)
+    trial_period_days: Mapped[int] = mapped_column(Integer, default=14)       # admin-configurable per plan
     stripe_price_id: Mapped[str] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     highlight: Mapped[bool] = mapped_column(Boolean, default=False)
