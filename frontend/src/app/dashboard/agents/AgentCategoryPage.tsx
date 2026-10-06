@@ -1,4 +1,3 @@
-import React from "react";
 import { Link, useParams } from "react-router-dom";
 import { ActivityIcon } from "lucide-react";
 import { AGENT_CATEGORIES } from "../../../data/agents";

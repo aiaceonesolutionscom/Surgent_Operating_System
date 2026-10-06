@@ -1,4 +1,3 @@
-import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useUser } from "@clerk/clerk-react";
 import { PhoneCallIcon, AlertCircleIcon, CalendarCheckIcon, DollarSignIcon, ArrowRightIcon, CalendarIcon, PlusIcon } from "lucide-react";

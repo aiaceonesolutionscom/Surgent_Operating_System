@@ -1,4 +1,3 @@
-import React from "react";
 import { usePlan } from "./PlanContext";
 import { planFor } from "./plan";
 

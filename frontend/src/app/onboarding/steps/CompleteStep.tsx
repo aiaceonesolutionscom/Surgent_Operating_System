@@ -1,4 +1,3 @@
-import React from "react";
 import { useNavigate } from "react-router-dom";
 import { CheckCircle2Icon } from "lucide-react";
 import { usePlanTier, planFor, capabilitiesFor } from "../../dashboard/plan/plan";

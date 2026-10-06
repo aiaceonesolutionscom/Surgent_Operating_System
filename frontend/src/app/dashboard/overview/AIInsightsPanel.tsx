@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { SparklesIcon, ArrowLeftIcon, MessageSquareIcon } from "lucide-react";
 import type { Session } from "../sessions/types";
 import { AICommandCenterCompact } from "./AICommandCenterCompact";

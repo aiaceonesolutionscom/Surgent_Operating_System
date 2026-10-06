@@ -1,4 +1,3 @@
-import React from "react";
 import { PhoneCallIcon } from "lucide-react";
 
 // Dark card matching AIInsightsPanel.tsx's shell. The waveform is an

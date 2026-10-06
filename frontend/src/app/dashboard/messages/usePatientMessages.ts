@@ -74,7 +74,7 @@ export function usePatientMessages(authedFetch: AuthedFetch) {
       if (activeId) {
         getPatientMessage(authedFetch, activeId)
           .then(setDetail)
-          .catch(() => {});
+          .catch(() => undefined);
       }
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);

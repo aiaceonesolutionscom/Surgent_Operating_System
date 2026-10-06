@@ -1,4 +1,3 @@
-import React from "react";
 
 export function PageHeader({ title, subtitle, imgSrc }: { title: string; subtitle?: string; imgSrc?: string }) {
   return (

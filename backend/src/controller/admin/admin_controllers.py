@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
+from src.models.practice import Practice
 from src.models.sales_lead import SalesLead
 from src.schemas.admin import (
     AdminSummaryResponse,
@@ -25,6 +26,9 @@ from src.schemas.admin import (
     OrgRequestListItem,
     RejectOrgRequestRequest,
     ApproveOrgRequestRequest,
+    PlatformMetricsResponse,
+    ActivityEventResponse,
+    AdminUserPermissionGrant,
 )
 from src.schemas.plan import PlanResponse, PlanCreateRequest, PlanUpdateRequest
 from src.services.admin.admin_services import AdminService
@@ -65,6 +69,22 @@ class AdminController:
             total_estimated_margin=float(data["total_estimated_margin"]),
             margin_percent=data["margin_percent"],
         )
+
+    async def platform_metrics(self, db: AsyncSession) -> PlatformMetricsResponse:
+        data = await self.service.platform_metrics(db)
+        return PlatformMetricsResponse(
+            clinics=data["clinics"],
+            total_users=data["total_users"],
+            total_patients=data["total_patients"],
+            appointments_this_month=data["appointments_this_month"],
+            ai=data["ai"],
+            subscriptions=data["subscriptions"],
+            system=data["system"],
+        )
+
+    async def recent_activity(self, db: AsyncSession, limit: int) -> list[ActivityEventResponse]:
+        rows = await self.service.recent_activity(db, limit=limit)
+        return [ActivityEventResponse(**row) for row in rows]
 
     async def list_practices(self, db: AsyncSession, q: str | None, plan_tier: str | None, sort: str) -> list[AdminPracticeListItem]:
         rows = await self.service.list_practices(db, q=q, plan_tier=plan_tier, sort=sort)
@@ -172,9 +192,22 @@ class AdminController:
         plan = await self.plans.update_plan(db, plan, **body.model_dump(exclude_unset=True, exclude_none=True))
         return PlanResponse.from_model(plan)
 
+    def _user_response(self, user, practice_name: str | None) -> AdminUserResponse:
+        return AdminUserResponse(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            role=user.role.value,
+            practice_id=user.practice_id,
+            practice_name=practice_name,
+            is_active=user.is_active,
+            is_platform_admin=user.is_platform_admin,
+            permissions=[AdminUserPermissionGrant(**grant) for grant in self.service.permission_grants(user)],
+        )
+
     async def list_users(self, db: AsyncSession, q: str | None) -> list[AdminUserResponse]:
-        users = await self.service.list_users(db, q=q)
-        return [AdminUserResponse.model_validate(u) for u in users]
+        rows = await self.service.list_users(db, q=q)
+        return [self._user_response(user, practice_name) for user, practice_name in rows]
 
     async def list_sales_leads(self, db: AsyncSession, q: str | None) -> list[SalesLeadResponse]:
         stmt = select(SalesLead).order_by(SalesLead.created_at.desc())
@@ -203,7 +236,8 @@ class AdminController:
             raise NotFoundException("User not found.")
         user.is_platform_admin = body.is_platform_admin
         await db.flush()
-        return AdminUserResponse.model_validate(user)
+        practice = await db.get(Practice, user.practice_id)
+        return self._user_response(user, practice.name if practice else None)
 
     async def list_org_requests(self, db: AsyncSession) -> list[OrgRequestListItem]:
         rows = await self.service.list_pending_org_requests(db)

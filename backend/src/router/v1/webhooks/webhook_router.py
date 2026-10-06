@@ -339,6 +339,7 @@ async def stripe_webhook(
         if subscription:
             subscription.stripe_subscription_id = sub_id
             subscription.price = (sub.get("items", {}).get("data", [{}])[0].get("price", {}).get("unit_amount") or 0) / 100
+            subscription.cancel_at_period_end = bool(sub.get("cancel_at_period_end", False))
             # If subscription has a trial_end, use it; otherwise keep our calculated end_date
             trial_end = sub.get("trial_end")
             if trial_end:
@@ -374,6 +375,12 @@ async def stripe_webhook(
             trial_end = sub.get("trial_end")
             if trial_end:
                 subscription.end_date = datetime.fromtimestamp(trial_end, tz=timezone.utc).date()
+
+            # Mirror Stripe's cancel_at_period_end so the Super Admin can
+            # count "Cancelling" separately from "Active" — the practice
+            # keeps access until period end, so status alone can't express
+            # "cancelled but still paid up".
+            subscription.cancel_at_period_end = bool(sub.get("cancel_at_period_end", False))
 
             logger.info("Updated subscription %s status=%s", sub_id, subscription.status.value)
 

@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { FileTextIcon, ClipboardListIcon, PlusIcon, ArrowRightIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";

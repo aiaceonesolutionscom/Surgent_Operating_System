@@ -59,5 +59,6 @@ export const DASHBOARD_ROUTES = {
   settingsProcedures: "/dashboard/settings/procedures",
   settingsProfile: "/dashboard/settings/profile",
   settingsBilling: "/dashboard/settings/billing",
-  settingsConsentTemplates: "/dashboard/settings/consent-templates"
+  settingsConsentTemplates: "/dashboard/settings/consent-templates",
+  settingsSampleData: "/dashboard/settings/sample-data"
 } as const;

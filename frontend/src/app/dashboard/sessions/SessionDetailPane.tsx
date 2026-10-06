@@ -1,10 +1,10 @@
 import React, { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2Icon, DownloadIcon, FileTextIcon, PlayIcon, PauseIcon } from "lucide-react";
+import { CheckCircle2Icon, DownloadIcon, FileTextIcon, PlayIcon, PauseIcon, XIcon } from "lucide-react";
 import type { Session } from "./types";
 import type { SessionMessage } from "./types";
 import { ChannelIcon } from "./ChannelIcon";
-import { CHANNELS } from "../data/channels";
+import { channelMeta } from "../data/channels";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 import { MessageInput } from "./MessageInput";
 import { Toggle } from "../components/Toggle";
@@ -51,7 +51,13 @@ function AudioPlayer({ url }: { url: string }) {
   );
 }
 
-function MessageContent({ message }: { message: SessionMessage }) {
+function MessageContent({
+  message,
+  onOpenImage
+}: {
+  message: SessionMessage;
+  onOpenImage: (url: string) => void;
+}) {
   const { contentType, extraData, text } = message;
 
   if (contentType === "audio" && extraData?.audio_url) {
@@ -67,14 +73,22 @@ function MessageContent({ message }: { message: SessionMessage }) {
   }
 
   if (contentType === "image" && extraData?.image_url) {
+    const imageUrl = String(extraData.image_url);
     return (
       <div className="space-y-1">
-        <img
-          src={extraData.image_url as string}
-          alt="Shared image"
-          className="max-h-48 rounded-lg object-cover"
-          loading="lazy"
-        />
+        <button
+          type="button"
+          onClick={() => onOpenImage(imageUrl)}
+          className="group block overflow-hidden rounded-lg"
+          aria-label="Open image full size"
+        >
+          <img
+            src={imageUrl}
+            alt="Shared image"
+            className="max-h-48 rounded-lg object-cover transition-opacity group-hover:opacity-80"
+            loading="lazy"
+          />
+        </button>
         {text && text !== "[Image]" && <p className="text-sm">{text}</p>}
       </div>
     );
@@ -132,6 +146,16 @@ export function SessionDetailPane({
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [sendWarning, setSendWarning] = React.useState<string | null>(null);
+  const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
+
+  useEffect(() => {
+    if (!lightboxUrl) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setLightboxUrl(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightboxUrl]);
 
   async function handleSendMessage(text: string) {
     if (!onSendMessage) return;
@@ -173,7 +197,7 @@ export function SessionDetailPane({
             <div className="flex items-center gap-1.5">
               <ChannelIcon channel={session.channel} size={10} />
               <p className="text-xs text-ink-muted">
-                {CHANNELS[session.channel].label} · handled by {session.agentName}
+                {channelMeta(session.channel).label} · handled by {session.agentName}
               </p>
             </div>
           </div>
@@ -209,7 +233,7 @@ export function SessionDetailPane({
             SELF_ROLES.includes(m.from) ? "bg-teal-600 text-white" : "bg-sand-100 text-ink"}`
             }>
 
-                <MessageContent message={m} />
+                <MessageContent message={m} onOpenImage={setLightboxUrl} />
               </div>
             </div>
 
@@ -234,6 +258,30 @@ export function SessionDetailPane({
       }
 
       {onSendMessage && <MessageInput onSendText={(text) => void handleSendMessage(text)} />}
+
+      {lightboxUrl &&
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-ink/85 p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Image preview"
+        onClick={() => setLightboxUrl(null)}>
+
+        <button
+          type="button"
+          onClick={() => setLightboxUrl(null)}
+          aria-label="Close image preview"
+          className="absolute right-6 top-6 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20">
+          <XIcon className="h-5 w-5" />
+        </button>
+
+        <img
+          src={lightboxUrl}
+          alt="Shared image, full size"
+          className="max-h-full max-w-full rounded-xl object-contain shadow-lift"
+          onClick={(event) => event.stopPropagation()} />
+
+      </div>}
     </div>);
 
 }

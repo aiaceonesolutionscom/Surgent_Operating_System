@@ -25,3 +25,25 @@ export const CHANNELS: Record<ChannelId, ChannelMeta> = {
   sms: { id: "sms", label: "SMS", icon: FaCommentSms, color: "#6366F1" },
   email: { id: "email", label: "Email", icon: FaEnvelope, color: "#64748B" }
 };
+
+// Shown when the API reports a channel we have no icon for. Rendering an
+// unrecognised channel as "Web chat" is far better than letting
+// `CHANNELS[channel].icon` throw and white-screen the whole dashboard.
+const FALLBACK_CHANNEL: ChannelId = "web_chat";
+
+/**
+ * Coerce whatever the API sent into a known ChannelId. The backend enum and
+ * older stored rows are UPPERCASE ("WHATSAPP"), and other producers use dashes
+ * or spaces ("web-chat"), so normalise before looking the channel up.
+ */
+export function toChannelId(raw: unknown): ChannelId {
+  if (typeof raw !== "string") return FALLBACK_CHANNEL;
+  const key = raw.trim().toLowerCase().replace(/[\s-]+/g, "_") as ChannelId;
+  return CHANNELS[key] ? key : FALLBACK_CHANNEL;
+}
+
+/** Always-defined channel metadata, for render sites that used to index CHANNELS directly. */
+export function channelMeta(raw: unknown): ChannelMeta {
+  return CHANNELS[toChannelId(raw)];
+}
+

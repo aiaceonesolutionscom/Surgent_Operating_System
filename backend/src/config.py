@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     # nothing until LLMService wires them in, they just stop a stray
     # LANGSMITH_API_KEY/LANGCHAIN_API_KEY from crashing settings at boot.
     langsmith_api_key: str = ""
+    langsmith_tracing_v2: bool = False
+    langsmith_project_prefix: str = "aesthetixai"
     langchain_api_key: str = ""
     langchain_tracing_v2: bool = False
     langchain_project: str = "aesthetixai"
@@ -38,6 +40,7 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     mistral_api_key_2: str = ""
     mistral_api_key_3: str = ""
+    mistral_api_key_4: str = ""
     mistral_model: str = "mistral-small-latest"
 
     # Sentry error tracking. Empty = disabled (local dev boots without it).

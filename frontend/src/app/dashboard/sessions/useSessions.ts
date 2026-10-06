@@ -10,9 +10,14 @@ import {
 } from "../../../api/entities";
 import { usePlan } from "../plan/PlanContext";
 import { AGENTS_BY_SLUG } from "../../../data/agents";
-import type { Session, SessionMessage } from "./types";
+import { isDemoMode } from "../../../data/demoMode";
+import { toChannelId } from "../data/channels";
+import type { Session, SessionMessage, SessionStatus } from "./types";
 
-// Mock sessions for demo/development
+// Demo-only sessions, used when VITE_DEMO_MODE is explicitly enabled so a
+// sales demo has something to show. Never used to cover a real API failure —
+// these had UPPERCASE channels, which don't match the ChannelId keys in
+// data/channels.ts and used to crash the sessions page on every render.
 const MOCK_SESSIONS: Session[] = [
   {
     id: "c1",
@@ -20,7 +25,7 @@ const MOCK_SESSIONS: Session[] = [
     patientName: "Sarah Thompson",
     patientInitial: "S",
     avatarUrl: null,
-    channel: "WHATSAPP",
+    channel: "whatsapp",
     agentSlug: "receptionist",
     agentName: "AI Receptionist",
     categoryId: "front-desk",
@@ -38,7 +43,7 @@ const MOCK_SESSIONS: Session[] = [
     patientName: "James Anderson",
     patientInitial: "J",
     avatarUrl: null,
-    channel: "INSTAGRAM",
+    channel: "instagram",
     agentSlug: "lead_qualification",
     agentName: "Lead Qualification",
     categoryId: "consultation",
@@ -56,7 +61,7 @@ const MOCK_SESSIONS: Session[] = [
     patientName: "Laura Martinez",
     patientInitial: "L",
     avatarUrl: null,
-    channel: "WEB_CHAT",
+    channel: "web_chat",
     agentSlug: "appointment_reminder",
     agentName: "Appointment & Booking Agent",
     categoryId: "front-desk",
@@ -74,7 +79,7 @@ const MOCK_SESSIONS: Session[] = [
     patientName: "Emma Williams",
     patientInitial: "E",
     avatarUrl: null,
-    channel: "WHATSAPP",
+    channel: "whatsapp",
     agentSlug: "receptionist",
     agentName: "AI Receptionist",
     categoryId: "front-desk",
@@ -92,7 +97,7 @@ const MOCK_SESSIONS: Session[] = [
     patientName: "Michael Chen",
     patientInitial: "M",
     avatarUrl: null,
-    channel: "WEB_CHAT",
+    channel: "web_chat",
     agentSlug: "patient_intake",
     agentName: "AI Patient Intake",
     categoryId: "consultation",
@@ -108,6 +113,14 @@ const MOCK_SESSIONS: Session[] = [
 
 const PORTAL_SLUG = "patient_doctor_message";
 
+/** The API stores statuses UPPERCASE ("NEEDS_ATTENTION"); the UI keys are lowercase. */
+function toSessionStatus(raw: unknown): SessionStatus {
+  const key = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (key === "needs_attention") return "needs_attention";
+  if (key === "resolved" || key === "closed" || key === "archived") return "resolved";
+  return "active";
+}
+
 export function mapConversationToSession(c: ConversationListItem): Session {
   const name = c.patient_name || "Unknown Patient";
   const isPortal = c.agent_type === PORTAL_SLUG;
@@ -118,11 +131,11 @@ export function mapConversationToSession(c: ConversationListItem): Session {
     patientName: name,
     patientInitial: name.charAt(0).toUpperCase(),
     avatarUrl: c.avatar_url,
-    channel: c.channel as Session["channel"],
+    channel: toChannelId(c.channel),
     agentSlug: isPortal ? PORTAL_SLUG : (agent?.slug ?? c.agent_type),
     agentName: isPortal ? "Patient Portal" : (agent?.name ?? c.agent_type),
     categoryId: isPortal ? "patient-messages" : (agent?.categoryId ?? "business"),
-    status: c.status as Session["status"],
+    status: toSessionStatus(c.status),
     lastMessagePreview: c.last_message_preview,
     updatedAt: c.updated_at,
     aiPaused: c.ai_paused,
@@ -144,7 +157,15 @@ function mapDetailMessages(detail: ConversationDetail): SessionMessage[] {
     id: m.id,
     from: mapRole(m.role),
     text: m.content,
-    contentType: "text",
+    // Carry the backend's real content_type through. Hardcoding "text" here
+    // meant SessionDetailPane's MessageContent always fell through to the
+    // plain-text branch, so WhatsApp photos, voice notes, videos and
+    // documents (PDF etc.) showed up as raw body text — for a PDF, usually
+    // just the "[Document]" placeholder — with no image, player or download
+    // link, even though the backend had already uploaded the file and sent
+    // image_url / file_url / audio_url / video_url in extra_data.
+    contentType: m.content_type || "text",
+    extraData: m.extra_data || {},
     at: m.created_at,
   }));
 }
@@ -161,8 +182,7 @@ export function useSessions(statusFilter?: string, patientId?: string) {
   const fetchSessions = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!authedFetch) {
-        // Fallback to mock data for demo
-        setSessions(MOCK_SESSIONS);
+        setSessions(isDemoMode() ? MOCK_SESSIONS : []);
         setLoading(false);
         return;
       }
@@ -171,9 +191,9 @@ export function useSessions(statusFilter?: string, patientId?: string) {
         const data = await listConversations(authedFetch, { status: statusFilter, patient_id: patientId, limit: 100 });
         setSessions((prev) => {
           const next = data.map(mapConversationToSession);
-          // Use mock data if backend returns empty
-          const finalSessions = next.length > 0 ? next : MOCK_SESSIONS;
-          
+          // An empty result is a real answer ("no sessions need attention"),
+          // not a reason to invent some. Only demo mode may substitute data.
+          const finalSessions = next.length === 0 && isDemoMode() ? MOCK_SESSIONS : next;
           if (selectedId && !finalSessions.some((s) => s.id === selectedId)) {
             const stillOpen = prev.find((s) => s.id === selectedId);
             if (stillOpen) return [...finalSessions, stillOpen];
@@ -185,9 +205,11 @@ export function useSessions(statusFilter?: string, patientId?: string) {
         });
         setError(null);
       } catch (e: unknown) {
-        // Fallback to mock data on error
-        setSessions(MOCK_SESSIONS);
-        if (!opts?.silent) setError(null);
+        // Never mask a failed request with fake sessions — the UI shows the
+        // error instead, so a broken backend is visible rather than silently
+        // rendering fiction the clinic might act on.
+        setSessions([]);
+        setError(e instanceof Error && e.message ? e.message : "Couldn't load conversations.");
       } finally {
         if (!opts?.silent) setLoading(false);
       }

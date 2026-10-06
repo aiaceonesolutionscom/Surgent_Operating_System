@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { LockIcon, DollarSignIcon } from "lucide-react";
 import { AGENT_CATEGORIES } from "../../../data/agents";

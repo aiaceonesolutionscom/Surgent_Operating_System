@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIcon, UserIcon, ClockIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
 import { getPatientAuditLog, type PatientAuditLogEntry } from "../../../api/entities";

@@ -109,7 +109,7 @@ export function MessageThreadView({
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
       setRecording(true);
-    }).catch(() => {});
+    }).catch(() => undefined);
   }
 
   function stopRecording() {

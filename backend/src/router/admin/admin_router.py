@@ -23,6 +23,8 @@ from src.schemas.admin import (
     ApproveOrgRequestRequest,
     CreatePracticeRequest,
     UpdatePracticeRequest,
+    PlatformMetricsResponse,
+    ActivityEventResponse,
 )
 from src.schemas.plan import PlanResponse, PlanCreateRequest, PlanUpdateRequest
 from src.schemas.super_agent import (
@@ -60,6 +62,30 @@ async def get_summary(
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.summary(db)
+
+
+@router.get("/platform_metrics", response_model=PlatformMetricsResponse)
+async def get_platform_metrics(
+    admin: AdminPrincipal = Depends(require_admin_token),
+    db: AsyncSession = Depends(get_db),
+):
+    """Live platform-wide counts for the Super Admin overview: CLINICS
+    (active/trial/suspended), USERS, PATIENTS, APPOINTMENTS this month, AI
+    usage (runs / avg latency / estimated cost), SUBSCRIPTIONS (including
+    "cancelling" = cancel_at_period_end), and SYSTEM health (uptime, error
+    rate, DB round-trip, slow requests)."""
+    return await controller.platform_metrics(db)
+
+
+@router.get("/activity", response_model=list[ActivityEventResponse])
+async def get_activity(
+    limit: int = 30,
+    admin: AdminPrincipal = Depends(require_admin_token),
+    db: AsyncSession = Depends(get_db),
+):
+    """Newest platform-wide events for the Super Admin ACTIVITY feed — read
+    from the audit_logs trail, newest first (clinic name + actor joined)."""
+    return await controller.recent_activity(db, limit)
 
 
 @router.get("/practices", response_model=list[AdminPracticeListItem])

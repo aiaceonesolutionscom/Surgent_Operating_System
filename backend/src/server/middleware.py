@@ -4,6 +4,8 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.server.runtime_metrics import record_request
+
 logger = logging.getLogger("aesthetixai")
 
 
@@ -45,6 +47,9 @@ class AuditLogMiddleware:
         await self.app(scope, receive, send_wrapper)
 
         duration = time.time() - start
+        # Feed the Super Admin SYSTEM panel (admin/platform_metrics) — the
+        # same timing the log line below already computes, at no extra cost.
+        record_request(duration * 1000, status_holder.get("status"))
         logger.info(
             "%s %s %s %.2fms",
             scope.get("method"),

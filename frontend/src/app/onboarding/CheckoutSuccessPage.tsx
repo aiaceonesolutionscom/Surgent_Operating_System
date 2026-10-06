@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { CheckCircle2Icon, Loader2Icon, MailIcon } from "lucide-react";
 import { SignUpButton, useUser } from "@clerk/clerk-react";

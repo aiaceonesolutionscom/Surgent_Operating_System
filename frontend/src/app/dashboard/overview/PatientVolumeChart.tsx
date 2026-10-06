@@ -1,4 +1,3 @@
-import React from "react";
 import { TrendingUpIcon } from "lucide-react";
 import type { Session } from "../sessions/types";
 import { computeDailyVolume } from "./computeVolume";

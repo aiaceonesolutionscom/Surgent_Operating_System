@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2Icon, PencilIcon, CheckIcon } from "lucide-react";
 import { listAdminPlans, updateAdminPlan } from "../../../api/admin";
 import type { PlanResponse } from "../../../api/practice";

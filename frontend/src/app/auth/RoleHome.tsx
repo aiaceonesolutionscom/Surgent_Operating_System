@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { useAuth } from "@clerk/clerk-react";
+import { useAuth, useUser } from "@clerk/clerk-react";
 import { useAuthedFetch } from "../../api/authFetch";
 import { getMyPractice } from "../../api/practice";
 import { getMyApplication, getMyStaffApplication, getMyOrgRequest } from "../../api/entities";
@@ -24,7 +24,10 @@ type Resolved =
   | { kind: "org-request" }
   | { kind: "none" };
 
-async function resolveRole(authedFetch: ReturnType<typeof useAuthedFetch>["authedFetch"]): Promise<Resolved> {
+async function resolveRole(
+  authedFetch: ReturnType<typeof useAuthedFetch>["authedFetch"],
+  isFreshOrgRequest: boolean,
+): Promise<Resolved> {
   if (!authedFetch) return { kind: "none" };
   try {
     const practice = await getMyPractice(authedFetch);
@@ -32,6 +35,26 @@ async function resolveRole(authedFetch: ReturnType<typeof useAuthedFetch>["authe
   } catch {
     // no practice membership yet — check pending applications below
   }
+
+  // Fast path for the brand-new /sign-up org request, BEFORE the two
+  // application probes below.
+  //
+  // ORDER IS LOAD-BEARING: the practice check above has to stay first. Clerk's
+  // unsafeMetadata persists for the lifetime of the account, so an org request
+  // that has since been APPROVED still carries invite_type="org_request"
+  // forever — testing the metadata first would bounce that owner back to
+  // /org/apply on every login instead of their dashboard.
+  //
+  // Reading it client-side also means a brand-new signup costs ONE request
+  // instead of four. The previous version probed /practice/my-org-request and
+  // depended on the backend's Clerk API call to self-heal a missing row
+  // (practice_controllers.get_my_org_request). When that self-heal didn't fire,
+  // a user who had just requested free access silently landed on the marketing
+  // HomePage instead of their request form — with no error shown anywhere,
+  // because every probe was wrapped in a bare catch. The answer is already in
+  // Clerk's client-side user object, so don't spend network calls asking for it.
+  if (isFreshOrgRequest) return { kind: "org-request" };
+
   try {
     const doctor = await getMyApplication(authedFetch);
     if (doctor.status === "pending") return { kind: "pending-doctor" };
@@ -45,15 +68,24 @@ async function resolveRole(authedFetch: ReturnType<typeof useAuthedFetch>["authe
     // no staff application either
   }
   try {
-    // A genuinely new self-signup (no invite/apply code) — org_apply's own
-    // page handles pending/approved/rejected states; here we only need to
-    // know a request EXISTS to route there instead of the marketing site.
+    // A genuinely new self-signup whose Clerk metadata hasn't landed yet — the
+    // backend row is the last resort. Kept as a fallback rather than deleted.
     await getMyOrgRequest(authedFetch);
     return { kind: "org-request" };
   } catch {
     // no org request either
   }
-  return { kind: "none" };
+  // Signed in, but no practice, no doctor/staff application and no org-request
+  // row. The dev database had never produced a single org-request row, so this
+  // is NOT a rare corner — it is the normal state of a brand-new signup whose
+  // Clerk metadata is absent, and it used to dump them on the marketing
+  // HomePage. resolveRole only ever runs for signed-in users (the signed-out
+  // branch returns "none" before we get here), so "none" at this point means
+  // "has nothing" — and a signed-in user with nothing wants to start a clinic,
+  // not read a sales page. OrgApplyPage renders its own submit form when no row
+  // exists yet, so sending them there is correct whether or not the row is
+  // there.
+  return { kind: "org-request" };
 }
 
 function destinationFor(resolved: Resolved): string | null {
@@ -79,25 +111,34 @@ function destinationFor(resolved: Resolved): string | null {
 
 export function RoleHome() {
   const { isLoaded, isSignedIn } = useAuth();
+  // useUser() has its OWN isLoaded, independent of useAuth()'s. Both are
+  // awaited before resolving, because unsafeMetadata is null until the user
+  // object itself has loaded — running resolveRole on that null would skip the
+  // org-request fast path and land the brand-new signup back on HomePage,
+  // which is the exact bug this fast path exists to fix.
+  const { user, isLoaded: isUserLoaded } = useUser();
   const { authedFetch } = useAuthedFetch();
   const [resolved, setResolved] = useState<Resolved | null>(null);
 
+  const inviteType = (user?.unsafeMetadata as Record<string, unknown> | undefined)?.invite_type;
+  const isFreshOrgRequest = inviteType === "org_request";
+
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || !isUserLoaded) return;
     if (!isSignedIn) {
       setResolved({ kind: "none" });
       return;
     }
     let cancelled = false;
     (async () => {
-      const result = await resolveRole(authedFetch);
+      const result = await resolveRole(authedFetch, isFreshOrgRequest);
       if (cancelled) return;
       setResolved(result);
     })();
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, authedFetch]);
+  }, [isLoaded, isUserLoaded, isSignedIn, authedFetch, isFreshOrgRequest]);
 
   const destination = resolved && destinationFor(resolved);
 

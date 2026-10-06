@@ -1,3 +1,4 @@
+/* global module */
 /* ============================================================================
    lets-scroll — portable scroll-scrubbed camera-flight engine
    ----------------------------------------------------------------------------
@@ -78,7 +79,7 @@ function mountLetsScroll(container, config) {
   const CONN_W = config.connScroll || 0.9;
   const CROSSFADE = (config.crossfade != null) ? config.crossfade : 0.12;  // seam dissolve width (vh)
   const N = SECTIONS.length;
-  if (!N) return { dispose() {} };
+  if (!N) return { dispose() { /* nothing was built, so nothing to tear down */ } };
 
   // Set by dispose() — stops the rAF loop from rescheduling itself and lets the
   // scroll/resize/gesture listeners below know to no-op if they somehow still
@@ -228,7 +229,7 @@ function mountLetsScroll(container, config) {
         // painted — on iOS a seeked-but-never-played muted video stays blank, so
         // hiding the still on metadata alone would flash an empty scene.
         v.addEventListener('seeked', () => { s.el.classList.add('has-clip'); }, { once: true });
-        v.addEventListener('loadeddata', () => { try { v.pause(); } catch (e) {} if (userReady) primeVideo(v); });
+        v.addEventListener('loadeddata', () => { try { v.pause(); } catch (e) { /* pause() throws if the element is torn down mid-load; the clip is optional anyway */ } if (userReady) primeVideo(v); });
         s.el.appendChild(v); s.video = v; s.hasClip = true;
       }).catch(() => { s.loading = false; });
   }
@@ -297,7 +298,7 @@ function mountLetsScroll(container, config) {
       s.cur += (s.target - s.cur) * (reduce ? 1 : 0.18);
       const dur = s.video.duration || 1;
       const t = clamp(s.cur, 0, 0.999) * dur;
-      if (Math.abs(s.video.currentTime - t) > eps) { try { s.video.currentTime = t; } catch (e) {} }
+      if (Math.abs(s.video.currentTime - t) > eps) { try { s.video.currentTime = t; } catch (e) { /* seeking throws while the media element is still loading; the next frame retries */ } }
     }
     if (!disposed) requestAnimationFrame(raf);
   }
@@ -309,8 +310,8 @@ function mountLetsScroll(container, config) {
   let userReady = false;
   function primeVideo(v) {
     if (!isMobile() || !v) return;
-    try { const p = v.play(); if (p && p.then) p.then(() => { try { v.pause(); } catch (e) {} }).catch(() => {}); }
-    catch (e) {}
+    try { const p = v.play(); if (p && p.then) p.then(() => { try { v.pause(); } catch (e) { /* see above */ } }).catch(() => undefined); }
+    catch (e) { /* autoplay rejected; onFirstGesture retries on interaction */ }
   }
   function onFirstGesture() {
     if (userReady) return;

@@ -21,7 +21,8 @@ import {
   PackageIcon,
   MessageCircleIcon,
   SparklesIcon,
-  FileTextIcon
+  FileTextIcon,
+  DatabaseIcon
 } from "lucide-react";
 import { DASHBOARD_ROUTES } from "../constants/routes";
 import { usePlan } from "../plan/PlanContext";
@@ -108,7 +109,8 @@ const SETTINGS_ITEMS: NavItem[] = [
 { label: "Profile", to: DASHBOARD_ROUTES.settingsProfile, icon: UserCircleIcon, allowedRoles: ["owner", "doctor", "receptionist"] },
 { label: "Procedures", to: DASHBOARD_ROUTES.settingsProcedures, icon: ScissorsIcon, allowedRoles: ["owner", "doctor"] },
 { label: "Consent templates", to: DASHBOARD_ROUTES.settingsConsentTemplates, icon: FileTextIcon, allowedRoles: ["owner"] },
-{ label: "Plan & billing", to: DASHBOARD_ROUTES.settingsBilling, icon: CreditCardIcon, allowedRoles: ["owner"] }];
+  { label: "Sample data", to: DASHBOARD_ROUTES.settingsSampleData, icon: DatabaseIcon, allowedRoles: ["owner"] },
+  { label: "Plan & billing", to: DASHBOARD_ROUTES.settingsBilling, icon: CreditCardIcon, allowedRoles: ["owner"] }];
 
 
 function NavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) {

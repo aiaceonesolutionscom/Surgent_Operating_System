@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { MessageCircleIcon, PlusIcon, UsersIcon, HeartIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";

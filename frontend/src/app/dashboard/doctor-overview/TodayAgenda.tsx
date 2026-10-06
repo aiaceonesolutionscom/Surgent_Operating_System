@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { ClockIcon, FileTextIcon, PlayCircleIcon } from "lucide-react";
 import { EmptyState } from "../components/EmptyState";

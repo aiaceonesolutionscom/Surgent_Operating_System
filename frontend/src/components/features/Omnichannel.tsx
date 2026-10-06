@@ -3,7 +3,6 @@
 
 
 
-import React from "react";
 import { motion } from "framer-motion";
 import { FaInstagram, FaWhatsapp, FaFacebook, FaLinkedin } from "react-icons/fa6";
 import { Container } from "../ui";

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { BuildingIcon, PhoneIcon } from "lucide-react";
 import { usePracticeProfile } from "../../dashboard/profile/usePracticeProfile";
 

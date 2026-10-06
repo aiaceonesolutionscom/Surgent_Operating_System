@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { StethoscopeIcon, ChevronDownIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
 import { useDoctors } from "../doctors/useDoctors";

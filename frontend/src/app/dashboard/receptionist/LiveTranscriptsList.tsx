@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { CHANNELS, type ChannelId } from "../data/channels";
 import { usePlan } from "../plan/PlanContext";
 import { listConversations, type ConversationListItem } from "../../../api/entities";

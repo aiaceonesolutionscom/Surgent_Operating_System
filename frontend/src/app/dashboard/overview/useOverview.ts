@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import { getOverviewSummary, type OverviewSummaryResponse } from "../../../api/entities";
 import { usePlan } from "../plan/PlanContext";
+import { isDemoMode } from "../../../data/demoMode";
 
-// Mock data for development/demo when backend returns empty
+// Demo-only placeholder, used when VITE_DEMO_MODE is explicitly enabled.
+// It is never a substitute for a failed request or an all-zero practice —
+// showing fake clinic numbers on a real dashboard is worse than showing none.
 const MOCK_OVERVIEW: OverviewSummaryResponse = {
   sessions_today: 12,
   needs_attention: 3,
   bookings_this_week: 8,
   revenue_estimate: 89450,
+};
+
+const EMPTY_OVERVIEW: OverviewSummaryResponse = {
+  sessions_today: 0,
+  needs_attention: 0,
+  bookings_this_week: 0,
+  revenue_estimate: 0,
 };
 
 export function useOverview() {
@@ -18,25 +28,18 @@ export function useOverview() {
 
   const refetch = useCallback(async () => {
     if (!authedFetch) {
-      // Fallback to mock data for demo
-      setSummary(MOCK_OVERVIEW);
+      setSummary(isDemoMode() ? MOCK_OVERVIEW : null);
       setLoading(false);
       return;
     }
     try {
       setLoading(true);
       const data = await getOverviewSummary(authedFetch);
-      // Use mock data if backend returns zeros/empty
-      if (data && (data.sessions_today > 0 || data.needs_attention > 0 || data.bookings_this_week > 0 || (data.revenue_estimate ?? 0) > 0)) {
-        setSummary(data);
-      } else {
-        setSummary(MOCK_OVERVIEW);
-      }
+      setSummary(data ?? EMPTY_OVERVIEW);
       setError(null);
     } catch (e: unknown) {
-      // Fallback to mock data on error
-      setSummary(MOCK_OVERVIEW);
-      setError(null);
+      setSummary(isDemoMode() ? MOCK_OVERVIEW : null);
+      setError(e instanceof Error && e.message ? e.message : "Couldn't load the overview.");
     } finally {
       setLoading(false);
     }

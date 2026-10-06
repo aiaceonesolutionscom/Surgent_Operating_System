@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { LockIcon, PencilIcon, PlusIcon, StethoscopeIcon, TrashIcon, UserCircleIcon, SendIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";

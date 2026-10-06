@@ -1,4 +1,3 @@
-import React from "react";
 import { CheckCircle2Icon, CircleDotIcon } from "lucide-react";
 import { CHANNELS, type ChannelId } from "../data/channels";
 

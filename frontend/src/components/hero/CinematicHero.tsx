@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { mountLetsScroll } from "./scrub-engine";
 import type { HeroChatSeed } from "../chat/LandingChat";
 

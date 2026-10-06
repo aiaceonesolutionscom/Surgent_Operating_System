@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { ArchiveIcon, ArchiveRestoreIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
 import { archivePatient, restorePatient } from "../../../api/entities";

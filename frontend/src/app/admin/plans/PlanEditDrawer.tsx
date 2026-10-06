@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { XIcon, Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import type { PlanResponse } from "../../../api/practice";
 

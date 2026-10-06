@@ -31,6 +31,7 @@ const AnalyticsPage = React.lazy(() => import("./analytics/AnalyticsPage").then(
 const AgentSettingsPage = React.lazy(() => import("./settings/AgentSettingsPage").then(m => ({ default: m.AgentSettingsPage })));
 const IntegrationsPage = React.lazy(() => import("./settings/IntegrationsPage").then(m => ({ default: m.IntegrationsPage })));
 const MetaCallbackPage = React.lazy(() => import("./settings/MetaCallbackPage").then(m => ({ default: m.MetaCallbackPage })));
+const SampleDataPage = React.lazy(() => import("./settings/SampleDataPage").then(m => ({ default: m.SampleDataPage })));
 const ProfilePage = React.lazy(() => import("./profile/ProfilePage").then(m => ({ default: m.ProfilePage })));
 const PlanBillingPage = React.lazy(() => import("./billing/PlanBillingPage").then(m => ({ default: m.PlanBillingPage })));
 const PlanGate = React.lazy(() => import("./plan/PlanGate").then(m => ({ default: m.PlanGate })));
@@ -211,6 +212,7 @@ export function DashboardRouter() {
           <Route path="settings/profile" element={<ProfilePage />} />
           <Route path="settings/billing" element={<PlanBillingPage />} />
           <Route path="settings/consent-templates" element={<RequireOwner><ConsentTemplatesPage /></RequireOwner>} />
+          <Route path="settings/sample-data" element={<RequireOwner><SampleDataPage /></RequireOwner>} />
         </Route>
       </Routes>
     </Suspense>

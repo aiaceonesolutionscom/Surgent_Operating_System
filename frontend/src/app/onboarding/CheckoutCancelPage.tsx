@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { XCircleIcon } from "lucide-react";
 import { OnboardingLayout } from "./OnboardingLayout";

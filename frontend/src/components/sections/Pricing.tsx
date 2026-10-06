@@ -84,6 +84,44 @@ export function Pricing() {
             </motion.div>
           )}
         </div>
+
+        {/* G-1 (see multiclinic.md): the free org-request pipeline is fully
+            built end-to-end — /org/apply, the Super-Admin approve/reject queue,
+            and provisioning all exist — but NOTHING on the public site linked to
+            it. Every prospect who wanted to see the product before paying was
+            funnelled straight into Stripe instead, which is exactly the
+            conversion problem the request flow was built to solve.
+
+            SignUpPage.tsx already stamps unsafeMetadata {invite_type:
+            "org_request"} on a plain sign-up, which webhook_router.py reads to
+            file a PendingSignup for review instead of granting practice access.
+            So linking here is all that is needed — no backend change. */}
+        <div className="mx-auto mt-14 max-w-4xl rounded-4xl border border-sand-200 bg-white p-8 shadow-soft sm:p-10">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-md">
+              <h3 className="font-display text-2xl font-600 tracking-tight text-ink">
+                Want to see it running first?
+              </h3>
+              <p className="mt-2 text-sm text-ink-soft">
+                Request free access and we&apos;ll switch your organization on personally. Your whole
+                workspace gets set up — agents, WhatsApp, AI receptionist and all — and you can
+                add your doctors, receptionists and patients straight away. No card, no charge,
+                and we only ask you to pay once you&apos;re happy.
+              </p>
+              <p className="mt-3 text-xs text-ink-muted">
+                We review every request personally, usually the same day.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-col gap-3 sm:w-52">
+              <Button to="/sign-up" variant="ink" arrow className="w-full">
+                Request free access
+              </Button>
+              <Button to="/demo" variant="ghost" className="w-full">
+                Talk to sales
+              </Button>
+            </div>
+          </div>
+        </div>
       </Container>
       {checkoutPlan &&
       <CheckoutModal planId={checkoutPlan.id} planName={checkoutPlan.name} onClose={() => setCheckoutPlan(null)} />

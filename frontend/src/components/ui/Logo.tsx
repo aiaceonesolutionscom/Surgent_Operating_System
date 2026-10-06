@@ -1,4 +1,3 @@
-import React from "react";
 
 // Inline SVG brand mark — replaces the old public/logo.png (a generic
 // flaticon-style torso/spine icon that read as stock art, not a real

@@ -25,17 +25,6 @@ export function PatientPhotosGallery({ patientId }: { patientId: string }) {
   const [compareIds, setCompareIds] = useState<[string | null, string | null]>([null, null]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (role !== "owner" && role !== "doctor") return null;
-
-  async function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setUploading(true);
-    await upload(file, stage, undefined, stage, bodyArea.trim() || undefined);
-    setUploading(false);
-  }
-
   const grouped = useMemo(() => {
     const map = new Map<string, PatientPhotoResponse[]>();
     for (const photo of photos) {
@@ -48,6 +37,21 @@ export function PatientPhotosGallery({ patientId }: { patientId: string }) {
 
   const compareBefore = photos.find((p) => p.id === compareIds[0]);
   const compareAfter = photos.find((p) => p.id === compareIds[1]);
+
+  // This guard has to sit *after* every hook above, not before them. `role`
+  // arrives asynchronously from Clerk, so the first render can hit it (role
+  // still undefined) and a later one miss it — bailing out early used to change
+  // the hook count between renders, which React rejects outright.
+  if (role !== "owner" && role !== "doctor") return null;
+
+  async function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    await upload(file, stage, undefined, stage, bodyArea.trim() || undefined);
+    setUploading(false);
+  }
 
   return (
     <div className="mb-6 rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">

@@ -6,3 +6,10 @@ venv/
 .env.local
 *.egg-info/
 .pytest_cache/
+
+# local dev logs / output dumps
+*.log
+test_out.txt
+test_output.txt
+test_results.txt
+backend_new.log

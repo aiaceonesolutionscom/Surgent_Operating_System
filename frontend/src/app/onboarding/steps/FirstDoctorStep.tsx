@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { UserIcon, Loader2Icon } from "lucide-react";
 import { useDoctors } from "../../dashboard/doctors/useDoctors";
 import type { Doctor } from "../../dashboard/doctors/types";

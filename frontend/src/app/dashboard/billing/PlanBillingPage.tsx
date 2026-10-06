@@ -1,4 +1,3 @@
-import React from "react";
 import { CreditCardIcon, HeadsetIcon, EyeIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { usePlan } from "../plan/PlanContext";

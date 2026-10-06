@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.practice import Practice, PracticeStatus
@@ -12,9 +13,16 @@ from src.models.subscription import Subscription, SubscriptionStatus, Subscripti
 from src.models.plan import Plan
 from src.models.agent_config import AgentConfig
 from src.models.agent_costing import AgentCosting
-from src.models.user import User
+from src.models.agent_log import AgentLog
+from src.models.appointment import Appointment
+from src.models.audit_log import AuditLog
+from src.models.patient import Patient
+from src.models.user import User, UserRole
 from src.models.pending_signup import PendingSignup, OrgRequestStatus
+from src.data.receptionist_permissions import RECEPTIONIST_PERMISSIONS
 from src.services.checkout.provisioning_service import ProvisioningService
+from src.services.llm.llm_service import avg_llm_latency_ms
+from src.server.runtime_metrics import snapshot as runtime_snapshot
 from src.server.exceptions import NotFoundException, AppException
 
 # No real per-session usage telemetry exists yet — nothing persists
@@ -238,8 +246,12 @@ class AdminService:
         total_cost = Decimal("0")
         for row in rows:
             plan_distribution[row["plan_tier"]] = plan_distribution.get(row["plan_tier"], 0) + 1
-            total_mrr += row["estimated_monthly_revenue"]
-            total_cost += row["estimated_monthly_cost"]
+            # list_practices builds revenue as float (sub.price / plan.price
+            # fallbacks) while cost stays Decimal — mixing them here raises
+            # TypeError the moment any practice has a real price. Both go
+            # through Decimal(str(...)) so the totals are exact.
+            total_mrr += Decimal(str(row["estimated_monthly_revenue"]))
+            total_cost += Decimal(str(row["estimated_monthly_cost"]))
         margin = total_mrr - total_cost
         margin_percent = float(margin / total_mrr * 100) if total_mrr else 0.0
         return {
@@ -251,15 +263,157 @@ class AdminService:
             "margin_percent": margin_percent,
         }
 
-    async def list_users(self, db: AsyncSession, q: str | None = None) -> list[User]:
+    async def _latest_subscriptions(self, db: AsyncSession) -> dict:
+        # Same shape as _active_subscriptions above, but for EVERY latest
+        # status — the metrics endpoint needs past_due/cancelled/trial counts
+        # too, not just active.
+        result = await db.execute(
+            select(Subscription)
+            .order_by(Subscription.practice_id, Subscription.created_at.desc())
+        )
+        by_practice: dict = {}
+        for sub in result.scalars().all():
+            by_practice.setdefault(sub.practice_id, sub)  # first hit per practice_id = most recent (query is ordered)
+        return by_practice
+
+    async def platform_metrics(self, db: AsyncSession) -> dict:
+        """Live numbers for the Super Admin overview (CLINICS / USERS /
+        PATIENTS / APPOINTMENTS / AI / SUBSCRIPTIONS / SYSTEM blocks).
+        Everything is a real measured count except AI cost, which is
+        logged-sessions × the agent costing table's per-session price — an
+        estimate, flagged as such in the response."""
+        practices = (await db.execute(select(Practice))).scalars().all()
+        latest_subs = await self._latest_subscriptions(db)
+
+        clinics_total = len(practices)
+        clinics_active = clinics_trial = clinics_suspended = 0
+        sub_counts = {"active": 0, "past_due": 0, "cancelled": 0, "cancelling": 0, "trial": 0, "expired": 0}
+        for practice in practices:
+            sub = latest_subs.get(practice.id)
+            status = (sub.status if sub else None)
+            if practice.status == PracticeStatus.SUSPENDED:
+                clinics_suspended += 1
+            elif status == SubscriptionStatus.TRIAL:
+                clinics_trial += 1
+            else:
+                clinics_active += 1
+            if sub is not None:
+                key = sub.status.value
+                if key in sub_counts:
+                    sub_counts[key] += 1
+                if sub.cancel_at_period_end and sub.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL):
+                    sub_counts["cancelling"] += 1
+
+        total_users = (await db.execute(select(func.count()).select_from(User))).scalar_one()
+        total_patients = (await db.execute(select(func.count()).select_from(Patient))).scalar_one()
+
+        month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        appointments_this_month = (
+            await db.execute(
+                select(func.count()).select_from(Appointment).where(Appointment.start_time >= month_start)
+            )
+        ).scalar_one()
+
+        ai_runs_total = (await db.execute(select(func.count()).select_from(AgentLog))).scalar_one()
+
+        # Estimated AI cost = logged sessions × per-session price from the
+        # agent costing table (the same table the per-practice cost estimates
+        # already use). Rows whose agent has no costing entry contribute 0.
+        cost_rows = await db.execute(
+            select(AgentLog.agent_type, func.count())
+            .group_by(AgentLog.agent_type)
+        )
+        costing_map = await self._agent_costing_map(db)
+        ai_cost_total = Decimal("0")
+        for agent_type, runs in cost_rows.all():
+            costing = costing_map.get(agent_type)
+            if costing and costing.is_active:
+                ai_cost_total += costing.cost_per_session * runs
+
+        # DB health = wall-clock time of one trivial round-trip on the session
+        # this request already owns — cheap, real, and fails loudly (the
+        # endpoint 500s) if the DB is actually unreachable.
+        db_started = time.monotonic()
+        await db.execute(text("SELECT 1"))
+        db_health_ms = round((time.monotonic() - db_started) * 1000, 1)
+
+        return {
+            "clinics": {
+                "total": clinics_total,
+                "active": clinics_active,
+                "trial": clinics_trial,
+                "suspended": clinics_suspended,
+            },
+            "total_users": total_users,
+            "total_patients": total_patients,
+            "appointments_this_month": appointments_this_month,
+            "ai": {
+                "runs_total": ai_runs_total,
+                "avg_latency_ms": avg_llm_latency_ms(),
+                "estimated_cost_total": float(ai_cost_total),
+            },
+            "subscriptions": {
+                "active": sub_counts["active"],
+                "past_due": sub_counts["past_due"],
+                "cancelled": sub_counts["cancelled"],
+                "cancelling": sub_counts["cancelling"],
+                "trial": sub_counts["trial"],
+            },
+            "system": {**runtime_snapshot(), "db_health_ms": db_health_ms},
+        }
+
+    async def recent_activity(self, db: AsyncSession, limit: int = 30) -> list[dict]:
+        """Newest platform-wide events for the Super Admin ACTIVITY feed,
+        straight off the audit_logs trail (the same trail compliance reads).
+        Clinic name + actor email are joined for display; events with no
+        practice (failed portal logins) still appear, just unscoped."""
+        limit = max(1, min(limit, 100))
+        result = await db.execute(
+            select(AuditLog, Practice.name, User.email)
+            .join(Practice, AuditLog.practice_id == Practice.id, isouter=True)
+            .join(User, AuditLog.actor_user_id == User.id, isouter=True)
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+        )
+        return [
+            {
+                "id": row.id,
+                "practice_id": row.practice_id,
+                "practice_name": practice_name,
+                "action": row.action,
+                "actor_type": row.actor_type,
+                "actor_email": actor_email,
+                "created_at": row.created_at,
+            }
+            for row, practice_name, actor_email in result.all()
+        ]
+
+    def permission_grants(self, user: User) -> list[dict]:
+        """What this user can actually reach in their clinic, as display-ready
+        {key, label} pairs. Granular grants exist today only for receptionists
+        (the dashboard's Sidebar gates on the same keys); owner/doctor access
+        follows from the role, so the list stays empty for them."""
+        if user.role != UserRole.RECEPTIONIST or not user.permissions:
+            return []
+        labels = {p["key"]: p["label"] for p in RECEPTIONIST_PERMISSIONS}
+        return [
+            {"key": key, "label": labels.get(key, key.replace("_", " ").title())}
+            for key in user.permissions
+        ]
+
+    async def list_users(self, db: AsyncSession, q: str | None = None) -> list[tuple[User, str | None]]:
         # Every user across every practice, searchable by email — this is
-        # how a platform admin finds and promotes the next admin. Not
-        # paginated yet; fine at current scale, revisit if the roster grows.
-        stmt = select(User).order_by(User.created_at.desc())
+        # how a platform admin finds and promotes the next admin. Joined with
+        # the practice name so the roster is readable without a second lookup
+        # per row. Not paginated yet; fine at current scale, revisit if the
+        # roster grows.
+        stmt = select(User, Practice.name).join(
+            Practice, User.practice_id == Practice.id, isouter=True
+        ).order_by(User.created_at.desc())
         if q:
             stmt = stmt.where(User.email.ilike(f"%{q}%"))
         result = await db.execute(stmt)
-        return list(result.scalars().all())
+        return [(user, practice_name) for user, practice_name in result.all()]
 
     async def get_user(self, db: AsyncSession, user_id) -> User | None:
         result = await db.execute(select(User).where(User.id == user_id))

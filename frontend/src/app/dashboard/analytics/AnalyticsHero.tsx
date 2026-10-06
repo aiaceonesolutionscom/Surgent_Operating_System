@@ -1,4 +1,3 @@
-import React from "react";
 import { SparklesIcon } from "lucide-react";
 import { ProgressRing } from "../components/ProgressRing";
 

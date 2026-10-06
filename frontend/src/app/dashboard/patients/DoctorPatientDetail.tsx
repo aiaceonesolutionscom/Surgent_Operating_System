@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { LayoutDashboardIcon, StethoscopeIcon, CameraIcon, FileTextIcon, CalendarIcon, CalendarPlusIcon, MessageCircleIcon } from "lucide-react";
 import type { Patient } from "./types";

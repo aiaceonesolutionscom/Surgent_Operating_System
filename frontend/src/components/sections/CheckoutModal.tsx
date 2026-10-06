@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { XIcon, Loader2Icon } from "lucide-react";
+import { Link } from "react-router-dom";
+import { XIcon, Loader2Icon, ArrowRightIcon } from "lucide-react";
 import { createCheckoutSession } from "../../api/commerce";
 import { ApiError } from "../../api/client";
 
@@ -80,6 +81,22 @@ export function CheckoutModal({ planId, planName, onClose }: CheckoutModalProps)
             You'll be redirected to Stripe to complete payment securely.
           </p>
         </form>
+
+        {/* G-1 (see multiclinic.md): without this escape hatch, a prospect who
+            isn't ready to pay has nowhere to go but Stripe or the back button —
+            the free org-request path is invisible from here. */}
+        <div className="mt-5 rounded-xl border border-sand-200 bg-canvas p-4 text-center">
+          <p className="text-xs text-ink-soft">
+            Not ready to pay yet? Request free access and we&apos;ll set your organization up
+            personally first — no card needed.
+          </p>
+          <Link
+            to="/sign-up"
+            className="mt-2.5 inline-flex items-center gap-1 text-sm font-semibold text-teal-700 underline-offset-4 hover:underline">
+            Request free access
+            <ArrowRightIcon className="h-3.5 w-3.5" />
+          </Link>
+        </div>
       </div>
     </div>);
 

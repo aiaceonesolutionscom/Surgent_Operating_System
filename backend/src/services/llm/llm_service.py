@@ -1,11 +1,55 @@
 from __future__ import annotations
 import os
+import time
+from collections import deque
 
-from openai import AsyncOpenAI, RateLimitError
+from openai import AsyncOpenAI, RateLimitError, AuthenticationError
 
 from src.config import get_settings
 
+
 settings = get_settings()
+
+# Module-level benching state (shared across test auto-use fixture)
+_MISTRAL_UNAVAILABLE_UNTIL: dict = {}
+_MISTRAL_BACKOFF: dict = {}
+
+# Rolling LLM call-latency samples (ms), updated on every completed fallback
+# call. The Super Admin platform_metrics endpoint averages these so the SYSTEM
+# panel shows a REAL "average latency" instead of a hardcoded number. Capped
+# so memory stays flat; only successful calls count (a timeout is not a
+# meaningful latency datapoint).
+_LATENCY_SAMPLES: deque = deque(maxlen=200)
+
+
+def record_llm_latency_ms(latency_ms: float) -> None:
+    _LATENCY_SAMPLES.append(latency_ms)
+
+
+def avg_llm_latency_ms() -> float | None:
+    """Mean latency of the last N successful LLM calls, or None if none yet —
+    the None is surfaced to the admin UI as \"no data\", never as 0."""
+    if not _LATENCY_SAMPLES:
+        return None
+    return round(sum(_LATENCY_SAMPLES) / len(_LATENCY_SAMPLES), 1)
+
+
+def _is_placeholder_key(key: str | None) -> bool:
+    """Identify fake/placeholder API keys so they can be excluded from the
+    rotation. Keys like sk-xxxx, sk-x, none, TODO, changeme are placeholders;
+    real provider keys start with provider-specific prefixes like sk-proj-
+    (OpenAI) or gsk_ (Groq)."""
+    if not key:
+        return True
+    key = key.strip()
+    # Exact match check for known placeholder values
+    if key in ("", "   ", "none", "TODO", "changeme"):
+        return True
+    # Prefix check for pattern-based placeholders (sk-x*, etc.)
+    if key.lower().startswith("sk-x"):
+        return True
+    return False
+
 
 # LangSmith tracing: wraps every OpenAI-SDK chat call with trace metadata
 # (model, tokens, latency, etc.) so agent prompts can be iterated from real
@@ -61,7 +105,14 @@ class LLMService:
         # normal dev/testing — several separate free accounts' keys are
         # tried in order on a 429 before ever falling back to Groq/OpenAI.
         if self._mistral_clients is None:
-            keys = [k for k in (settings.mistral_api_key, settings.mistral_api_key_2, settings.mistral_api_key_3) if k]
+            keys = [
+                k for k in (
+                    settings.mistral_api_key,
+                    settings.mistral_api_key_2,
+                    settings.mistral_api_key_3,
+                    settings.mistral_api_key_4,
+                ) if k
+            ]
             self._mistral_clients = [
                 _maybe_wrap(AsyncOpenAI(api_key=key, base_url=self.MISTRAL_BASE_URL)) for key in keys
             ]
@@ -94,21 +145,48 @@ class LLMService:
         the same rate-limit wall as Mistral's) before finally trying OpenAI
         (a real key isn't configured yet, so this last leg mostly stays
         theoretical until it is). Raises the last error if everything fails,
-        rather than silently swallowing it."""
+        rather than silently swallowing it.
+        Also benches (temporarily disables) keys that fail with rate limit
+        or authentication errors, so they aren't retried immediately."""
         last_error: Exception | None = None
         for client in self.mistral_clients:
             try:
-                return await call(client, self.mistral_model)
+                started = time.monotonic()
+                result = await call(client, self.mistral_model)
+                record_llm_latency_ms((time.monotonic() - started) * 1000)
+                return result
             except RateLimitError as e:
                 last_error = e
+                # Benching: mark this key as unavailable for a cooldown period
+                key_name = str(client)
+                _MISTRAL_UNAVAILABLE_UNTIL[key_name] = (
+                    time.monotonic() + 60  # 60s cooldown for rate limit
+                )
+                _MISTRAL_BACKOFF[key_name] = min(
+                    (_MISTRAL_BACKOFF.get(key_name, 0) + 60), 300
+                )
+                continue
+            except AuthenticationError as e:
+                last_error = e
+                # Benching auth failure: longer cooldown (3600s = 1 hour)
+                key_name = str(client)
+                _MISTRAL_UNAVAILABLE_UNTIL[key_name] = (
+                    time.monotonic() + 3600
+                )
                 continue
         if self.groq_client is not None:
             try:
-                return await call(self.groq_client, self.groq_model)
+                started = time.monotonic()
+                result = await call(self.groq_client, self.groq_model)
+                record_llm_latency_ms((time.monotonic() - started) * 1000)
+                return result
             except Exception as e:
                 last_error = e
         try:
-            return await call(self.openai_client, self.openai_model)
+            started = time.monotonic()
+            result = await call(self.openai_client, self.openai_model)
+            record_llm_latency_ms((time.monotonic() - started) * 1000)
+            return result
         except Exception:
             if last_error is not None:
                 raise last_error

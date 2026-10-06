@@ -1,4 +1,3 @@
-import React from "react";
 import { CheckIcon } from "lucide-react";
 import { PLANS } from "../../../data/plans";
 import { usePlan } from "../plan/PlanContext";

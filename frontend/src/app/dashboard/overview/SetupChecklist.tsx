@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { CheckIcon, CircleIcon, SparklesIcon } from "lucide-react";
 import { usePracticeProfile } from "../profile/usePracticeProfile";

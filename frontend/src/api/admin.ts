@@ -76,6 +76,61 @@ export interface AdminSummaryResponse {
   assumption_note: string;
 }
 
+export interface ClinicStatusCounts {
+  total: number;
+  active: number;
+  trial: number;
+  suspended: number;
+}
+
+export interface SubscriptionCounts {
+  active: number;
+  past_due: number;
+  cancelled: number;
+  // cancel_at_period_end=True — still paid up until period end, counted
+  // separately so "cancelling" isn't conflated with "active".
+  cancelling: number;
+  trial: number;
+}
+
+export interface AiUsageSummary {
+  runs_total: number;
+  // Rolling average of successful LLM calls since API boot; null = no calls
+  // yet (the UI shows "—", never a fake 0).
+  avg_latency_ms: number | null;
+  estimated_cost_total: number;
+  cost_is_estimate: boolean;
+}
+
+export interface SystemHealthSummary {
+  uptime_seconds: number;
+  db_health_ms: number | null;
+  error_rate_percent: number;
+  slow_requests_total: number;
+  scope_note: string;
+}
+
+export interface PlatformMetricsResponse {
+  clinics: ClinicStatusCounts;
+  total_users: number;
+  total_patients: number;
+  appointments_this_month: number;
+  ai: AiUsageSummary;
+  subscriptions: SubscriptionCounts;
+  system: SystemHealthSummary;
+}
+
+// One audit_logs row rendered in the Super Admin ACTIVITY feed.
+export interface ActivityEvent {
+  id: string;
+  practice_id: string | null;
+  practice_name: string | null;
+  action: string;
+  actor_type: string;
+  actor_email: string | null;
+  created_at: string;
+}
+
 export interface AdminPracticeListItem {
   id: string;
   name: string;
@@ -117,6 +172,46 @@ export function getAdminMe() {
 
 export function getAdminSummary() {
   return adminFetch<AdminSummaryResponse>("/api/v1/admin/summary");
+}
+
+export function platformMetrics() {
+  return adminFetch<PlatformMetricsResponse>("/api/v1/admin/platform_metrics");
+}
+
+export function getAdminActivity(limit = 30) {
+  return adminFetch<ActivityEvent[]>(`/api/v1/admin/activity?limit=${limit}`);
+}
+
+// --- platform users (backend GET/PATCH /admin/users) ------------------------
+export interface AdminUserPermissionGrant {
+  key: string;
+  label: string;
+}
+
+export interface AdminUserItem {
+  id: string;
+  email: string;
+  name: string | null;
+  role: "owner" | "doctor" | "receptionist" | "staff" | string;
+  practice_id: string;
+  practice_name: string | null;
+  is_active: boolean;
+  is_platform_admin: boolean;
+  // Granular clinic access — only receptionists carry these today; owner/
+  // doctor access follows from the role itself.
+  permissions: AdminUserPermissionGrant[];
+}
+
+export function listAdminUsers(q?: string) {
+  const suffix = q ? `?q=${encodeURIComponent(q)}` : "";
+  return adminFetch<AdminUserItem[]>(`/api/v1/admin/users${suffix}`);
+}
+
+export function updateAdminUser(userId: string, is_platform_admin: boolean) {
+  return adminFetch<AdminUserItem>(`/api/v1/admin/users/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_platform_admin })
+  });
 }
 
 export function listAdminPractices(params: { q?: string; plan_tier?: string; sort?: string } = {}) {

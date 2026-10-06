@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link2Icon, CopyIcon, CheckIcon, RefreshCwIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
 import { getDoctorSignupCode, regenerateDoctorSignupCode } from "../../../api/practice";

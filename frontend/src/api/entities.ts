@@ -1,6 +1,6 @@
-// ============================================================================
-// Entities — the practice-domain resource records (patients, doctors,
-// appointments, conversations). All of these are authed (take authedFetch) —
+﻿// ============================================================================
+// Entities â€” the practice-domain resource records (patients, doctors,
+// appointments, conversations). All of these are authed (take authedFetch) â€”
 // backend/src/router/conversations/conversations_router.py requires
 // get_current_practice_user like every other domain here.
 // ============================================================================
@@ -93,13 +93,13 @@ export interface CreatePatientRequest {
   source?: string | null;
   // Assign the doctor right at walk-in intake instead of a separate call.
   assigned_doctor_id?: string | null;
-  // "whatsapp" — seeds a WhatsApp conversation so the very first automated
+  // "whatsapp" â€” seeds a WhatsApp conversation so the very first automated
   // send (visit document, confirmation) goes out on WhatsApp instead of
   // falling back to SMS for a patient with no message history yet.
   preferred_channel?: "whatsapp" | null;
 }
 
-// Matches backend/src/router/patients/patients_router.py — a plain function
+// Matches backend/src/router/patients/patients_router.py â€” a plain function
 // that takes authedFetch rather than being a hook.
 export function createPatient(authedFetch: AuthedFetch, data: CreatePatientRequest) {
   return authedFetch<PatientResponse>("/api/v1/patients", {
@@ -112,7 +112,7 @@ export function listPatients(authedFetch: AuthedFetch, includeArchived = false) 
   return authedFetch<PatientResponse[]>(`/api/v1/patients${includeArchived ? "?include_archived=true" : ""}`);
 }
 
-// The raw, un-cached single-patient fetch — used by sections that need the
+// The raw, un-cached single-patient fetch â€” used by sections that need the
 // full profile-depth fields (Week 2) that usePatients()'s mapped client-side
 // Patient type doesn't carry, same reasoning as ClinicalSection/
 // PatientPhotosGallery being self-fetching rather than reading the parent's
@@ -195,7 +195,7 @@ export function restorePatient(authedFetch: AuthedFetch, patientId: string) {
   });
 }
 
-// Owner-only, and only for an already-archived patient — backend rejects
+// Owner-only, and only for an already-archived patient â€” backend rejects
 // both (see patients_router.py's DELETE /patients/{id}). Permanent: if this
 // patient ever comes back, front desk re-registers them from scratch.
 export function deletePatient(authedFetch: AuthedFetch, patientId: string) {
@@ -335,7 +335,7 @@ export function listMyAppointments(authedFetch: AuthedFetch) {
   return authedFetch<AppointmentResponse[]>("/api/v1/appointments?doctor_id=me");
 }
 
-// scope=practice — every doctor's appointments (Owner/Receptionist front-desk
+// scope=practice â€” every doctor's appointments (Owner/Receptionist front-desk
 // view), as opposed to listMyAppointments' own-schedule-only scope.
 export function listPracticeAppointments(authedFetch: AuthedFetch) {
   return authedFetch<AppointmentResponse[]>("/api/v1/appointments?scope=practice");
@@ -352,7 +352,7 @@ export function listPatientAppointments(authedFetch: AuthedFetch, patientId: str
 }
 
 // --- doctor personal time blocks --------------------------------------------
-// A doctor's own private calendar note/block — no booking-engine effect,
+// A doctor's own private calendar note/block â€” no booking-engine effect,
 // visible only to them. Matches backend/src/router/doctors/doctors_router.py's
 // /me/time-blocks endpoints.
 export interface DoctorTimeBlockResponse {
@@ -569,7 +569,7 @@ export interface ApplicationUploadResponse {
 
 // Matches backend/src/router/doctor_applications/doctor_applications_router.py.
 // Self-service endpoints (me/*) work while the applicant's account is still
-// inactive (pending Owner review) — they're gated by get_current_user_record,
+// inactive (pending Owner review) â€” they're gated by get_current_user_record,
 // not the stricter get_current_practice_user every other authed call uses.
 export function uploadApplicationFile(authedFetch: AuthedFetch, file: File) {
   const form = new FormData();
@@ -592,9 +592,9 @@ export function getMyApplication(authedFetch: AuthedFetch) {
 }
 
 // ============================================================================
-// Org requests — the free "new organization" self-signup path (plain
+// Org requests â€” the free "new organization" self-signup path (plain
 // /sign-up, no invite/apply code). Matches backend/src/router/practice/
-// practice_router.py's request-org/my-org-request endpoints — a Super Admin
+// practice_router.py's request-org/my-org-request endpoints â€” a Super Admin
 // reviews these from the /super-admin/org-requests queue.
 // ============================================================================
 export interface OrgRequestResponse {
@@ -617,7 +617,7 @@ export function getMyOrgRequest(authedFetch: AuthedFetch) {
 }
 
 // ============================================================================
-// Green API (WhatsApp) self-connect — Owner-only. Matches backend/src/router/
+// Green API (WhatsApp) self-connect â€” Owner-only. Matches backend/src/router/
 // practice/practice_router.py's /practice/settings/green-api endpoints.
 // ============================================================================
 export interface GreenApiSettingsResponse {
@@ -643,9 +643,9 @@ export function disconnectGreenApi(authedFetch: AuthedFetch) {
 }
 
 // ============================================================================
-// Meta (Instagram/Facebook) self-connect — Owner-only. `configured` reflects
+// Meta (Instagram/Facebook) self-connect â€” Owner-only. `configured` reflects
 // whether the PLATFORM has a real Facebook App set up at all (not something
-// any individual Owner can fix) — see backend/src/services/channels/meta_service.py.
+// any individual Owner can fix) â€” see backend/src/services/channels/meta_service.py.
 // ============================================================================
 export interface MetaSettingsResponse {
   configured: boolean;
@@ -705,11 +705,11 @@ export function deleteApplication(authedFetch: AuthedFetch, id: string) {
 }
 
 // --- receptionist applications ----------------------------------------------
-// The receptionist mirror of the doctor self-application flow above — link
+// The receptionist mirror of the doctor self-application flow above â€” link
 // sign-up, then an Owner approves before the account activates. Matches
 // backend/src/router/staff_applications/staff_applications_router.py.
 // Self-service endpoints (me/*) work while the applicant's account is still
-// inactive (pending Owner review) — same get_current_user_record gating.
+// inactive (pending Owner review) â€” same get_current_user_record gating.
 
 export interface SubmitStaffApplicationRequest {
   name: string;
@@ -857,7 +857,15 @@ export interface MessageResponse {
   conversation_id: string;
   role: string;
   content: string;
+  // "text" | "image" | "audio" | "video" | "file" â€” drives which renderer
+  // SessionDetailPane's MessageContent picks. Was typed but never actually
+  // read (mapDetailMessages hardcoded "text"), so every attachment rendered
+  // as a bare string like "[Image]".
   content_type: string;
+  // Media payload keyed by content_type: image_url / file_url / audio_url /
+  // video_url, plus filename and (for voice) transcription. Mirrors backend
+  // MessageResponse in schemas/conversation.py.
+  extra_data?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -865,7 +873,7 @@ export interface ConversationDetail extends ConversationListItem {
   messages: MessageResponse[];
   // Set only on the response to a just-sent message that was saved but did
   // NOT actually reach the patient over WhatsApp (no phone on file, channel
-  // not connected, or the send failed) — see backend's ConversationsService.
+  // not connected, or the send failed) â€” see backend's ConversationsService.
   // send_staff_message. Absent/undefined on every other response.
   send_warning?: string | null;
 }
@@ -920,7 +928,7 @@ export async function toggleConversationAi(authedFetch: AuthedFetch, id: string,
   });
 }
 
-// --- Patient Messages (portal: patient → assigned doctor) ---------------
+// --- Patient Messages (portal: patient â†’ assigned doctor) ---------------
 
 // Conversations a patient sent their own doctor through the portal, in the
 // dedicated Patient Messages inbox (MessagesPage's "Patient messages" tab,
@@ -961,7 +969,7 @@ export interface OverviewSummaryResponse {
   sessions_today: number;
   needs_attention: number;
   bookings_this_week: number;
-  // Sum of completed TreatmentPlanItems' actual/estimated price — real,
+  // Sum of completed TreatmentPlanItems' actual/estimated price â€” real,
   // clinically-linked revenue. null (not 0) when nothing is completed yet,
   // so the UI can show an honest "not enough data" state.
   revenue_estimate: number | null;
@@ -986,7 +994,7 @@ export interface SessionAnalyticsResponse {
   by_category: CategoryCount[];
 }
 
-// Matches backend/src/router/analytics/analytics_router.py — real aggregates
+// Matches backend/src/router/analytics/analytics_router.py â€” real aggregates
 // over Conversation/Appointment, replacing MOCK_SESSIONS-derived numbers.
 export function getOverviewSummary(authedFetch: AuthedFetch) {
   return authedFetch<OverviewSummaryResponse>("/api/v1/analytics/overview");
@@ -997,7 +1005,7 @@ export function getSessionAnalytics(authedFetch: AuthedFetch) {
 }
 
 // --- staff (receptionists) ---------------------------------------------------
-// Matches backend/src/router/staff/staff_router.py. Owner-only — permissions
+// Matches backend/src/router/staff/staff_router.py. Owner-only â€” permissions
 // live directly on the User row (data/receptionist_permissions.py), not a
 // separate roster entity like Doctor.
 export interface StaffResponse {
@@ -1047,7 +1055,7 @@ export function updateStaff(authedFetch: AuthedFetch, id: string, data: UpdateSt
   });
 }
 
-// The Owner's "help them log back in" lever — resends the original Clerk
+// The Owner's "help them log back in" lever â€” resends the original Clerk
 // invite to this receptionist's email, for when their session/account is
 // gone (e.g. a wiped local Clerk dev instance) rather than a permissions
 // change. Backend relinks the SAME User row on completion, never a duplicate.
@@ -1055,7 +1063,7 @@ export function resendStaffAccess(authedFetch: AuthedFetch, id: string) {
   return authedFetch<StaffResponse>(`/api/v1/staff/${id}/resend-access`, { method: "POST" });
 }
 
-// A staff member's own profile — self-service is limited to the recurring
+// A staff member's own profile â€” self-service is limited to the recurring
 // weekly schedule (name/role/permissions are Owner-owned on the backend).
 export function getMyStaff(authedFetch: AuthedFetch) {
   return authedFetch<StaffResponse>("/api/v1/staff/me");
@@ -1068,7 +1076,7 @@ export function updateMySchedule(authedFetch: AuthedFetch, work_schedule: StaffR
   });
 }
 
-// A staff member's own profile — self-service covers the recurring weekly
+// A staff member's own profile â€” self-service covers the recurring weekly
 // schedule and phone number only (name/email/role are Owner-owned).
 export interface UpdateMyStaffRequest {
   work_schedule?: StaffResponse["work_schedule"];
@@ -1090,7 +1098,7 @@ export function updateMyDoctorSchedule(authedFetch: AuthedFetch, working_hours: 
   });
 }
 
-// A doctor's own profile — contact, education, license, and schedule are
+// A doctor's own profile â€” contact, education, license, and schedule are
 // self-service. Name and photo are deliberately NOT in this shape; those stay
 // Owner-owned (backend UpdateMyDoctorRequest whitelists them out).
 export interface UpdateMyDoctorProfileRequest {
@@ -1112,7 +1120,7 @@ export function updateMyDoctorProfile(authedFetch: AuthedFetch, data: UpdateMyDo
 }
 
 // --- procedures ---------------------------------------------------------------
-// Matches backend/src/router/procedures/procedures_router.py — the practice's
+// Matches backend/src/router/procedures/procedures_router.py â€” the practice's
 // own procedure/pricing catalog. No seeded data; the Owner enters their own.
 export interface ProcedureResponse {
   id: string;
@@ -1127,7 +1135,7 @@ export interface ProcedureResponse {
   // for a multi-visit course like laser hair removal or a hair transplant).
   default_session_count: number;
   // Template pre-visit checklist (plain strings) copied onto every new
-  // SessionVisit — see backend/src/models/session_visit.py.
+  // SessionVisit â€” see backend/src/models/session_visit.py.
   default_checklist: string[];
   is_active: boolean;
   created_at: string;
@@ -1174,7 +1182,7 @@ export function updateProcedure(authedFetch: AuthedFetch, id: string, data: Upda
 }
 
 // --- clinical (consultation notes + treatment plans) --------------------------
-// Matches backend/src/router/clinical/clinical_router.py. Owner/Doctor only —
+// Matches backend/src/router/clinical/clinical_router.py. Owner/Doctor only â€”
 // deliberately excludes Receptionist (see the router's own comment).
 export interface ConsultationNoteResponse {
   id: string;
@@ -1266,7 +1274,7 @@ export function transcribeDictation(authedFetch: AuthedFetch, audioBlob: Blob, f
 }
 
 // --- session visits (multi-visit treatment tracking) ------------------------
-// Matches backend/src/router/session_visits/session_visits_router.py — one
+// Matches backend/src/router/session_visits/session_visits_router.py â€” one
 // real record per visit within a (possibly multi-visit) TreatmentPlanItem,
 // generalizing the Surgery checklist/status-machine pattern to every
 // procedure. See models/session_visit.py.
@@ -1357,7 +1365,7 @@ export function cancelSession(authedFetch: AuthedFetch, sessionId: string, reaso
 
 // --- refund requests ---------------------------------------------------
 // Matches backend/src/router/refunds/refunds_router.py. Owner/Receptionist
-// only — the AI receptionist files a request through its own tool, never
+// only â€” the AI receptionist files a request through its own tool, never
 // through this API directly, and never approves/completes one.
 export interface RefundRequestResponse {
   id: string;
@@ -1586,9 +1594,9 @@ export function deletePatientPhoto(authedFetch: AuthedFetch, photoId: string) {
 
 // --- consent documents ---------------------------------------------------------
 // Matches backend/src/router/consent/consent_router.py. Open to any active
-// practice role (Owner/Doctor/Receptionist) — administrative/legal, not
+// practice role (Owner/Doctor/Receptionist) â€” administrative/legal, not
 // clinical judgment, unlike notes/photos.
-// The fixed set of consent types this practice can raise a document for —
+// The fixed set of consent types this practice can raise a document for â€”
 // matches backend/src/models/consent_document.py's own comment on the
 // intended real vocabulary (still free text server-side, but the frontend
 // only ever offers these).
@@ -1611,7 +1619,7 @@ export interface ConsentDocumentResponse {
   version: number;
   template_id: string | null;
   template_version: number | null;
-  // Structured clause-group snapshot + generated PDF — see
+  // Structured clause-group snapshot + generated PDF â€” see
   // backend/src/models/consent_document.py's ConsentDocument.sections/file_url.
   sections: object | null;
   treatment_plan_notes: string | null;
@@ -1640,7 +1648,7 @@ export interface ConsentTemplateResponse {
   document_type: string;
   version: number;
   body: string;
-  // Admin-configurable per-treatment-type clause groups — see
+  // Admin-configurable per-treatment-type clause groups â€” see
   // backend/src/models/consent_document.py's ConsentTemplate.sections.
   sections: object | null;
   is_active: boolean;
@@ -1702,7 +1710,7 @@ export function voidConsentDocument(authedFetch: AuthedFetch, id: string) {
   });
 }
 
-// Doctor's one consent action — see consent_router.py's role split.
+// Doctor's one consent action â€” see consent_router.py's role split.
 export function markConsentDiscussed(authedFetch: AuthedFetch, id: string) {
   return authedFetch<ConsentDocumentResponse>(`/api/v1/consent-documents/${id}/mark-discussed`, {
     method: "POST"
@@ -1710,7 +1718,7 @@ export function markConsentDiscussed(authedFetch: AuthedFetch, id: string) {
 }
 
 // --- visit documents ---------------------------------------------------
-// Matches backend/src/router/visit_documents/visit_documents_router.py —
+// Matches backend/src/router/visit_documents/visit_documents_router.py â€”
 // the auto-generated "bring this to your visit" intake-summary PDF (see
 // VisitDocumentService). Read-only from the frontend: generation is always
 // server-triggered (appointment booking, AI-receptionist chat), never
@@ -1783,7 +1791,7 @@ export interface CreateSurgeryRequest {
   pre_op_checklist?: Array<{ item: string; checked: boolean }>;
 }
 
-// Scheduling-only update — Receptionist's reschedule surface. Clinical fields
+// Scheduling-only update â€” Receptionist's reschedule surface. Clinical fields
 // live on updateSurgeryClinical.
 export interface UpdateSurgeryRequest {
   scheduled_date?: string | null;
@@ -1913,7 +1921,7 @@ export function getSurgeryOverview(authedFetch: AuthedFetch) {
 // --- invoices (billing) --------------------------------------------------------
 // Matches backend/src/router/billing/billing_router.py. Viewing is open to
 // Owner/Doctor/Receptionist; creating/editing (incl. mark-paid) is
-// Owner/Receptionist only — same split as consent documents' manage roles.
+// Owner/Receptionist only â€” same split as consent documents' manage roles.
 export interface InvoiceLineItemResponse {
   id: string;
   invoice_id: string;
@@ -2069,7 +2077,7 @@ export function updateFinanceSettings(authedFetch: AuthedFetch, data: UpdateFina
 }
 
 // --- wallet / practice credits ---------------------------------------------------
-// Matches backend/src/router/wallet/wallet_router.py — Owner-only. Tracking
+// Matches backend/src/router/wallet/wallet_router.py â€” Owner-only. Tracking
 // only: top up via Stripe, view balance/history; nothing deducts from it yet.
 export interface WalletBalanceResponse {
   balance: number;
@@ -2155,7 +2163,7 @@ export interface FinanceOverviewResponse {
   net: number;
   invoice_count: number;
   expense_count: number;
-  // Accountant's-view additions — see backend/src/services/finance/finance_services.py.
+  // Accountant's-view additions â€” see backend/src/services/finance/finance_services.py.
   total_refunds: number;
   net_revenue_after_refunds: number;
   pending_refund_requests_count: number;
@@ -2206,7 +2214,7 @@ export interface InventoryItemResponse {
   is_active: boolean;
   unit_cost: number | null;
   // Computed from the item's batches (see InventoryService), not a stored
-  // column — always the current real sum, never stale.
+  // column â€” always the current real sum, never stale.
   on_hand_quantity: number;
   is_low_stock: boolean;
   // Calculated: on_hand_quantity * unit_cost (null if unit_cost not set)
@@ -2295,7 +2303,7 @@ export function consumeInventoryStock(authedFetch: AuthedFetch, itemId: string, 
 }
 
 // --- AI Receptionist -------------------------------------------------------------
-// Matches backend/src/router/ai_receptionist/ai_receptionist_router.py — the
+// Matches backend/src/router/ai_receptionist/ai_receptionist_router.py â€” the
 // merged voice/chat + reminders + translation module (previously 3 separate
 // "agent" folders: receptionist_agent, appointment_reminder_agent,
 // multilingual_translation_agent). Owner always sees /overview; Doctor sees
@@ -2386,7 +2394,7 @@ export interface MarketSettings {
   consult_format: string;
   video_first: boolean;
   clinic_name: string | null;
-  // Legacy single-city field — still populated (from clinics[0].city) for
+  // Legacy single-city field â€” still populated (from clinics[0].city) for
   // any older caller not yet reading `clinics` below.
   clinic_city: string | null;
   clinics: ClinicLocation[];
@@ -2396,7 +2404,7 @@ export interface MarketSettings {
   languages: string[];
 }
 
-// One physical branch within a market — a practice can run more than one
+// One physical branch within a market â€” a practice can run more than one
 // clinic in the same country (see backend/src/schemas/ai_receptionist.py's
 // ClinicLocation), each with its own city and full address.
 export interface ClinicLocation {
@@ -2443,7 +2451,7 @@ export function clearAIReceptionistMarket(authedFetch: AuthedFetch, code: string
 
 // --- human support hours -------------------------------------------------
 // Matches backend/src/router/ai_receptionist/ai_receptionist_router.py's
-// /human-hours — when the AI's escalation tools can honestly say
+// /human-hours â€” when the AI's escalation tools can honestly say
 // "connecting you now" versus "the team will follow up when they reopen".
 export interface HumanAvailabilityResponse {
   start: string;
@@ -2472,7 +2480,7 @@ export function saveHumanAvailability(authedFetch: AuthedFetch, update: HumanAva
 }
 
 // --- agent config ------------------------------------------------------------
-// Backed by backend/src/router/agent_config/ — GET read for any practice user,
+// Backed by backend/src/router/agent_config/ â€” GET read for any practice user,
 // PUT write for the Owner only. `config` JSONB holds per-agent knobs (tone,
 // escalation sensitivity) that the Agent settings page edits.
 export interface AgentConfigResponse {
@@ -2509,7 +2517,7 @@ export function translateText(authedFetch: AuthedFetch, text: string, targetLang
 }
 
 // `held_until`/`hold_reason` are set when the reminder was deliberately NOT
-// sent because it is outside the patient's own 09:00-21:00 window (SOP s11) —
+// sent because it is outside the patient's own 09:00-21:00 window (SOP s11) â€”
 // sent=false with a reason is an outcome, not an error.
 export function sendAppointmentReminder(authedFetch: AuthedFetch, appointmentId: string) {
   return authedFetch<{
@@ -2522,7 +2530,7 @@ export function sendAppointmentReminder(authedFetch: AuthedFetch, appointmentId:
 }
 
 // --- staff messages ---------------------------------------------------------------
-// Matches backend/src/router/staff_messages/staff_message_router.py — a 1:1
+// Matches backend/src/router/staff_messages/staff_message_router.py â€” a 1:1
 // team chat between any two practice users. Conversations are stored as
 // canonical user pairs, so every member (owner, doctor, receptionist) uses
 // the same endpoints with no role-specific aliases. `mine` is computed
@@ -2600,11 +2608,11 @@ export async function sendStaffFile(_authedFetch: AuthedFetch, conversationId: s
 }
 
 // --- patient portal ----------------------------------------------------------
-// Real ID+PIN login (backend/src/router/patient_portal/patient_portal_router.py) —
+// Real ID+PIN login (backend/src/router/patient_portal/patient_portal_router.py) â€”
 // replaces the earlier plaintext-link-token scheme entirely. Owner/staff manage
 // access (enable/reset-PIN/disable) via authedFetch (Clerk); the patient's own
 // session is a separate, short-lived JWT from POST /login, sent as a Bearer
-// token by portalFetch below — never Clerk, never the practice's authedFetch.
+// token by portalFetch below â€” never Clerk, never the practice's authedFetch.
 export interface PortalAccessResponse {
   portal_id: string | null;
   enabled: boolean;
@@ -2779,7 +2787,7 @@ async function portalFetch<T>(path: string, portalToken: string | null, init?: R
       const body = await res.clone().json();
       if (body && typeof body.detail === "string") detail = body.detail;
     } catch {
-      // Non-JSON or empty error body — fall through to the generic message.
+      // Non-JSON or empty error body â€” fall through to the generic message.
     }
     throw new ApiError(res.status, detail || `${init?.method || "GET"} ${path} failed with ${res.status}`);
   }
@@ -2789,7 +2797,7 @@ async function portalFetch<T>(path: string, portalToken: string | null, init?: R
 export interface PortalLoginResponse {
   access_token: string;
   expires_in_minutes: number;
-  // True when this patient hasn't set a login PIN yet — the portal shows the
+  // True when this patient hasn't set a login PIN yet â€” the portal shows the
   // "set your PIN" screen right after logging in via a one-time code.
   requires_pin_setup?: boolean;
 }
@@ -2813,7 +2821,7 @@ export function portalVerifyOtp(phone: string, code: string) {
   });
 }
 
-// The cheap, OTP-free daily login — phone + the patient's own PIN (no code is
+// The cheap, OTP-free daily login â€” phone + the patient's own PIN (no code is
 // sent, so repeated logins don't cost anything; a forgotten PIN uses the OTP
 // flow above to set a new one).
 export function portalLoginWithPin(phone: string, pin: string) {
@@ -2824,7 +2832,7 @@ export function portalLoginWithPin(phone: string, pin: string) {
 }
 
 // First-time PIN setup (after a one-time-code login with requires_pin_setup)
-// or a PIN change — `currentPin` is required when changing an existing PIN.
+// or a PIN change â€” `currentPin` is required when changing an existing PIN.
 export function portalSetPin(portalToken: string, pin: string, currentPin?: string) {
   return portalFetch<PortalPatientResponse>("/api/v1/patient-portal/me/pin", portalToken, {
     method: "POST",
@@ -2918,7 +2926,7 @@ export interface ConsultationRequestResponse {
   updated_at: string;
 }
 
-// Public website "Book a consultation" lead — no authedFetch, same reason as
+// Public website "Book a consultation" lead â€” no authedFetch, same reason as
 // portalBookAppointment: the form is the funnel entry, no auth required.
 export async function submitConsultationRequest(data: ConsultationRequestPayload): Promise<ConsultationRequestResponse> {
   const res = await fetch(`/api/v1/public/consultation-request`, {
@@ -2933,7 +2941,7 @@ export async function submitConsultationRequest(data: ConsultationRequestPayload
   return res.json();
 }
 
-// Public website AI chat (Aria) — no authedFetch, same reason as
+// Public website AI chat (Aria) â€” no authedFetch, same reason as
 // submitConsultationRequest: the hero/chat IS the public funnel entry. The
 // client passes conversation_id back to continue the same thread.
 export interface LandingChatMessagePayload {
@@ -2967,7 +2975,7 @@ export async function sendLandingChatMessage(data: LandingChatMessagePayload): P
 }
 
 // SSE event shapes from POST /landing-chat/message/stream (server/sse.py's
-// wire format) — a discriminated union on `type`. "done" carries everything
+// wire format) â€” a discriminated union on `type`. "done" carries everything
 // the non-streaming response above returns (conversation_id, booking/sales-
 // lead flags) so the frontend can still render those confirmation bubbles.
 export type LandingChatStreamEvent =
@@ -2980,4 +2988,37 @@ export function sendLandingChatMessageStream(data: LandingChatMessagePayload) {
     method: "POST",
     body: JSON.stringify(data)
   });
+}
+
+// --- sample data (demo/trial) --------------------------------------------------
+// Owner-only, practice-scoped from the session (see
+// backend/src/router/sample_data/sample_data_router.py). Used by the
+// dashboard Sample Data panel to give a free-trial owner something to explore
+// and to take it all away again.
+export interface SampleDataCountsResponse {
+  patients: number;
+  appointments: number;
+  conversations: number;
+  messages: number;
+  inventory_items: number;
+  expenses: number;
+  total: number;
+}
+
+export interface SampleDataActionResponse {
+  action: 'seeded' | 'cleared';
+  counts: SampleDataCountsResponse;
+  message: string;
+}
+
+export function getSampleDataCounts(authedFetch: AuthedFetch) {
+  return authedFetch<SampleDataCountsResponse>('/api/v1/sample-data/counts');
+}
+
+export function seedSampleData(authedFetch: AuthedFetch) {
+  return authedFetch<SampleDataActionResponse>('/api/v1/sample-data/seed', { method: 'POST' });
+}
+
+export function clearSampleData(authedFetch: AuthedFetch) {
+  return authedFetch<SampleDataActionResponse>('/api/v1/sample-data', { method: 'DELETE' });
 }

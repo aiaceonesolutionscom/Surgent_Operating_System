@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { InboxIcon, ArrowLeftIcon } from "lucide-react";
 import type { Session } from "./types";
 import { SessionListItem } from "./SessionListItem";

@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { SparklesIcon, ArrowUpRightIcon } from "lucide-react";
 import { ADMIN_ROUTES } from "../constants/routes";

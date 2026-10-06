@@ -1,4 +1,3 @@
-import React from "react";
 import { ArrowRightIcon, UsersIcon, SparklesIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { DASHBOARD_ROUTES } from "../constants/routes";

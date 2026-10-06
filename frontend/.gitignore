@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# local dev logs
+*.log
+__test_logo_modal.cjs

@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { Container, Logo } from "../ui";
 import { FOOTER_COLUMNS, type FooterLink } from "../../data/footer";

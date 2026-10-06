@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRightIcon } from "lucide-react";
 import { CHANNELS } from "../../dashboard/data/channels";

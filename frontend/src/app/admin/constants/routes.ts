@@ -5,6 +5,7 @@ export const ADMIN_ROUTES = {
   overview: "/super-admin",
   clinics: "/super-admin/clinics",
   clinicDetail: (id: string) => `/super-admin/clinics/${id}`,
+  users: "/super-admin/users",
   orgRequests: "/super-admin/org-requests",
   plans: "/super-admin/plans",
   salesLeads: "/super-admin/sales-leads",

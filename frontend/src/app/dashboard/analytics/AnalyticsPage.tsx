@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertCircleIcon } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { AnalyticsHero } from "./AnalyticsHero";

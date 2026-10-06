@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { PanelLeftIcon, PanelLeftOpenIcon } from "lucide-react";
 import { CommandPalette } from "./CommandPalette";

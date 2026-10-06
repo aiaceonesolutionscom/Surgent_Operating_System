@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { OnboardingLayout } from "./OnboardingLayout";
 import { useOnboardingState } from "./useOnboardingState";
 import { PracticeDetailsStep } from "./steps/PracticeDetailsStep";

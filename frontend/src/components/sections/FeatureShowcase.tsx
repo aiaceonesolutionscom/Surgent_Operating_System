@@ -1,4 +1,3 @@
-import React from "react";
 import { motion } from "framer-motion";
 import { CameraIcon, HeartPulseIcon, CheckIcon, ShieldAlertIcon } from "lucide-react";
 import { Container } from "../ui";

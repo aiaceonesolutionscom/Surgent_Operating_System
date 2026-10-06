@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { LockIcon } from "lucide-react";
 import type { Agent } from "../../../data/agents";

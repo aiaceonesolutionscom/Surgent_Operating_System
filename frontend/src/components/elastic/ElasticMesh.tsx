@@ -143,9 +143,36 @@ export interface ElasticMeshProps extends HTMLAttributes<HTMLDivElement> {
   tilt?: number;
   shading?: number;
   resolution?: number;
-  interaction?: "hover" | "drag";
-  enabled?: boolean;
+    interaction?: "hover" | "drag";
+    enabled?: boolean;
+  }
+
+// The values the render loop actually reads, after the destructuring defaults
+// have been applied. Every field is required here on purpose: keeping the
+// public `ElasticMeshProps` all-optional is right for callers, but internally
+// none of these can be undefined, and typing them that way is what lets the
+// per-frame arithmetic (tilt * Math.PI, hexToRgb(color1)) stay unchecked
+// instead of needing a cast on every single line.
+type ElasticMeshRuntimeProps = {
+  color1: string;
+  color2: string;
+  highlight: string;
+  showGrid: boolean;
+  gridDensity: number;
+  gridOpacity: number;
+  gridColor: string;
+  borderRadius: number;
+  stiffness: number;
+  damping: number;
+  grabRadius: number;
+  pull: number;
+  wobble: number;
+  tilt: number;
+  shading: number;
+  interaction: "hover" | "drag";
+  enabled: boolean;
 }
+
 
 const ElasticMesh = ({
   image = "",
@@ -173,7 +200,12 @@ const ElasticMesh = ({
 }: ElasticMeshProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const propsRef = useRef({});
+  // Typed as the post-default shape rather than `ElasticMeshProps` because the
+  // animation loop reads these every frame and all of them have defaults from
+  // the destructuring above, so none can actually be undefined here. The
+  // generic parameter is a cast because `useRef` needs an initial value and
+  // the real one is assigned immediately below.
+  const propsRef = useRef({} as ElasticMeshRuntimeProps);
   propsRef.current = {
     color1,
     color2,
@@ -195,8 +227,13 @@ const ElasticMesh = ({
   };
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const containerEl = containerRef.current;
+    if (!containerEl) return;
+    // Aliased to a non-nullable const: `resize` and `toPlane` are hoisted
+    // function declarations, and TypeScript discards the narrowing from the
+    // `containerEl` guard inside a hoisted function — so the closures would
+    // each report "possibly null" for every `container.offsetWidth` access.
+    const container = containerEl as HTMLDivElement;
 
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 

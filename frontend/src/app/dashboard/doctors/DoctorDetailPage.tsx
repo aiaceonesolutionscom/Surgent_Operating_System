@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeftIcon, MailIcon, PhoneIcon, AwardIcon, CalendarCheckIcon, DollarSignIcon, PencilIcon, ClockIcon, FileTextIcon, DownloadIcon, Maximize2Icon, SparklesIcon, SendIcon, CheckCircle2Icon, UserXIcon, UserCheckIcon, AlertTriangleIcon } from "lucide-react";
 import { ComingSoon } from "../components/ComingSoon";

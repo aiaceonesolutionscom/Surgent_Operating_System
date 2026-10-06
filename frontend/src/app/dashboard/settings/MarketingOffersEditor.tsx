@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { TagIcon, PlusIcon, XIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
 import { useMarketingOffers } from "./useMarketingOffers";

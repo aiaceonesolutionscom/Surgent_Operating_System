@@ -1,4 +1,3 @@
-import React from "react";
 import { motion } from "framer-motion";
 import { CalendarIcon } from "lucide-react";
 import { Button } from "../ui";

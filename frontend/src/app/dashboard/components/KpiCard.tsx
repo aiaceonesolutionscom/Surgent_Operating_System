@@ -1,4 +1,3 @@
-import React from "react";
 import type { LucideIcon } from "lucide-react";
 import { ProgressRing } from "./ProgressRing";
 import { TrendingUpIcon, TrendingDownIcon } from "lucide-react";
@@ -24,7 +23,9 @@ export function KpiCard({
   color = "#2563EB",
   loading = false
 }: KpiCardProps) {
-  const trendIcon = trend === "up" ? TrendingUpIcon : trend === "down" ? TrendingDownIcon : null;
+  // NOTE: must stay capitalised — a lowercase JSX tag like <trendIcon> is
+  // treated as a DOM element name by React, not as this variable.
+  const TrendIcon = trend === "up" ? TrendingUpIcon : trend === "down" ? TrendingDownIcon : null;
   const trendColor = trend === "up" ? "text-green-600" : trend === "down" ? "text-red-600" : "text-sand-400";
 
   if (loading) {
@@ -50,19 +51,19 @@ export function KpiCard({
         </span>
         {changePercent != null ? (
           <ProgressRing percent={changePercent} color={color} size={38} />
-        ) : trendIcon ? (
+        ) : TrendIcon ? (
           <span className={`flex items-center gap-1 text-xs font-semibold ${trendColor}`}>
-            <trendIcon className="h-3.5 w-3.5" />
-            {Math.abs(changePercent || 0)}%
+            <TrendIcon className="h-3.5 w-3.5" />
+            {trendLabel || "vs last week"}
           </span>
         ) : null}
       </div>
       <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">{label}</p>
       <p className="mt-1 font-display text-[28px] font-600 tabular-nums text-ink">{value}</p>
-      {(trendLabel || trend !== "neutral") && (
+      {trendLabel && (
         <p className="mt-2 flex items-center gap-1 text-xs font-medium text-ink-muted">
-          {trendIcon && <trendIcon className={`h-3 w-3 ${trendColor}`} />}
-          <span className={trendColor}>{trendLabel || (trend === "up" ? "vs last week" : "vs last week")}</span>
+          {TrendIcon && <TrendIcon className={`h-3 w-3 ${trendColor}`} />}
+          <span className={trendColor}>{trendLabel}</span>
         </p>
       )}
     </div>

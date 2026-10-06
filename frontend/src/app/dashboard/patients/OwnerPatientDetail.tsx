@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { LayoutDashboardIcon, StethoscopeIcon, CalendarIcon, CameraIcon, FileTextIcon, ReceiptIcon, MessageCircleIcon, ActivityIcon, CalendarPlusIcon } from "lucide-react";
 import type { Patient } from "./types";

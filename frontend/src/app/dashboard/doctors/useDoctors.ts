@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MOCK_DOCTORS } from "../data/mockDoctors";
+import { isDemoMode } from "../../../data/demoMode";
 import type { Doctor } from "./types";
 import { loadDoctorsDB, saveDoctorsDB } from "./doctorsDB";
 import { createDoctor, listDoctors, updateDoctor as updateDoctorApi, inviteDoctor, type DoctorResponse } from "../../../api/entities";
@@ -93,6 +94,7 @@ function withTimeout<T>(promise: Promise<T>, ms = 5000): Promise<T> {
 export function useDoctors(authedFetch: AuthedFetch = null) {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const doctorsRef = useRef<Doctor[]>([]);
   doctorsRef.current = doctors;
 
@@ -100,35 +102,58 @@ export function useDoctors(authedFetch: AuthedFetch = null) {
     let cancelled = false;
     (async () => {
       let data: Doctor[] | undefined;
+      let error: string | null = null;
 
       if (authedFetch) {
         try {
           const remote = await listDoctors(authedFetch);
           data = remote.map(fromApi);
-          await withTimeout(saveDoctorsDB(data)).catch(() => {});
+          await withTimeout(saveDoctorsDB(data)).catch(() => undefined);
         } catch {
           data = undefined;
         }
       }
 
       if (!data) {
+        // Everything below here is a *cache* path, reached both when signed out
+        // and when a real API call just failed. The mock roster is demo-mode
+        // exclusive: a signed-in clinic whose doctors request failed must end
+        // up with an empty list and a visible error, never an invented team the
+        // practice could try to invoice or message. The same rule the overview
+        // and sessions hooks follow.
+        let cacheFailed = false;
         try {
           data = await withTimeout(loadDoctorsDB());
           if (!data) {
-            data = (readLegacyLocalStorage() || MOCK_DOCTORS).map(normalize);
-            await withTimeout(saveDoctorsDB(data));
+            const legacy = readLegacyLocalStorage();
+            if (legacy) {
+              data = legacy.map(normalize);
+            } else {
+              data = isDemoMode() ? MOCK_DOCTORS : [];
+            }
+            // Only persist a non-empty roster. Writing the empty result of a
+            // failed fetch would poison the cache and stop the next attempt
+            // from ever being able to recover a real list.
+            if (data.length) await withTimeout(saveDoctorsDB(data));
           } else {
             data = data.map(normalize);
           }
         } catch {
           // IndexedDB unavailable (private browsing, storage disabled) — fall
           // back to in-memory only, same degradation as the old localStorage path.
-          data = MOCK_DOCTORS;
+          cacheFailed = true;
+          data = isDemoMode() ? MOCK_DOCTORS : [];
+        }
+        if (authedFetch && data.length === 0) {
+          error = cacheFailed
+            ? "Couldn't load your doctors — local storage is unavailable in this browser."
+            : "Couldn't load your doctors — check your connection and try again.";
         }
       }
       if (!cancelled) {
         doctorsRef.current = data;
         setDoctors(data);
+        setLoadError(error);
         setLoading(false);
       }
     })();
@@ -226,5 +251,5 @@ export function useDoctors(authedFetch: AuthedFetch = null) {
     [authedFetch]
   );
 
-  return { doctors, loading, getDoctor, addDoctor, updateDoctor, resendAccess };
+  return { doctors, loading, loadError, getDoctor, addDoctor, updateDoctor, resendAccess };
 }

@@ -1,4 +1,3 @@
-import React from "react";
 
 import type { ReceptionistHealth } from "../../../api/entities";
 

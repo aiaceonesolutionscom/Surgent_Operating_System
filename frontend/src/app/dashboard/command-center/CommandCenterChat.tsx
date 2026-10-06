@@ -85,9 +85,15 @@ export function CommandCenterChat() {
     setTurns([]);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const q = question.trim();
+  // Takes the question as an argument rather than reading `question` from
+  // state, because the suggestion chips call this directly. They used to do
+  // `setQuestion(q); handleSubmit(...)` in the same tick, but a state setter
+  // doesn't apply until the next render — so `handleSubmit` still closed over
+  // the *previous* `question` and sent nothing (or the wrong text) whenever
+  // the box was empty. Passing the text in makes the call correct regardless
+  // of render timing.
+  async function sendQuestion(text: string) {
+    const q = text.trim();
     if (!q || sending || !authedFetchStream) return;
 
     const id = `t${Date.now()}`;
@@ -117,6 +123,11 @@ export function CommandCenterChat() {
     } finally {
       setSending(false);
     }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    void sendQuestion(question);
   }
 
   const lastTurnId = turns.length > 0 ? turns[turns.length - 1].id : null;
@@ -178,7 +189,7 @@ export function CommandCenterChat() {
                 ].map((q, i) => (
                   <button
                     key={i}
-                    onClick={() => { setQuestion(q); handleSubmit(new Event('submit')); }}
+                    onClick={() => { setQuestion(q); void sendQuestion(q); }}
                     disabled={sending || !authedFetchStream}
                     className="rounded-xl border border-sand-200 bg-white px-3 py-2 text-xs font-medium text-ink-soft hover:border-teal-400 hover:bg-teal-50 transition-all disabled:opacity-50"
                   >

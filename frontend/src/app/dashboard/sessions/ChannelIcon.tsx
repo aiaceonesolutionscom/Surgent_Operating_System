@@ -1,8 +1,7 @@
-import React from "react";
-import { CHANNELS, type ChannelId } from "../data/channels";
+import { channelMeta, type ChannelId } from "../data/channels";
 
 export function ChannelIcon({ channel, size = 16 }: { channel: ChannelId; size?: number }) {
-  const meta = CHANNELS[channel];
+  const meta = channelMeta(channel);
   const Icon = meta.icon;
   return (
     <span

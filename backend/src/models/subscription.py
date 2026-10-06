@@ -43,6 +43,12 @@ class Subscription(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=True)
     auto_renew: Mapped[bool] = mapped_column(default=True)
+    # Mirror of Stripe's subscription.cancel_at_period_end — True the moment a
+    # practice cancels (they keep access until period end), False on resume.
+    # Written by the customer.subscription.updated webhook (see
+    # webhook_router.py) so the Super Admin can show "Cancelling" as its own
+    # subscription state instead of conflating it with active.
+    cancel_at_period_end: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

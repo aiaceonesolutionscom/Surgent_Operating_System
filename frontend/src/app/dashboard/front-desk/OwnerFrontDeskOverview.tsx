@@ -1,4 +1,3 @@
-import React from "react";
 import { UsersIcon, StethoscopeIcon } from "lucide-react";
 import { EmptyState } from "../components/EmptyState";
 import { usePlan } from "../plan/PlanContext";

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Navbar, Footer } from "../components/layout";
 import { CinematicHero, ScrollGuideAvatar } from "../components/hero";
 import { LandingChat, type HeroChatSeed } from "../components/chat/LandingChat";

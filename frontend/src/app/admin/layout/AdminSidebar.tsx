@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutDashboardIcon, Building2Icon, CreditCardIcon, InboxIcon, UserPlusIcon, BotIcon } from "lucide-react";
+import { LayoutDashboardIcon, Building2Icon, CreditCardIcon, InboxIcon, UserPlusIcon, BotIcon, UsersIcon } from "lucide-react";
 import { ADMIN_ROUTES } from "../constants/routes";
 import { Logo } from "../../../components/ui";
 
@@ -14,6 +14,7 @@ interface NavItem {
 const ITEMS: NavItem[] = [
 { label: "Overview", to: ADMIN_ROUTES.overview, icon: LayoutDashboardIcon, end: true },
 { label: "Clinics", to: ADMIN_ROUTES.clinics, icon: Building2Icon },
+{ label: "Users", to: ADMIN_ROUTES.users, icon: UsersIcon },
 { label: "New organizations", to: ADMIN_ROUTES.orgRequests, icon: UserPlusIcon },
 { label: "Plans & Pricing", to: ADMIN_ROUTES.plans, icon: CreditCardIcon },
 { label: "Sales Leads", to: ADMIN_ROUTES.salesLeads, icon: InboxIcon },

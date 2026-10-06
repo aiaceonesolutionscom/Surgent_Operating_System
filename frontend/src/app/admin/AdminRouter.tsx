@@ -1,4 +1,3 @@
-import React from "react";
 import { Routes, Route } from "react-router-dom";
 import { AdminRequireAuth } from "./AdminRequireAuth";
 import { AdminSignInPage } from "./AdminSignInPage";
@@ -6,6 +5,7 @@ import { AdminLayout } from "./layout/AdminLayout";
 import { PlatformOverviewPage } from "./overview/PlatformOverviewPage";
 import { ClinicsListPage } from "./clinics/ClinicsListPage";
 import { ClinicDetailPage } from "./clinics/ClinicDetailPage";
+import { AdminUsersPage } from "./users/AdminUsersPage";
 import { OrgRequestsListPage } from "./org-requests/OrgRequestsListPage";
 import { PlanManagementPage } from "./plans/PlanManagementPage";
 import { SalesLeadsPage } from "./sales/SalesLeadsPage";
@@ -22,6 +22,7 @@ export function AdminRouter() {
         <Route index element={<PlatformOverviewPage />} />
         <Route path="clinics" element={<ClinicsListPage />} />
         <Route path="clinics/:id" element={<ClinicDetailPage />} />
+        <Route path="users" element={<AdminUsersPage />} />
         <Route path="org-requests" element={<OrgRequestsListPage />} />
         <Route path="plans" element={<PlanManagementPage />} />
         <Route path="sales-leads" element={<SalesLeadsPage />} />

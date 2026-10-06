@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SearchIcon, UserCircleIcon } from "lucide-react";
 import { usePlan } from "../plan/PlanContext";
