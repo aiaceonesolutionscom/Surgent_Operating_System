@@ -69,11 +69,14 @@ export interface AdminMeResponse {
 export interface AdminSummaryResponse {
   total_clinics: number;
   plan_distribution: Record<string, number>;
-  total_estimated_mrr: number;
-  total_estimated_cost: number;
-  total_estimated_margin: number;
+  // MRR counts ACTIVE (paying) subscriptions only; trials are pipeline.
+  mrr: number;
+  trial_pipeline_mrr: number;
+  // This month's AI spend: tokens x provider list price.
+  ai_cost_month: number;
+  margin: number;
   margin_percent: number;
-  assumption_note: string;
+  cost_basis: string;
 }
 
 export interface ClinicStatusCounts {
@@ -81,6 +84,8 @@ export interface ClinicStatusCounts {
   active: number;
   trial: number;
   suspended: number;
+  // Switched on but with no live subscription (never subscribed / cancelled).
+  unsubscribed: number;
 }
 
 export interface SubscriptionCounts {
@@ -93,20 +98,48 @@ export interface SubscriptionCounts {
   trial: number;
 }
 
+export interface AiSourceUsage {
+  source: string;
+  calls: number;
+  cost_usd: number;
+}
+
+// Every AI figure is read from the persisted llm_calls table, so it survives
+// API restarts and covers every instance.
 export interface AiUsageSummary {
-  runs_total: number;
-  // Rolling average of successful LLM calls since API boot; null = no calls
-  // yet (the UI shows "—", never a fake 0).
-  avg_latency_ms: number | null;
-  estimated_cost_total: number;
-  cost_is_estimate: boolean;
+  calls_total: number;
+  calls_month: number;
+  calls_24h: number;
+  // null = no successful calls in the window (the UI shows "—", never a fake 0).
+  avg_latency_ms_24h: number | null;
+  p95_latency_ms_24h: number | null;
+  error_rate_percent_24h: number;
+  tokens_month: number;
+  cost_month_usd: number;
+  cost_total_usd: number;
+  agent_actions_30d: number;
+  top_sources: AiSourceUsage[];
+  cost_basis: string;
+}
+
+export interface SlowQueryItem {
+  statement: string;
+  count: number;
+  max_ms: number;
+  avg_ms: number;
 }
 
 export interface SystemHealthSummary {
   uptime_seconds: number;
-  db_health_ms: number | null;
+  started_at: string;
+  restarts_24h: number;
+  requests_24h: number;
   error_rate_percent: number;
-  slow_requests_total: number;
+  avg_response_ms_24h: number | null;
+  slow_requests_24h: number;
+  slow_queries_24h: number;
+  top_slow_queries: SlowQueryItem[];
+  db_health_ms: number | null;
   scope_note: string;
 }
 
@@ -139,6 +172,12 @@ export interface AdminPracticeListItem {
   plan_tier: string;
   subscription_status: string;
   agents_enabled_count: number;
+  // Measured: month-to-date AI spend and what the active subscription bills.
+  patients_count: number;
+  ai_calls_month: number;
+  ai_cost_month: number;
+  mrr: number;
+  // Projected from the plan design (assumed sessions/agent/month), not measured.
   estimated_monthly_cost: number;
   estimated_monthly_revenue: number;
   joined_at: string;
@@ -164,6 +203,14 @@ export interface AdminPracticeDetailResponse {
   estimated_monthly_cost: number;
   agent_breakdown: AgentCostBreakdownItem[];
   joined_at: string;
+  // Measured.
+  patients_count: number;
+  users_count: number;
+  appointments_month: number;
+  ai_calls_month: number;
+  ai_cost_month: number;
+  mrr: number;
+  last_activity_at: string | null;
 }
 
 export function getAdminMe() {

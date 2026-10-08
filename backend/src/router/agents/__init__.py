@@ -45,6 +45,7 @@ from src.router.leads.leads_router import router as leads_router
 from src.router.landing_chat.landing_chat_router import router as landing_chat_router
 from src.router.audit_logs.audit_logs_router import router as audit_logs_router
 from src.router.finance_agent.finance_agent_router import router as finance_agent_router
+from src.router.sample_data.sample_data_router import router as sample_data_router
 
 agent_routers = [
     patient_portal_router,
@@ -92,6 +93,7 @@ agent_routers = [
     landing_chat_router,
     audit_logs_router,
     finance_agent_router,
+    sample_data_router,
 ]
 
 

@@ -23,7 +23,7 @@ SYSTEM_PROMPT = (
     "You are the Aiaceone platform-level Super Agent, used ONLY by the "
     "Aiaceone team in the Super Admin panel. The user asks business "
     "questions about the whole platform — how many clinics are live, the "
-    "plan mix, estimated MRR/cost/margin, which clinics are on which tier, "
+    "plan mix, MRR / AI cost / margin, which clinics are on which tier, "
     "or the pending-approval queue. The CURRENT platform snapshot is in "
     "JSON below — answer from those numbers only, never invent figures. Be "
     "brief and direct (under 150 words): a short answer and, where useful, "
@@ -70,9 +70,10 @@ class SuperAgentService:
             "active_practices": sum(1 for p in practices if p.status == PracticeStatus.ACTIVE),
             "suspended_practices": sum(1 for p in practices if p.status == PracticeStatus.SUSPENDED),
             "plan_distribution": tier_counts,
-            "total_estimated_mrr": summary["total_estimated_mrr"],
-            "total_estimated_cost": summary["total_estimated_cost"],
-            "total_estimated_margin": summary["total_estimated_margin"],
+            "mrr": summary["mrr"],
+            "trial_pipeline_mrr": summary["trial_pipeline_mrr"],
+            "ai_cost_month": summary["ai_cost_month"],
+            "margin": summary["margin"],
             "pending_org_requests": len(pending_list),
             "pending_org_request_emails": [p.email for p in pending_list[:10]],
         }
@@ -87,8 +88,9 @@ class SuperAgentService:
             )
         if any(k in q for k in ["revenue", "mrr", "marg", "earning", "paid"]):
             return (
-                f"Estimated MRR ${snapshot['total_estimated_mrr']:,.0f}, cost ${snapshot['total_estimated_cost']:,.0f}, "
-                f"margin ${snapshot['total_estimated_margin']:,.0f} across {snapshot['total_practices']} practices (assumed 150 sessions/agent/month)."
+                f"MRR ${snapshot['mrr']:,.0f} from active subscriptions (plus ${snapshot['trial_pipeline_mrr']:,.0f} in trials), "
+                f"AI spend this month ${snapshot['ai_cost_month']:,.2f}, margin ${snapshot['margin']:,.0f} "
+                f"across {snapshot['total_practices']} practices."
             )
         if any(k in q for k in ["clinic", "practice", "active", "customer", "how many"]):
             return (
@@ -99,8 +101,8 @@ class SuperAgentService:
             )
         return (
             f"{snapshot['total_practices']} practices ({snapshot['active_practices']} active), "
-            f"{snapshot['pending_org_requests']} org requests pending, estimated MRR "
-            f"${snapshot['total_estimated_mrr']:,.0f}. Ask me about the plan mix, MRR, or the approval queue."
+            f"{snapshot['pending_org_requests']} org requests pending, MRR "
+            f"${snapshot['mrr']:,.0f}. Ask me about the plan mix, MRR, or the approval queue."
         )
 
     async def ask(self, db: AsyncSession, question: str, session_id: UUID | None = None) -> AskSuperAgentResponse:

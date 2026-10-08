@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, ForeignKey, Enum, func
+from sqlalchemy import String, DateTime, ForeignKey, Enum, func, Boolean, false
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -47,6 +47,11 @@ class Conversation(Base):
     # raises InvalidRequestError at class-definition time if used as a column.
     extra_data: Mapped[dict] = mapped_column(JSONB, default=dict)
     is_active: Mapped[bool] = mapped_column(default=True)
+    # True for demo rows seeded into a new practice (services/demo/
+    # sample_data_service.py). Every pre-existing row is real (the column was
+    # added NOT NULL DEFAULT false), and "clear sample data" only ever deletes
+    # rows with this flag set.
+    is_sample: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

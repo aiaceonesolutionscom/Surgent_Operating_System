@@ -4,9 +4,34 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.config import get_settings
 from src.server.runtime_metrics import record_request
 
 logger = logging.getLogger("aesthetixai")
+
+
+_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5183",
+    "http://localhost:3000",
+]
+
+
+def _resolve_allowed_origins() -> list[str]:
+    """Origins the browser may call this API from. Production sets
+    CORS_ORIGINS (validate_production refuses to boot without it); without
+    it - local development - the usual dev-server origins plus FRONTEND_URL
+    are allowed."""
+    settings = get_settings()
+    configured = settings.cors_origin_list
+    if configured:
+        return configured
+    origins = list(_DEV_ORIGINS)
+    frontend = settings.frontend_url.rstrip("/")
+    if frontend and frontend not in origins:
+        origins.append(frontend)
+    return origins
 
 
 # Shared with main.py's exception handlers — see the comment there for why:
@@ -14,12 +39,7 @@ logger = logging.getLogger("aesthetixai")
 # `@app.exception_handler`, in any FastAPI/Starlette setup (confirmed with a
 # minimal repro with zero custom middleware) — so those handlers add this
 # header themselves instead of relying on CORSMiddleware to do it.
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:5183",
-    "http://localhost:3000",
-]
+ALLOWED_ORIGINS = _resolve_allowed_origins()
 
 
 class AuditLogMiddleware:

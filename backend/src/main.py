@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -11,11 +12,18 @@ from src.router.agents import register_routes
 from src.services.channels.green_api_poller import GreenAPIPoller
 from src.services.recovery.post_op_followup_poller import PostOpFollowUpPoller
 from src.services.leads.lead_nurturing_poller import LeadNurturingPoller
+from src.services.telemetry.recorder import run_flusher
 
 settings = get_settings()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("aesthetixai")
+
+# httpx logs every request URL at INFO. Green API puts the instance API token
+# in the URL path, so at INFO the token lands in the logs (and anything that
+# collects them) on every WhatsApp poll.
+for _noisy in ("httpx", "httpcore"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 poller = GreenAPIPoller()
 post_op_poller = PostOpFollowUpPoller()
@@ -26,6 +34,8 @@ def _init_sentry() -> None:
     if not settings.sentry_dsn:
         return
     import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
 
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
@@ -35,7 +45,18 @@ def _init_sentry() -> None:
         # IPs, form bodies). send_default_pii=False keeps patient data out of
         # Sentry even though the default snippet suggests otherwise.
         send_default_pii=False,
+        # Stack frames would otherwise ship local variables - which in this app
+        # can hold patient names, phone numbers and message text.
+        include_local_variables=False,
         traces_sample_rate=0.1,
+        # Sentry auto-enables an integration for every installed library it
+        # knows. With langchain installed that imports langchain_classic
+        # synchronously inside the startup hook — 30s+ of a blocked event loop
+        # (uvicorn never reports "startup complete", so a platform health
+        # check would kill the container before it serves a request). Only
+        # the integrations we actually use are listed.
+        auto_enabling_integrations=False,
+        integrations=[StarletteIntegration(), FastApiIntegration()],
     )
     logger.info("Sentry initialized (environment=%s)", settings.app_env)
 
@@ -49,9 +70,16 @@ async def lifespan(app: FastAPI):
     logger.info("Post-op follow-up poller started on app startup")
     lead_nurturing_poller.start()
     logger.info("Lead nurturing poller started on app startup")
+    telemetry_task = asyncio.create_task(run_flusher())
     try:
         yield
     finally:
+        # Cancelling the flusher makes it write its last batch first.
+        telemetry_task.cancel()
+        try:
+            await telemetry_task
+        except asyncio.CancelledError:
+            pass
         poller.stop()
         logger.info("Green API poller stopped")
         post_op_poller.stop()

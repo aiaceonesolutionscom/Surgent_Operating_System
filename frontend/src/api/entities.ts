@@ -2595,16 +2595,15 @@ export function sendStaffMessage(authedFetch: AuthedFetch, conversationId: strin
   });
 }
 
-export async function sendStaffFile(_authedFetch: AuthedFetch, conversationId: string, file: File) {
+export function sendStaffFile(authedFetch: AuthedFetch, conversationId: string, file: File) {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(`/api/v1/staff-messages/conversations/${conversationId}/upload`, {
+  // authedFetch attaches the Clerk session token and resolves the API origin;
+  // it leaves Content-Type to the browser for FormData (multipart boundary).
+  return authedFetch<StaffMessageResponse>(`/api/v1/staff-messages/conversations/${conversationId}/upload`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${localStorage.getItem("clerk_session_token") || ""}` },
     body: formData
   });
-  if (!response.ok) throw new Error("Upload failed");
-  return response.json() as Promise<StaffMessageResponse>;
 }
 
 // --- patient portal ----------------------------------------------------------
@@ -2929,7 +2928,7 @@ export interface ConsultationRequestResponse {
 // Public website "Book a consultation" lead â€” no authedFetch, same reason as
 // portalBookAppointment: the form is the funnel entry, no auth required.
 export async function submitConsultationRequest(data: ConsultationRequestPayload): Promise<ConsultationRequestResponse> {
-  const res = await fetch(`/api/v1/public/consultation-request`, {
+  const res = await fetch(`${BASE_URL}/api/v1/public/consultation-request`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data)
@@ -2962,7 +2961,7 @@ export interface LandingChatMessageResponse {
 }
 
 export async function sendLandingChatMessage(data: LandingChatMessagePayload): Promise<LandingChatMessageResponse> {
-  const res = await fetch(`/api/v1/landing-chat/message`, {
+  const res = await fetch(`${BASE_URL}/api/v1/landing-chat/message`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data)

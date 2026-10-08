@@ -45,7 +45,14 @@ export type PlanSource = "api" | "local" | "default";
 const STORAGE_KEY = "aesthetixai_dashboard_plan_tier";
 const ROLE_STORAGE_KEY = "aesthetixai_dashboard_role_preview";
 
+// The localStorage overrides below exist so local QA can preview a plan or role
+// without a real Clerk round trip. In a production build they must be inert:
+// otherwise anyone could type a role/plan into their own browser storage (or a
+// crafted link could write it) and get a dashboard shell they never paid for.
+const LOCAL_OVERRIDES_ENABLED = import.meta.env.DEV;
+
 export function readPlanOverride(): PlanTier | null {
+  if (!LOCAL_OVERRIDES_ENABLED) return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw === "solo" || raw === "practice" || raw === "enterprise" ? raw : null;
@@ -67,6 +74,7 @@ export function writePlanOverride(tier: PlanTier) {
 // invite+sign-up round trip. Only ever a fallback when the real API hasn't
 // resolved a role (see usePlanTier) — a real signed-in session always wins.
 export function readRoleOverride(): Role | null {
+  if (!LOCAL_OVERRIDES_ENABLED) return null;
   try {
     const raw = localStorage.getItem(ROLE_STORAGE_KEY);
     return raw === "owner" || raw === "doctor" || raw === "receptionist" || raw === "staff" ? raw : null;
@@ -221,7 +229,10 @@ async function fetchFromApi(authedFetch: AuthedFetch): Promise<{ tier: PlanTier;
 
 export function usePlanTier(authedFetch: AuthedFetch = null) {
   const [tier, setTier] = useState<PlanTier>(() => readPlanOverride() || "practice");
-  const [role, setRole] = useState<Role>(() => readRoleOverride() || "owner");
+  // Starts at the least-privileged role, never "owner": until /practice/me
+  // answers, a Doctor or Receptionist must not briefly be handed Owner UI (and
+  // fire Owner-only calls). DashboardLayout holds the shell back until loaded.
+  const [role, setRole] = useState<Role>(() => readRoleOverride() || "staff");
   // Only meaningful for role === "doctor" (see backend/src/data/doctor_permissions.py)
   // — the granted permission keys an Owner assigned at application-approval
   // time. No local override exists for this (unlike role/tier's dev

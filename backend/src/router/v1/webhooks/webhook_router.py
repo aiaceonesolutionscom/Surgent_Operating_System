@@ -1,6 +1,8 @@
+import base64
 import hashlib
 import hmac
 import logging
+import time
 from datetime import datetime, timezone
 
 import stripe
@@ -14,6 +16,7 @@ from src.config import get_settings
 from src.database import get_db
 from src.server.exceptions import AppException
 from src.models.pending_signup import PendingSignup
+from src.models.subscription import Subscription, SubscriptionStatus
 from src.models.user import User, UserRole
 from src.models.doctor import Doctor
 from src.models.invoice import Invoice, PaymentMethod
@@ -32,25 +35,33 @@ wallet_service = WalletService()
 org_request_service = OrgRequestService()
 
 
-def _verify_clerk_signature(payload: bytes, signature_header: str, secret: str) -> bool:
-    """Verify Clerk webhook signature using HMAC-SHA256 (svix format)."""
-    if not secret or not signature_header:
+_SVIX_TOLERANCE_SECONDS = 300
+
+
+def _verify_clerk_signature(
+    payload: bytes, svix_id: str, svix_timestamp: str, svix_signature: str, secret: str
+) -> bool:
+    """Verify a Clerk (Svix) webhook.
+
+    Svix signs `"{svix-id}.{svix-timestamp}.{raw body}"` with HMAC-SHA256 using
+    the BASE64-DECODED secret (the part after `whsec_`), and sends the result as
+    one or more space-separated `v1,<base64>` entries in the `svix-signature`
+    header. The timestamp is checked too, so a captured request can't be
+    replayed later."""
+    if not (secret and svix_id and svix_timestamp and svix_signature):
         return False
     try:
-        parts = {}
-        for item in signature_header.split(","):
-            key, value = item.split("=", 1)
-            parts[key] = value
-        expected_sig = parts.get("v1", "")
-        signed_payload = f"{parts.get('t', '')}.{payload.decode('utf-8')}"
-        computed = hmac.new(
-            secret.encode("utf-8"),
-            signed_payload.encode("utf-8"),
-            hashlib.sha256,
-        ).digest()
-        import base64
-        computed_b64 = base64.b64encode(computed).decode("utf-8")
-        return hmac.compare_digest(computed_b64, expected_sig)
+        timestamp = int(svix_timestamp)
+        if abs(time.time() - timestamp) > _SVIX_TOLERANCE_SECONDS:
+            return False
+        key = base64.b64decode(secret.removeprefix("whsec_"))
+        signed = f"{svix_id}.{svix_timestamp}.".encode("utf-8") + payload
+        expected = base64.b64encode(hmac.new(key, signed, hashlib.sha256).digest()).decode("utf-8")
+        for entry in svix_signature.split(" "):
+            version, _, signature = entry.partition(",")
+            if version == "v1" and hmac.compare_digest(signature, expected):
+                return True
+        return False
     except Exception as e:
         logger.warning("Clerk signature verification failed: %s", e)
         return False
@@ -67,9 +78,15 @@ async def clerk_webhook(
     raw_body = await request.body()
 
     if settings.clerk_webhook_secret:
-        signature_header = f"t={svix_timestamp},v1={svix_signature}"
-        if not _verify_clerk_signature(raw_body, signature_header, settings.clerk_webhook_secret):
+        if not _verify_clerk_signature(raw_body, svix_id, svix_timestamp, svix_signature, settings.clerk_webhook_secret):
             raise AppException("Invalid Clerk webhook signature", status_code=400)
+    elif settings.app_env != "development":
+        # An unverified user.created event can rebind an existing staff
+        # account (including the Owner) to an attacker's Clerk id, so outside
+        # local development an unconfigured secret means "refuse", not "trust".
+        raise AppException("Clerk webhook secret is not configured", status_code=503)
+    else:
+        logger.warning("CLERK_WEBHOOK_SECRET is empty - accepting an UNVERIFIED Clerk webhook (development only)")
 
     payload = await request.json()
     event_type = payload.get("type")
@@ -261,6 +278,10 @@ async def stripe_webhook(
     # verification — anyone could forge a "payment succeeded" call. Real
     # signature verification closes that.
     raw_body = await request.body()
+    if not settings.stripe_webhook_secret:
+        # construct_event with an empty secret verifies against an empty key,
+        # i.e. a forged event signed with "" would pass.
+        raise AppException("Stripe webhook secret is not configured", status_code=503)
     try:
         event = stripe.Webhook.construct_event(
             payload=raw_body,

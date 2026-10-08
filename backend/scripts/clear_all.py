@@ -1,6 +1,32 @@
-from sqlalchemy import text
-from src.database import async_session_factory
+"""Wipe all practices (and the seed data hanging off them) from a LOCAL dev database.
+
+Refuses to run unless the database is on this machine: pointed at a hosted
+database (Neon, ...) this would delete every real clinic.
+
+    python scripts/clear_all.py --yes
+"""
 import asyncio
+import sys
+
+from sqlalchemy import text
+from sqlalchemy.engine import make_url
+
+from src.config import get_settings
+from src.database import async_session_factory
+
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", ""}
+
+
+def _refuse_unless_local() -> None:
+    settings = get_settings()
+    host = make_url(settings.database_url).host or ""
+    if settings.app_env == "production" or host not in _LOCAL_HOSTS:
+        sys.exit(
+            f"Refusing to clear data: DATABASE_URL points at '{host or 'unknown'}' "
+            f"(APP_ENV={settings.app_env}). This script only runs against a local dev database."
+        )
+    if "--yes" not in sys.argv:
+        sys.exit("This deletes ALL practices from the local database. Re-run with --yes to confirm.")
 
 
 async def clear_all():
@@ -13,4 +39,6 @@ async def clear_all():
         print('Cleared all seed data')
 
 
-asyncio.run(clear_all())
+if __name__ == "__main__":
+    _refuse_unless_local()
+    asyncio.run(clear_all())

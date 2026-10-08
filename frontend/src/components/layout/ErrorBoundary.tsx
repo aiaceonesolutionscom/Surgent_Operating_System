@@ -1,4 +1,5 @@
 import React from "react";
+import * as Sentry from "@sentry/react";
 
 interface Props {
   children: React.ReactNode;
@@ -20,6 +21,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: unknown) {
     console.error("Unhandled render error:", error);
+    // Render crashes are caught here, so Sentry's global handlers never see
+    // them - report explicitly (a no-op when Sentry isn't configured).
+    Sentry.captureException(error);
   }
 
   render() {

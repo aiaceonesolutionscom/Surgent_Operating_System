@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.practice import Practice, PracticeStatus
@@ -13,7 +12,6 @@ from src.models.subscription import Subscription, SubscriptionStatus, Subscripti
 from src.models.plan import Plan
 from src.models.agent_config import AgentConfig
 from src.models.agent_costing import AgentCosting
-from src.models.agent_log import AgentLog
 from src.models.appointment import Appointment
 from src.models.audit_log import AuditLog
 from src.models.patient import Patient
@@ -21,18 +19,16 @@ from src.models.user import User, UserRole
 from src.models.pending_signup import PendingSignup, OrgRequestStatus
 from src.data.receptionist_permissions import RECEPTIONIST_PERMISSIONS
 from src.services.checkout.provisioning_service import ProvisioningService
-from src.services.llm.llm_service import avg_llm_latency_ms
-from src.server.runtime_metrics import snapshot as runtime_snapshot
+from src.services.telemetry import reporting
 from src.server.exceptions import NotFoundException, AppException
 
-# No real per-session usage telemetry exists yet — nothing persists
-# Conversation/Message rows today (see models/conversation.py), and
-# AgentCosting.total_sessions is never incremented anywhere in this
-# codebase. Every "cost"/"revenue" figure this service produces is
-# therefore an ESTIMATE, not a measurement, and every field name/response
-# is prefixed `estimated_` so the frontend can't accidentally present it
-# as real. This constant is the first thing to replace once real usage
-# tracking ships.
+# Two different kinds of money figure live in this service, kept apart:
+#  * MEASURED — MRR from active subscriptions, and AI spend from the persisted
+#    llm_calls rows (tokens x provider list price; see services/telemetry).
+#  * PROJECTED — `estimated_monthly_cost`, the plan-design view of what a clinic
+#    WOULD cost if every enabled agent ran ASSUMED_MONTHLY_SESSIONS_PER_AGENT
+#    sessions a month at its AgentCosting price. Useful for pricing a plan, not
+#    for reporting what happened; the UI labels it a projection.
 ASSUMED_MONTHLY_SESSIONS_PER_AGENT = 150
 
 
@@ -103,6 +99,13 @@ class AdminService:
             for cfg in configs_result.scalars().all():
                 configs_by_practice.setdefault(cfg.practice_id, []).append(cfg)
 
+        now = datetime.now(timezone.utc)
+        ai_by_practice = await reporting.ai_usage_by_practice(db, reporting.month_start(now))
+        patient_counts = dict(
+            (await db.execute(select(Patient.practice_id, func.count()).group_by(Patient.practice_id))).all()
+        )
+        # list_practices only sees ACTIVE/TRIAL subscriptions (_active_subscriptions),
+        # so a paying clinic is exactly one whose picked subscription is ACTIVE.
         rows = []
         for practice in practices:
             sub = subs_by_practice.get(practice.id)
@@ -116,7 +119,12 @@ class AdminService:
                 else float(plan.price) if (plan and plan.price is not None)
                 else 0.0
             )
+            ai_calls, ai_cost = ai_by_practice.get(practice.id, (0, Decimal("0")))
             rows.append({
+                "patients_count": patient_counts.get(practice.id, 0),
+                "ai_calls_month": ai_calls,
+                "ai_cost_month": float(ai_cost),
+                "mrr": revenue if (sub is not None and sub.status == SubscriptionStatus.ACTIVE) else 0.0,
                 "id": practice.id,
                 "name": practice.name,
                 "email": practice.email,
@@ -218,7 +226,40 @@ class AdminService:
                 "estimated_monthly_cost": monthly_cost,
             })
 
+        now = datetime.now(timezone.utc)
+        ai_calls, ai_cost = (await reporting.ai_usage_by_practice(db, reporting.month_start(now))).get(
+            practice_id, (0, Decimal("0"))
+        )
+        patients_count = (
+            await db.execute(select(func.count()).select_from(Patient).where(Patient.practice_id == practice_id))
+        ).scalar_one()
+        users_count = (
+            await db.execute(select(func.count()).select_from(User).where(User.practice_id == practice_id))
+        ).scalar_one()
+        appointments_month = (
+            await db.execute(
+                select(func.count()).select_from(Appointment).where(
+                    Appointment.practice_id == practice_id, Appointment.start_time >= reporting.month_start(now)
+                )
+            )
+        ).scalar_one()
+        last_activity_at = (
+            await db.execute(select(func.max(AuditLog.created_at)).where(AuditLog.practice_id == practice_id))
+        ).scalar_one()
+        monthly_price = (
+            float(sub.price) if (sub and sub.price is not None)
+            else float(plan.price) if (plan and plan.price is not None)
+            else 0.0
+        )
+
         return {
+            "patients_count": patients_count,
+            "users_count": users_count,
+            "appointments_month": appointments_month,
+            "ai_calls_month": ai_calls,
+            "ai_cost_month": float(ai_cost),
+            "mrr": monthly_price if (sub is not None and sub.status == SubscriptionStatus.ACTIVE) else 0.0,
+            "last_activity_at": last_activity_at,
             "id": practice.id,
             "name": practice.name,
             "email": practice.email,
@@ -239,28 +280,32 @@ class AdminService:
         }
 
     async def platform_summary(self, db: AsyncSession) -> dict:
+        """Revenue vs AI spend, both MEASURED: MRR is what active (paying)
+        subscriptions bill each month; trials are reported separately as
+        pipeline, not revenue. AI spend is this month's persisted llm_calls
+        (tokens x provider list price)."""
         rows = await self.list_practices(db)
-        total_clinics = len(rows)
         plan_distribution: dict[str, int] = {}
-        total_mrr = Decimal("0")
-        total_cost = Decimal("0")
+        mrr = Decimal("0")
+        trial_pipeline = Decimal("0")
         for row in rows:
             plan_distribution[row["plan_tier"]] = plan_distribution.get(row["plan_tier"], 0) + 1
-            # list_practices builds revenue as float (sub.price / plan.price
-            # fallbacks) while cost stays Decimal — mixing them here raises
-            # TypeError the moment any practice has a real price. Both go
-            # through Decimal(str(...)) so the totals are exact.
-            total_mrr += Decimal(str(row["estimated_monthly_revenue"]))
-            total_cost += Decimal(str(row["estimated_monthly_cost"]))
-        margin = total_mrr - total_cost
-        margin_percent = float(margin / total_mrr * 100) if total_mrr else 0.0
+            # revenue is float while the accumulators are Decimal — route
+            # through str() so the totals stay exact.
+            mrr += Decimal(str(row["mrr"]))
+            if row["subscription_status"] == "trial":
+                trial_pipeline += Decimal(str(row["estimated_monthly_revenue"]))
+        ai = await reporting.ai_usage_summary(db)
+        ai_cost = Decimal(str(ai["cost_month_usd"]))
+        margin = mrr - ai_cost
         return {
-            "total_clinics": total_clinics,
+            "total_clinics": len(rows),
             "plan_distribution": plan_distribution,
-            "total_estimated_mrr": total_mrr,
-            "total_estimated_cost": total_cost,
-            "total_estimated_margin": margin,
-            "margin_percent": margin_percent,
+            "mrr": mrr,
+            "trial_pipeline_mrr": trial_pipeline,
+            "ai_cost_month": ai_cost,
+            "margin": margin,
+            "margin_percent": float(margin / mrr * 100) if mrr else 0.0,
         }
 
     async def _latest_subscriptions(self, db: AsyncSession) -> dict:
@@ -278,15 +323,15 @@ class AdminService:
 
     async def platform_metrics(self, db: AsyncSession) -> dict:
         """Live numbers for the Super Admin overview (CLINICS / USERS /
-        PATIENTS / APPOINTMENTS / AI / SUBSCRIPTIONS / SYSTEM blocks).
-        Everything is a real measured count except AI cost, which is
-        logged-sessions × the agent costing table's per-session price — an
-        estimate, flagged as such in the response."""
+        PATIENTS / APPOINTMENTS / AI / SUBSCRIPTIONS / SYSTEM blocks). Every
+        figure is read from the database: counts from the clinic tables, AI
+        and API-health figures from the persisted telemetry rows, so they
+        survive restarts and cover every API instance."""
         practices = (await db.execute(select(Practice))).scalars().all()
         latest_subs = await self._latest_subscriptions(db)
 
         clinics_total = len(practices)
-        clinics_active = clinics_trial = clinics_suspended = 0
+        clinics_active = clinics_trial = clinics_suspended = clinics_unsubscribed = 0
         sub_counts = {"active": 0, "past_due": 0, "cancelled": 0, "cancelling": 0, "trial": 0, "expired": 0}
         for practice in practices:
             sub = latest_subs.get(practice.id)
@@ -295,8 +340,12 @@ class AdminService:
                 clinics_suspended += 1
             elif status == SubscriptionStatus.TRIAL:
                 clinics_trial += 1
-            else:
+            elif status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE):
                 clinics_active += 1
+            else:
+                # Practice is switched on but has no live subscription
+                # (never subscribed, cancelled or expired).
+                clinics_unsubscribed += 1
             if sub is not None:
                 key = sub.status.value
                 if key in sub_counts:
@@ -314,28 +363,8 @@ class AdminService:
             )
         ).scalar_one()
 
-        ai_runs_total = (await db.execute(select(func.count()).select_from(AgentLog))).scalar_one()
-
-        # Estimated AI cost = logged sessions × per-session price from the
-        # agent costing table (the same table the per-practice cost estimates
-        # already use). Rows whose agent has no costing entry contribute 0.
-        cost_rows = await db.execute(
-            select(AgentLog.agent_type, func.count())
-            .group_by(AgentLog.agent_type)
-        )
-        costing_map = await self._agent_costing_map(db)
-        ai_cost_total = Decimal("0")
-        for agent_type, runs in cost_rows.all():
-            costing = costing_map.get(agent_type)
-            if costing and costing.is_active:
-                ai_cost_total += costing.cost_per_session * runs
-
-        # DB health = wall-clock time of one trivial round-trip on the session
-        # this request already owns — cheap, real, and fails loudly (the
-        # endpoint 500s) if the DB is actually unreachable.
-        db_started = time.monotonic()
-        await db.execute(text("SELECT 1"))
-        db_health_ms = round((time.monotonic() - db_started) * 1000, 1)
+        ai = await reporting.ai_usage_summary(db)
+        system = await reporting.system_summary(db)
 
         return {
             "clinics": {
@@ -343,15 +372,12 @@ class AdminService:
                 "active": clinics_active,
                 "trial": clinics_trial,
                 "suspended": clinics_suspended,
+                "unsubscribed": clinics_unsubscribed,
             },
             "total_users": total_users,
             "total_patients": total_patients,
             "appointments_this_month": appointments_this_month,
-            "ai": {
-                "runs_total": ai_runs_total,
-                "avg_latency_ms": avg_llm_latency_ms(),
-                "estimated_cost_total": float(ai_cost_total),
-            },
+            "ai": ai,
             "subscriptions": {
                 "active": sub_counts["active"],
                 "past_due": sub_counts["past_due"],
@@ -359,7 +385,7 @@ class AdminService:
                 "cancelling": sub_counts["cancelling"],
                 "trial": sub_counts["trial"],
             },
-            "system": {**runtime_snapshot(), "db_health_ms": db_health_ms},
+            "system": system,
         }
 
     async def recent_activity(self, db: AsyncSession, limit: int = 30) -> list[dict]:

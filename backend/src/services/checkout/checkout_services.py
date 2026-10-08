@@ -50,6 +50,14 @@ class CheckoutService:
         await db.flush()
 
         if not (self._stripe_key_configured() and self._plan_stripe_ready(plan)):
+            if settings.app_env != "development":
+                # The demo flow marks a signup "paid" without any payment. It
+                # exists for local demos only - on any deployed environment
+                # (staging included, it is publicly reachable) an unconfigured
+                # Stripe must mean "checkout unavailable", never "free clinic".
+                raise AppException(
+                    "Online checkout isn't available yet - please contact sales.", status_code=503
+                )
             return await self._demo_checkout(db, pending, plan_tier, email)
 
         session = await self.payment.create_checkout_session(
@@ -85,6 +93,8 @@ class CheckoutService:
         return f"{settings.frontend_url}/pricing/pay?session_id={pending.stripe_session_id}&plan_tier={plan_tier}&email={email}"
 
     async def confirm_demo_payment(self, db: AsyncSession, session_id: str) -> dict:
+        if settings.app_env != "development":
+            raise AppException("Demo payment confirmation is only available in local development.", status_code=403)
         if self._stripe_key_configured():
             # Real Stripe is connected — this endpoint must never be usable
             # to fake a payment once real charges are possible.

@@ -1,57 +1,50 @@
+# Runtime dependencies. Versions are the ones the test suite and the dev
+# server actually run on (see requirements-dev.txt for test-only packages) -
+# re-freeze deliberately, not by accident.
+
 # Framework
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-pydantic==2.9.2
-pydantic-settings==2.5.2
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.13.4
+pydantic-settings==2.14.1
+email-validator==2.3.0   # pydantic.EmailStr (checkout + demo-request schemas) imports it
 
 # Database
-sqlalchemy[asyncio]==2.0.35
-asyncpg==0.30.0
-alembic==1.13.3
+sqlalchemy[asyncio]==2.0.50
+asyncpg==0.31.0
+alembic==1.19.1
 
-# Auth (Clerk JWT verification)
-PyJWT==2.9.0
-cryptography==43.0.1
-httpx==0.27.2
-
-# Auth (Patient Portal — ID+PIN, separate from Clerk)
-bcrypt==4.0.1
+# Auth (Clerk JWT verification: RS256 needs cryptography)
+PyJWT==2.13.0
+cryptography==48.0.0
+httpx==0.28.1
 
 # Cloudinary
-cloudinary==1.41.0
+cloudinary==1.44.2
 
 # AI / LLM
-openai==1.51.0
+openai==2.41.0
+langsmith==0.8.9
 
-# Twilio
-twilio==9.3.0
-
-# Email
-sendgrid==6.11.0
+# Messaging / email
+twilio==9.11.0
+sendgrid==6.12.5
 
 # Payment
-stripe==10.6.0
+stripe==15.5.0
 
-# Background tasks
-celery==5.4.0
-redis==5.1.1
+# Cache / rate limiting / OTP store
+redis==8.0.0
 
 # Observability / error tracking
-sentry-sdk==2.14.0
+sentry-sdk[fastapi]==2.63.0
 
-# LangSmith tracing (LLM call logs → traces dashboard, free tier 5k/mo)
-langsmith>=0.2.0
-
-# Storage / File handling
-python-multipart==0.0.12
-Pillow==10.4.0
+# Uploads / documents
+python-multipart==0.0.19
+Pillow==12.3.0
 reportlab==5.0.0
 
-# Calendar
+# Google Calendar integration
 google-api-python-client==2.140.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1
-
-# Dev / Testing
-pytest==8.3.3
-pytest-asyncio==0.24.0

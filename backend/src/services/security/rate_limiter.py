@@ -21,16 +21,22 @@ class RedisRateLimiter:
     would reset its whole window on the first hit after expiry, letting a
     fresh burst straight through right at the boundary.
 
-    Fails OPEN (lets the request through) if Redis is unreachable — a rate
-    limiter that itself blocks real logins when its backing store hiccups is
-    a worse outcome than the brute-force risk it's guarding against. Logged
-    loudly when this happens so it doesn't go unnoticed."""
+    If Redis is unreachable the limiter does not block real logins, but it
+    does NOT switch protection off either: it falls back to a per-process
+    sliding window (weaker - each instance counts separately - but a
+    brute-force attempt still hits a wall), and probes Redis again after a
+    short pause so it recovers on its own once Redis is back. Logged loudly
+    when this happens so it doesn't go unnoticed."""
+
+    _RETRY_REDIS_AFTER_SECONDS = 30
+    _LOCAL_MAX_KEYS = 10_000
 
     def __init__(self, max_attempts: int, window_seconds: int):
         self.max_attempts = max_attempts
         self.window_seconds = window_seconds
         self._client = None
-        self._redis_available: bool | None = None
+        self._retry_redis_at = 0.0  # monotonic time before which Redis is not tried
+        self._local: dict[str, list[float]] = {}
 
     @property
     def client(self):
@@ -43,11 +49,24 @@ class RedisRateLimiter:
             )
         return self._client
 
+    def _check_local(self, key: str) -> None:
+        now = time.time()
+        hits = [t for t in self._local.get(key, []) if t > now - self.window_seconds]
+        if len(hits) >= self.max_attempts:
+            self._local[key] = hits
+            raise AppException("Too many attempts — try again in a few minutes.", status_code=429)
+        hits.append(now)
+        self._local[key] = hits
+        if len(self._local) > self._LOCAL_MAX_KEYS:
+            cutoff = now - self.window_seconds
+            self._local = {k: v for k, v in self._local.items() if v and v[-1] > cutoff}
+
     async def check(self, key: str) -> None:
         """Raises AppException(429) if `key` has hit its attempt limit
         within the window; otherwise records this attempt."""
-        if self._redis_available is False:
-            return  # known outage — fail open instantly, no socket wait
+        if time.monotonic() < self._retry_redis_at:
+            self._check_local(key)  # known outage - no socket wait, but still limited
+            return
         full_key = f"ratelimit:{key}"
         try:
             now = time.time()
@@ -60,24 +79,25 @@ class RedisRateLimiter:
                 raise AppException("Too many attempts — try again in a few minutes.", status_code=429)
             await self.client.zadd(full_key, {f"{now}": now})
             await self.client.expire(full_key, self.window_seconds)
-            self._redis_available = True
         except AppException:
             raise
         except Exception:
-            # Cache the outage so login doesn't eat a socket timeout on every
-            # Redis op — after the first probe failure, fail open instantly.
-            self._redis_available = False
+            # Remember the outage so every login doesn't eat a socket timeout,
+            # then retry Redis after a pause.
+            self._retry_redis_at = time.monotonic() + self._RETRY_REDIS_AFTER_SECONDS
             self._client = None
-            logger.warning("RedisRateLimiter check failed for key=%s, failing open", key, exc_info=True)
+            logger.warning("RedisRateLimiter check failed for key=%s, using the in-process limiter", key, exc_info=True)
+            self._check_local(key)
 
     async def reset(self, key: str) -> None:
         """Clears attempts for `key` — call on a successful login so a
         legitimate user isn't left rate-limited by their own earlier typos."""
-        if self._redis_available is False:
+        self._local.pop(key, None)
+        if time.monotonic() < self._retry_redis_at:
             return
         try:
             await self.client.delete(f"ratelimit:{key}")
-            self._redis_available = True
         except Exception:
-            self._redis_available = False
+            self._retry_redis_at = time.monotonic() + self._RETRY_REDIS_AFTER_SECONDS
+            self._client = None
             logger.warning("RedisRateLimiter reset failed for key=%s", key, exc_info=True)

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date
 
-from sqlalchemy import String, Text, Numeric, DateTime, Date, ForeignKey, func
+from sqlalchemy import String, Text, Numeric, DateTime, Date, ForeignKey, func, Boolean, false
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +23,11 @@ class Expense(Base):
     notes: Mapped[str] = mapped_column(Text, nullable=True)
     paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     recorded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    # True for demo rows seeded into a new practice (services/demo/
+    # sample_data_service.py). Every pre-existing row is real (the column was
+    # added NOT NULL DEFAULT false), and "clear sample data" only ever deletes
+    # rows with this flag set.
+    is_sample: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

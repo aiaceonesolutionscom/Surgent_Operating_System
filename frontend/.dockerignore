@@ -1,5 +1,9 @@
 node_modules
 dist
 .git
-.env.local
+.env
+.env.*
+!.env.example
 *.local
+*.log
+vite_*.log

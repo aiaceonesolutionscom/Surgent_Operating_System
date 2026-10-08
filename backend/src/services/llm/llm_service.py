@@ -1,11 +1,12 @@
 from __future__ import annotations
 import os
 import time
-from collections import deque
 
 from openai import AsyncOpenAI, RateLimitError, AuthenticationError
 
 from src.config import get_settings
+from src.services.llm.tracing import configure_langsmith_env
+from src.services.telemetry import recorder as telemetry
 
 
 settings = get_settings()
@@ -14,24 +15,18 @@ settings = get_settings()
 _MISTRAL_UNAVAILABLE_UNTIL: dict = {}
 _MISTRAL_BACKOFF: dict = {}
 
-# Rolling LLM call-latency samples (ms), updated on every completed fallback
-# call. The Super Admin platform_metrics endpoint averages these so the SYSTEM
-# panel shows a REAL "average latency" instead of a hardcoded number. Capped
-# so memory stays flat; only successful calls count (a timeout is not a
-# meaningful latency datapoint).
-_LATENCY_SAMPLES: deque = deque(maxlen=200)
+# A rate-limited Mistral key sits out its cooldown instead of being retried on
+# every call (each retry is a failed HTTP round trip before a working provider
+# is reached). Repeated 429s lengthen the cooldown up to the cap; a rejected
+# key (revoked / wrong) is benched far longer since waiting won't fix it.
+_RATE_LIMIT_COOLDOWN_SECONDS = 60
+_RATE_LIMIT_MAX_COOLDOWN_SECONDS = 300
+_AUTH_FAILURE_COOLDOWN_SECONDS = 3600
 
-
-def record_llm_latency_ms(latency_ms: float) -> None:
-    _LATENCY_SAMPLES.append(latency_ms)
-
-
-def avg_llm_latency_ms() -> float | None:
-    """Mean latency of the last N successful LLM calls, or None if none yet —
-    the None is surfaced to the admin UI as \"no data\", never as 0."""
-    if not _LATENCY_SAMPLES:
-        return None
-    return round(sum(_LATENCY_SAMPLES) / len(_LATENCY_SAMPLES), 1)
+def _approx_tokens(text: str) -> int:
+    """Rough token count (~4 characters each) for providers/streams that don't
+    return a usage block. Flagged as an estimate wherever it is stored."""
+    return max(1, len(text) // 4)
 
 
 def _is_placeholder_key(key: str | None) -> bool:
@@ -53,18 +48,12 @@ def _is_placeholder_key(key: str | None) -> bool:
 
 # LangSmith tracing: wraps every OpenAI-SDK chat call with trace metadata
 # (model, tokens, latency, etc.) so agent prompts can be iterated from real
-# production data. Only active when LANGSMITH_API_KEY is set — zero overhead
-# otherwise. The project name matches config.langchain_project ("aesthetixai").
-#
-# The langsmith SDK reads its config from OS env vars, but this project loads
-# secrets from .env via pydantic-settings (which never exports os.environ).
-# So when the key is configured, mirror the three relevant vars into the real
-# environment so the SDK can authenticate and pick the right project.
-_tracing_enabled = bool(settings.langsmith_api_key)
-if _tracing_enabled:
-    os.environ.setdefault("LANGSMITH_API_KEY", settings.langsmith_api_key)
-    os.environ.setdefault("LANGCHAIN_PROJECT", settings.langchain_project)
-    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+# production data. Only active when LANGSMITH_API_KEY is set and tracing has
+# not been explicitly switched off - zero overhead otherwise. The env wiring
+# (key, tracing flag, per-environment project name) lives in tracing.py, which
+# derives the project instead of trusting a hand-set one: a stale project name
+# must never route production traces into a development project.
+_tracing_enabled = configure_langsmith_env()
 
 
 def _maybe_wrap(client: AsyncOpenAI) -> AsyncOpenAI:
@@ -100,7 +89,10 @@ class LLMService:
         return self._openai_client
 
     @property
-    def mistral_clients(self) -> list:
+    def _mistral_by_label(self) -> dict:
+        """Every configured Mistral key's client, keyed by a non-secret label
+        (mistral-1, mistral-2, ...) — the label is what bench state and logs
+        use, so a key never ends up in a dict key or a log line."""
         # Free-tier Mistral rate limits are tight enough to hit during
         # normal dev/testing — several separate free accounts' keys are
         # tried in order on a 429 before ever falling back to Groq/OpenAI.
@@ -113,10 +105,34 @@ class LLMService:
                     settings.mistral_api_key_4,
                 ) if k
             ]
-            self._mistral_clients = [
-                _maybe_wrap(AsyncOpenAI(api_key=key, base_url=self.MISTRAL_BASE_URL)) for key in keys
-            ]
+            self._mistral_clients = {
+                f"mistral-{i}": _maybe_wrap(AsyncOpenAI(api_key=key, base_url=self.MISTRAL_BASE_URL))
+                for i, key in enumerate(keys, start=1)
+            }
         return self._mistral_clients
+
+    def _usable_mistral(self) -> list[tuple[str, object]]:
+        """(label, client) for each Mistral key that isn't sitting out a cooldown."""
+        now = time.monotonic()
+        return [
+            (label, client)
+            for label, client in self._mistral_by_label.items()
+            if _MISTRAL_UNAVAILABLE_UNTIL.get(label, 0) <= now
+        ]
+
+    @property
+    def mistral_clients(self) -> list:
+        return [client for _, client in self._usable_mistral()]
+
+    @property
+    def _has_usable_provider(self) -> bool:
+        """False only when no provider could possibly answer: every Mistral
+        key benched or absent, no Groq key, and OpenAI still a placeholder."""
+        return bool(
+            self.mistral_clients
+            or self.groq_client is not None
+            or not _is_placeholder_key(settings.openai_api_key)
+        )
 
     @property
     def groq_client(self):
@@ -138,59 +154,131 @@ class LLMService:
             return {"extra_body": {"reasoning_effort": "low"}}
         return {}
 
+    def _provider_for(self, client) -> str:
+        if client is self._groq_client:
+            return "groq"
+        if any(client is c for c in (self._mistral_clients or {}).values()):
+            return "mistral"
+        return "openai"
+
+    async def _create(self, client, model, **kwargs):
+        """Every provider request in this service goes through here, so each
+        one — success, rate limit or failure, streamed or not — is recorded
+        for the Super Admin AI figures (latency, tokens, list-price cost).
+        Recording only appends to an in-memory buffer; it can't slow or fail
+        the request."""
+        provider = self._provider_for(client)
+        source = telemetry.infer_source()
+        streaming = bool(kwargs.get("stream"))
+        started = time.monotonic()
+        try:
+            response = await client.chat.completions.create(model=model, **kwargs)
+        except Exception as exc:
+            telemetry.record_llm_call(
+                provider=provider, model=model, source=source, streaming=streaming,
+                status="rate_limited" if isinstance(exc, RateLimitError) else "error",
+                latency_ms=(time.monotonic() - started) * 1000,
+            )
+            raise
+
+        if streaming:
+            return self._metered_stream(response, provider, model, source, started, kwargs.get("messages") or [])
+
+        usage = getattr(response, "usage", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        estimated = prompt_tokens is None or completion_tokens is None
+        if estimated:
+            prompt_tokens = _approx_tokens(str(kwargs.get("messages") or ""))
+            text = response.choices[0].message.content or "" if response.choices else ""
+            completion_tokens = _approx_tokens(text)
+        telemetry.record_llm_call(
+            provider=provider, model=model, source=source, streaming=False, status="ok",
+            latency_ms=(time.monotonic() - started) * 1000,
+            prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, tokens_estimated=estimated,
+        )
+        return response
+
+    async def _metered_stream(self, stream, provider, model, source, started, messages):
+        """Pass chunks straight through, recording the call once the stream
+        ends (or the consumer stops reading). Uses the provider's usage block
+        when a chunk carries one, otherwise a characters/4 estimate."""
+        usage = None
+        chars = 0
+        failed = False
+        try:
+            async for chunk in stream:
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None and getattr(chunk_usage, "prompt_tokens", None) is not None:
+                    usage = chunk_usage
+                if chunk.choices:
+                    chars += len(chunk.choices[0].delta.content or "")
+                yield chunk
+        except Exception:
+            failed = True
+            raise
+        finally:
+            estimated = usage is None
+            telemetry.record_llm_call(
+                provider=provider, model=model, source=source, streaming=True,
+                status="error" if failed else "ok",
+                latency_ms=(time.monotonic() - started) * 1000,
+                prompt_tokens=usage.prompt_tokens if usage else _approx_tokens(str(messages)),
+                completion_tokens=usage.completion_tokens if usage else max(1, chars // 4) if chars else 0,
+                tokens_estimated=estimated,
+            )
+
+    @staticmethod
+    def _bench(label: str, error: Exception) -> None:
+        """Take a failing Mistral key out of rotation for a cooldown."""
+        now = time.monotonic()
+        if isinstance(error, AuthenticationError):
+            _MISTRAL_UNAVAILABLE_UNTIL[label] = now + _AUTH_FAILURE_COOLDOWN_SECONDS
+            return
+        cooldown = min(
+            _MISTRAL_BACKOFF.get(label, 0) + _RATE_LIMIT_COOLDOWN_SECONDS,
+            _RATE_LIMIT_MAX_COOLDOWN_SECONDS,
+        )
+        _MISTRAL_BACKOFF[label] = cooldown
+        _MISTRAL_UNAVAILABLE_UNTIL[label] = now + cooldown
+
     async def _call_with_fallback(self, call):
-        """Runs `call(client, model)` against each configured Mistral key in
-        turn, falling through to the next only on a rate limit. Once every
-        Mistral key is exhausted, tries Groq (free tier, fast, not prone to
-        the same rate-limit wall as Mistral's) before finally trying OpenAI
-        (a real key isn't configured yet, so this last leg mostly stays
-        theoretical until it is). Raises the last error if everything fails,
-        rather than silently swallowing it.
-        Also benches (temporarily disables) keys that fail with rate limit
-        or authentication errors, so they aren't retried immediately."""
+        """Runs `call(client, model)` against each Mistral key that is not
+        benched, in turn. A rate-limited or rejected key is benched (see
+        `_bench`) and the next one is tried; once Mistral is exhausted Groq
+        is tried (free tier, fast, not prone to the same rate-limit wall),
+        then OpenAI — but only if its key is real, since a placeholder key is
+        a guaranteed 401. Raises the last provider error if everything
+        fails, rather than silently swallowing it."""
+        if not self._has_usable_provider:
+            raise RuntimeError(
+                "no Mistral API keys configured and no Groq fallback — every Mistral key is "
+                "missing or cooling down, GROQ_API_KEY is unset and OPENAI_API_KEY is a placeholder"
+            )
+
         last_error: Exception | None = None
-        for client in self.mistral_clients:
+        for label, client in self._usable_mistral():
             try:
-                started = time.monotonic()
-                result = await call(client, self.mistral_model)
-                record_llm_latency_ms((time.monotonic() - started) * 1000)
-                return result
-            except RateLimitError as e:
+                return await call(client, self.mistral_model)
+            except (RateLimitError, AuthenticationError) as e:
                 last_error = e
-                # Benching: mark this key as unavailable for a cooldown period
-                key_name = str(client)
-                _MISTRAL_UNAVAILABLE_UNTIL[key_name] = (
-                    time.monotonic() + 60  # 60s cooldown for rate limit
-                )
-                _MISTRAL_BACKOFF[key_name] = min(
-                    (_MISTRAL_BACKOFF.get(key_name, 0) + 60), 300
-                )
-                continue
-            except AuthenticationError as e:
-                last_error = e
-                # Benching auth failure: longer cooldown (3600s = 1 hour)
-                key_name = str(client)
-                _MISTRAL_UNAVAILABLE_UNTIL[key_name] = (
-                    time.monotonic() + 3600
-                )
+                self._bench(label, e)
                 continue
         if self.groq_client is not None:
             try:
-                started = time.monotonic()
-                result = await call(self.groq_client, self.groq_model)
-                record_llm_latency_ms((time.monotonic() - started) * 1000)
-                return result
+                return await call(self.groq_client, self.groq_model)
             except Exception as e:
                 last_error = e
-        try:
-            started = time.monotonic()
-            result = await call(self.openai_client, self.openai_model)
-            record_llm_latency_ms((time.monotonic() - started) * 1000)
-            return result
-        except Exception:
-            if last_error is not None:
-                raise last_error
-            raise
+        if not _is_placeholder_key(settings.openai_api_key):
+            try:
+                return await call(self.openai_client, self.openai_model)
+            except Exception:
+                if last_error is not None:
+                    raise last_error
+                raise
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("no LLM provider produced a reply")
 
     def _client_and_model(self, tier: str):
         # Matches the tiered strategy documented in system.md: low-stakes
@@ -219,8 +307,8 @@ class LLMService:
             kwargs = {}
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
-            response = await client.chat.completions.create(
-                model=model,
+            response = await self._create(
+                client, model,
                 messages=full_messages,
                 temperature=0.7,
                 max_tokens=max_tokens,
@@ -264,8 +352,8 @@ class LLMService:
         for client, model in candidates:
             yielded_anything = False
             try:
-                stream = await client.chat.completions.create(
-                    model=model, messages=full_messages, temperature=0.7, max_tokens=max_tokens, stream=True,
+                stream = await self._create(
+                    client, model, messages=full_messages, temperature=0.7, max_tokens=max_tokens, stream=True,
                     **self._extra_kwargs_for(client),
                 )
                 async for chunk in stream:
@@ -313,8 +401,8 @@ class LLMService:
                 # follow-up messages (e.g. Command Center's second pass).
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "none"
-            response = await client.chat.completions.create(
-                model=model,
+            response = await self._create(
+                client, model,
                 messages=full_messages,
                 temperature=0.7,
                 max_tokens=max_tokens,
@@ -323,7 +411,7 @@ class LLMService:
             )
             return response.choices[0].message.content or ""
 
-        if tier == "low" and self.mistral_clients:
+        if tier == "low" and self._has_usable_provider:
             return await self._call_with_fallback(call)
         return await call(self.openai_client, self.openai_model)
 
@@ -362,8 +450,8 @@ class LLMService:
             )
             yielded_anything = False
             try:
-                stream = await client.chat.completions.create(
-                    model=model, messages=full_messages, temperature=0.7, max_tokens=max_tokens, stream=True,
+                stream = await self._create(
+                    client, model, messages=full_messages, temperature=0.7, max_tokens=max_tokens, stream=True,
                     **tool_kwargs,
                     **self._extra_kwargs_for(client),
                 )
@@ -399,8 +487,8 @@ class LLMService:
         full_messages.extend(messages)
 
         async def call(client, model):
-            response = await client.chat.completions.create(
-                model=model,
+            response = await self._create(
+                client, model,
                 messages=full_messages,
                 tools=tools,
                 temperature=0.7,
@@ -413,6 +501,6 @@ class LLMService:
                 "tool_calls": choice.message.tool_calls,
             }
 
-        if tier == "low" and self.mistral_clients:
+        if tier == "low" and self._has_usable_provider:
             return await self._call_with_fallback(call)
         return await call(self.openai_client, self.openai_model)

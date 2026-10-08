@@ -31,8 +31,24 @@ using the same `accent`/`cyan`/`panel` tokens established for the
 `variant="admin"` prop for the same reason, with its own plain form instead
 of a Clerk widget.
 
-**Numbers are estimates, labeled as such**: no real per-session usage exists
-yet (see `backend/src/services/admin/admin_services.py`'s
-`ASSUMED_MONTHLY_SESSIONS_PER_AGENT`), so every cost/margin figure is
-prefixed `estimated_` in the API and carries a visible "Estimated" caption
-here - never presented as a measurement.
+**Every number on the overview is measured, none is hardcoded.** The page
+(`overview/PlatformOverviewPage.tsx`) refreshes itself every 30 seconds from
+`GET /admin/platform_metrics`, `/admin/summary` and `/admin/activity`:
+
+* clinic / user / patient / appointment / subscription counts come straight
+  from the clinic tables;
+* **AI** (runs, avg + p95 latency, tokens, cost, failed-call rate, top spenders)
+  comes from the `llm_calls` table - one row per provider request, written by
+  `LLMService._create` - so it survives restarts and covers every instance.
+  Cost is tokens x the provider's *list price* (`services/telemetry/pricing.py`,
+  re-check it against provider pricing pages); it is labelled as such;
+* **SYSTEM** (24h error rate, requests, slow requests, slow queries + the
+  slowest statements, restarts) comes from `system_metric_buckets` and
+  `slow_query_log`, flushed every 30s by `services/telemetry/recorder.py`.
+  "Uptime" is the only per-process figure. DB health is a live `SELECT 1`
+  round trip;
+* **MRR** is active (paying) subscriptions only - trials are shown as pipeline.
+
+The one projection left is the "Plan cost projection" table on a clinic's page
+(per-session agent prices x an assumed monthly volume) - it is labelled as a
+projection and sits below the measured AI cost.

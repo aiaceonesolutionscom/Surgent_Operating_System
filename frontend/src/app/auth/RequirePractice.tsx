@@ -20,7 +20,8 @@ const clerkEnabled = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 // primary gate. Degrades to "always allow" when Clerk itself is disabled,
 // so local dev/testing is never blocked by this.
 export function RequirePractice({ children }: { children: React.ReactNode }) {
-  if (!clerkEnabled) return <>{children}</>;
+  // Fails closed in production (see RequireAuth.tsx); dev-only passthrough.
+  if (!clerkEnabled) return import.meta.env.DEV ? <>{children}</> : null;
   return <RealPracticeGate>{children}</RealPracticeGate>;
 }
 

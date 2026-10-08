@@ -40,6 +40,7 @@ from src.models.wallet_transaction import WalletTransaction
 from src.models.visit_document import VisitDocument
 from src.models.session_visit import SessionVisit
 from src.models.refund_request import RefundRequest
+from src.models.platform_telemetry import LlmCall, SystemMetricBucket, SlowQueryLog
 
 __all__ = [
     "Practice",
@@ -93,4 +94,7 @@ __all__ = [
     "VisitDocument",
     "SessionVisit",
     "RefundRequest",
+    "LlmCall",
+    "SystemMetricBucket",
+    "SlowQueryLog",
 ]

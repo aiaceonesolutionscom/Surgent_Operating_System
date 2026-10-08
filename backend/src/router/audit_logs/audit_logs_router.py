@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
-from src.server.dependencies import get_current_practice_user
-from src.models.user import User
+from src.server.dependencies import require_role
+from src.models.user import User, UserRole
 from src.schemas.audit_log import AuditLogListResponse, AuditLogResponse
 from src.controller.audit.audit_controllers import AuditController
 
@@ -17,7 +17,7 @@ controller = AuditController()
 
 @router.get("", response_model=AuditLogListResponse)
 async def list_audit_logs(
-    user: User = Depends(get_current_practice_user),
+    user: User = Depends(require_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
     actor_type: str | None = Query(default=None, description="user | patient_portal | ai_agent | system"),
     action: str | None = Query(default=None, description="Substring match, e.g. 'appointment.cancel'"),
@@ -48,7 +48,7 @@ async def list_audit_logs(
 @router.get("/{log_id}", response_model=AuditLogResponse)
 async def get_audit_log(
     log_id: UUID,
-    user: User = Depends(get_current_practice_user),
+    user: User = Depends(require_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.get_log(db, user, log_id)

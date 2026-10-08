@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# Tests (SQLite in-memory stands in for Postgres; see tests/conftest.py)
+pytest==9.0.3
+pytest-asyncio==1.4.0
+aiosqlite==0.22.1

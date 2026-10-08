@@ -64,9 +64,10 @@ class AdminController:
         return AdminSummaryResponse(
             total_clinics=data["total_clinics"],
             plan_distribution=data["plan_distribution"],
-            total_estimated_mrr=float(data["total_estimated_mrr"]),
-            total_estimated_cost=float(data["total_estimated_cost"]),
-            total_estimated_margin=float(data["total_estimated_margin"]),
+            mrr=float(data["mrr"]),
+            trial_pipeline_mrr=float(data["trial_pipeline_mrr"]),
+            ai_cost_month=float(data["ai_cost_month"]),
+            margin=float(data["margin"]),
             margin_percent=data["margin_percent"],
         )
 
@@ -97,6 +98,10 @@ class AdminController:
                 plan_tier=row["plan_tier"],
                 subscription_status=row["subscription_status"],
                 agents_enabled_count=row["agents_enabled_count"],
+                patients_count=row["patients_count"],
+                ai_calls_month=row["ai_calls_month"],
+                ai_cost_month=row["ai_cost_month"],
+                mrr=row["mrr"],
                 estimated_monthly_cost=float(row["estimated_monthly_cost"]),
                 estimated_monthly_revenue=float(row["estimated_monthly_revenue"]),
                 joined_at=row["joined_at"],
@@ -137,6 +142,13 @@ class AdminController:
                 for b in data["agent_breakdown"]
             ],
             joined_at=data["joined_at"],
+            patients_count=data["patients_count"],
+            users_count=data["users_count"],
+            appointments_month=data["appointments_month"],
+            ai_calls_month=data["ai_calls_month"],
+            ai_cost_month=data["ai_cost_month"],
+            mrr=data["mrr"],
+            last_activity_at=data["last_activity_at"],
         )
 
     async def update_subscription(self, db: AsyncSession, practice_id, body: UpdateSubscriptionRequest) -> AdminPracticeDetailResponse:
