@@ -9,6 +9,37 @@ Every command below is run from the repo root unless stated.
 
 ---
 
+## Current deployment (staging, 2026-10-09)
+
+| | |
+|---|---|
+| Frontend | https://h7snbk6c.insforge.site (InsForge hosting, project `Surgent_OS`) |
+| Backend API | https://aiaceone-api-b878dd48-8587-49ba-8ceb-a4981544c73b.fly.dev (InsForge compute service `aiaceone-api`, region `sin`, 512 MB — the free plan's per-machine ceiling) |
+| Database | Neon project `muddy-firefly-59906622`, branch `production` (schema at Alembic head `8a4c1e9f3d27`) |
+| Auth | Clerk **development** instance → backend runs with `APP_ENV=staging` (the production guard rejects `sk_test_` keys) |
+| Config files | `backend/.env.production` (git-ignored) is the single source for backend env; frontend env lives in InsForge (`deployments env list`) |
+
+Redeploy / operate (run from the repo root, where `.insforge/` links the project):
+
+```bash
+# backend (rebuilds remotely; the env file replaces the service's env)
+npx @insforge/cli compute deploy backend --name aiaceone-api --port 8000 --region sin --memory 512 --env-file backend/.env.production
+# one-off env change without restating the rest
+npx @insforge/cli compute update <service-id> --env-set KEY=VALUE
+# frontend
+npx @insforge/cli deployments deploy frontend
+# database migrations: from your machine, against Neon's DIRECT endpoint
+MIGRATION_DATABASE_URL=<direct url> DATABASE_URL=<pooled url> python -m alembic upgrade head   # run inside backend/
+```
+
+`RUN_MIGRATIONS` is `false` in the env file on purpose: the service scales to zero, and a migration run on every wake-up would slow each cold start.
+Apply new migrations from your machine before deploying code that needs them.
+
+Moving to real production = swap in live Clerk keys (`sk_live_` / `pk_live_`), set `APP_ENV=production`, add `STRIPE_*` and a hosted `REDIS_URL`; the guard
+then validates all of it at boot.
+
+---
+
 ## 0. Before the first push — do these first
 
 | # | Action | Why |

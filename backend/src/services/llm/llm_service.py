@@ -84,6 +84,12 @@ class LLMService:
 
     @property
     def openai_client(self):
+        """The OpenAI client, or None when no real OPENAI_API_KEY is configured.
+        AsyncOpenAI("") raises at construction, which used to blow up every
+        candidate list before Groq/Mistral were even tried - so a deployment
+        with only Groq/Mistral keys could not answer a single message."""
+        if _is_placeholder_key(settings.openai_api_key):
+            return None
         if self._openai_client is None:
             self._openai_client = _maybe_wrap(AsyncOpenAI(api_key=settings.openai_api_key))
         return self._openai_client
@@ -269,7 +275,7 @@ class LLMService:
                 return await call(self.groq_client, self.groq_model)
             except Exception as e:
                 last_error = e
-        if not _is_placeholder_key(settings.openai_api_key):
+        if self.openai_client is not None:
             try:
                 return await call(self.openai_client, self.openai_model)
             except Exception:
@@ -289,7 +295,14 @@ class LLMService:
         # chat_with_tools()).
         if tier == "low" and self.mistral_clients:
             return self.mistral_clients[0], self.mistral_model
-        return self.openai_client, self.openai_model
+        if self.openai_client is not None:
+            return self.openai_client, self.openai_model
+        # No OpenAI key: use whichever configured provider is available.
+        if self.groq_client is not None:
+            return self.groq_client, self.groq_model
+        if self.mistral_clients:
+            return self.mistral_clients[0], self.mistral_model
+        raise RuntimeError("no LLM provider is configured")
 
     async def chat_fast(
         self, messages: list[dict], system_prompt: str | None = None, json_mode: bool = False, max_tokens: int = 400
@@ -346,7 +359,8 @@ class LLMService:
         if self.groq_client is not None:
             candidates.append((self.groq_client, self.groq_model))
         candidates.extend((c, self.mistral_model) for c in self.mistral_clients)
-        candidates.append((self.openai_client, self.openai_model))
+        if self.openai_client is not None:
+            candidates.append((self.openai_client, self.openai_model))
 
         last_error: Exception | None = None
         for client, model in candidates:
@@ -411,7 +425,10 @@ class LLMService:
             )
             return response.choices[0].message.content or ""
 
-        if tier == "low" and self._has_usable_provider:
+        if tier == "low" or self.openai_client is None:
+            # Low-stakes traffic rides the free providers; and without an OpenAI
+            # key, "high" traffic has nowhere else to go than the same chain.
+            # (_call_with_fallback raises a clear error if nothing is usable.)
             return await self._call_with_fallback(call)
         return await call(self.openai_client, self.openai_model)
 
@@ -439,7 +456,8 @@ class LLMService:
         candidates = list(self.mistral_clients) if (tier == "low" and self.mistral_clients) else []
         if self.groq_client is not None:
             candidates.append(self.groq_client)
-        candidates.append(self.openai_client)
+        if self.openai_client is not None:
+            candidates.append(self.openai_client)
 
         tool_kwargs = {"tools": tools, "tool_choice": "none"} if tools else {}
 
@@ -501,6 +519,9 @@ class LLMService:
                 "tool_calls": choice.message.tool_calls,
             }
 
-        if tier == "low" and self._has_usable_provider:
+        if tier == "low" or self.openai_client is None:
+            # Low-stakes traffic rides the free providers; and without an OpenAI
+            # key, "high" traffic has nowhere else to go than the same chain.
+            # (_call_with_fallback raises a clear error if nothing is usable.)
             return await self._call_with_fallback(call)
         return await call(self.openai_client, self.openai_model)

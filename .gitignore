@@ -77,3 +77,21 @@ lets-scroll-assets/
 # Business decks / pitch PDFs at repo root — keep out of version control.
 AIACEONE_Investment.pdf
 AIACEONE_Investment_Proposal.pdf
+
+# InsForge CLI link file - holds the project API key (admin). Never commit.
+.insforge/
+
+# InsForge & AI agent skills
+.insforge
+.agent
+.agents
+.augment
+.claude
+.cline
+.github/copilot*
+.kilocode
+.qoder
+.qwen
+.roo
+.trae
+.windsurf
