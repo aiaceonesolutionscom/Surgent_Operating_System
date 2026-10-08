@@ -11,7 +11,15 @@
          the first thing anyone sees — start fetching it before the JS bundle
          has even parsed, instead of waiting for React to mount and the
          scrub-engine to request it. -->
-    <link rel="preload" as="image" href="/lets-scroll/reception.png" fetchpriority="high" />
+    <script>
+      // Only the landing page shows the hero; preloading its 2 MB poster on
+      // /dashboard, /sign-in etc. just burns the user's bandwidth.
+      if (location.pathname === "/") {
+        var l = document.createElement("link");
+        l.rel = "preload"; l.as = "image"; l.href = "/lets-scroll/reception.png"; l.setAttribute("fetchpriority", "high");
+        document.head.appendChild(l);
+      }
+    </script>
     <title>Aiaceone — Your practice, run by an AI workforce</title>
     <script>
       history.scrollRestoration = "manual";

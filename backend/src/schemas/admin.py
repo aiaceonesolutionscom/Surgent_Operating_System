@@ -9,23 +9,28 @@ from pydantic import BaseModel
 class AdminSummaryResponse(BaseModel):
     total_clinics: int
     plan_distribution: dict[str, int]
-    total_estimated_mrr: float
-    total_estimated_cost: float
-    total_estimated_margin: float
+    # MRR = what ACTIVE (paying) subscriptions bill per month. Trials are not
+    # revenue yet, so they are reported as pipeline instead.
+    mrr: float
+    trial_pipeline_mrr: float
+    # This month's AI spend: tokens x provider list price, from llm_calls.
+    ai_cost_month: float
+    margin: float
     margin_percent: float
-    assumption_note: str = "Estimated — based on an assumed average of 150 sessions/agent/month, not live usage."
+    cost_basis: str = "AI cost is month-to-date tokens x provider list price; MRR counts active paid subscriptions only."
 
 
 # --- Super Admin platform overview (GET /admin/platform_metrics) -------------
-# Real counts, measured live — the ONLY intentionally estimated number is the
-# AI cost total (per-session prices × logged sessions), flagged so the UI
-# can't present it as a measurement.
+# Every figure is read from the database. The one derived number is AI cost:
+# measured tokens x the provider's list price (pricing in services/telemetry).
 
 class ClinicStatusCounts(BaseModel):
     total: int
     active: int
     trial: int
     suspended: int
+    # Switched on but with no live subscription (never subscribed / cancelled).
+    unsubscribed: int = 0
 
 
 class SubscriptionCounts(BaseModel):
@@ -38,19 +43,52 @@ class SubscriptionCounts(BaseModel):
     trial: int
 
 
+class AiSourceUsage(BaseModel):
+    source: str
+    calls: int
+    cost_usd: float
+
+
 class AiUsageSummary(BaseModel):
-    runs_total: int
-    avg_latency_ms: Optional[float] = None
-    estimated_cost_total: float
-    cost_is_estimate: bool = True
+    calls_total: int
+    calls_month: int
+    calls_24h: int
+    avg_latency_ms_24h: Optional[float] = None
+    p95_latency_ms_24h: Optional[float] = None
+    # Share of the last 24h of provider calls that failed or were rate limited.
+    error_rate_percent_24h: float
+    tokens_month: int
+    cost_month_usd: float
+    cost_total_usd: float
+    # Rows in agent_logs (what AI agents did, e.g. "reply.sent") — a different
+    # thing from provider calls, shown alongside it.
+    agent_actions_30d: int
+    top_sources: list[AiSourceUsage] = []
+    cost_basis: str = "list_price"
+
+
+class SlowQueryItem(BaseModel):
+    statement: str
+    count: int
+    max_ms: int
+    avg_ms: int
 
 
 class SystemHealthSummary(BaseModel):
     uptime_seconds: int
-    db_health_ms: Optional[float] = None
+    started_at: datetime
+    restarts_24h: int
+    requests_24h: int
     error_rate_percent: float
-    slow_requests_total: int
-    scope_note: str = "Measured for this API process since boot."
+    avg_response_ms_24h: Optional[float] = None
+    slow_requests_24h: int
+    slow_queries_24h: int
+    top_slow_queries: list[SlowQueryItem] = []
+    db_health_ms: Optional[float] = None
+    scope_note: str = (
+        "Request, error and slow-query figures cover the last 24h across all API instances; "
+        "uptime is for the instance that served this request."
+    )
 
 
 class PlatformMetricsResponse(BaseModel):
@@ -83,6 +121,13 @@ class AdminPracticeListItem(BaseModel):
     plan_tier: str
     subscription_status: str
     agents_enabled_count: int
+    # Measured: month-to-date AI spend (tokens x list price) and what the
+    # clinic's active subscription bills monthly (0 while on trial).
+    patients_count: int = 0
+    ai_calls_month: int = 0
+    ai_cost_month: float = 0.0
+    mrr: float = 0.0
+    # Projected from the plan design (assumed sessions/agent/month), not measured.
     estimated_monthly_cost: float
     estimated_monthly_revenue: float
     joined_at: datetime
@@ -108,6 +153,14 @@ class AdminPracticeDetailResponse(BaseModel):
     estimated_monthly_cost: float
     agent_breakdown: list[AgentCostBreakdownItem]
     joined_at: datetime
+    # Measured (see AdminPracticeListItem).
+    patients_count: int = 0
+    users_count: int = 0
+    appointments_month: int = 0
+    ai_calls_month: int = 0
+    ai_cost_month: float = 0.0
+    mrr: float = 0.0
+    last_activity_at: Optional[datetime] = None
 
 
 class UpdateSubscriptionRequest(BaseModel):

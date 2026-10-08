@@ -10,6 +10,7 @@ from src.database import get_db
 from src.server.exceptions import UnauthorizedException, ForbiddenException
 from src.services.clerk.clerk_service import ClerkService
 from src.services.practice.practice_services import PracticeService
+from src.services.telemetry.recorder import set_current_practice
 from src.services.admin.plan_services import PlanService
 from src.services.admin.admin_auth_service import verify_admin_token
 from src.services.patient_portal.patient_portal_auth_service import PatientPortalAuthService
@@ -49,6 +50,14 @@ async def get_optional_user(
     clerk = ClerkService()
     user = await clerk.verify_token(token)
     return user
+
+
+def _inactive_practice_message(practice: Practice) -> str:
+    return (
+        "This practice's access has been suspended. Contact Aiaceone support."
+        if practice.status == PracticeStatus.SUSPENDED
+        else "This practice is still awaiting approval."
+    )
 
 
 async def get_current_practice_user(
@@ -148,6 +157,19 @@ async def get_current_practice_user(
         local_user.is_platform_admin = True
         await db.flush()
 
+    # A Super Admin-suspended practice must lose access on EVERY practice-scoped
+    # endpoint. Most routes resolve through this dependency (not through
+    # get_current_practice_context, which used to be the only place the status
+    # was checked), so the gate belongs here. db.get() is a primary-key lookup
+    # served from the session's identity map when the context dependency asks
+    # for the same practice later in the request.
+    practice = await db.get(Practice, local_user.practice_id)
+    if practice is not None and practice.status != PracticeStatus.ACTIVE:
+        raise ForbiddenException(_inactive_practice_message(practice))
+
+    # Attribute any LLM calls made while serving this request to the clinic
+    # (Super Admin per-clinic AI cost).
+    set_current_practice(local_user.practice_id)
     return local_user
 
 
@@ -170,6 +192,14 @@ async def resolve_self_apply_practice_id(db: AsyncSession, user: User) -> UUID:
     the application lands where the Owner can see and approve it. When no
     self-apply metadata is available the row is left untouched.
     """
+    # unsafe_metadata is writable by the signed-in user themselves, so it may
+    # only steer an applicant that is still waiting for approval. An ACTIVE
+    # account (an Owner, a working doctor) must never be moved to another
+    # practice or role by it - otherwise anyone who knows a clinic's UUID
+    # could join that clinic by editing their own Clerk profile.
+    if user.is_active:
+        return user.practice_id
+
     try:
         full_user = await ClerkService().get_user(user.clerk_id)
         unsafe_metadata = (full_user or {}).get("unsafe_metadata") or {}
@@ -384,13 +414,19 @@ async def get_current_practice_context(
     # one), but the check is written to cover both non-ACTIVE states in case
     # that ever changes.
     if practice.status != PracticeStatus.ACTIVE:
-        raise ForbiddenException(
-            "This practice's access has been suspended. Contact Aiaceone support."
-            if practice.status == PracticeStatus.SUSPENDED
-            else "This practice is still awaiting approval."
-        )
+        raise ForbiddenException(_inactive_practice_message(practice))
     tier = await practice_service.tier_for(db, practice.id)
     return PracticeContext(user=local_user, practice=practice, tier=tier)
+
+
+async def get_owner_practice_context(
+    ctx: PracticeContext = Depends(get_current_practice_context),
+) -> PracticeContext:
+    """Practice context for actions only the Owner may take (changing or
+    cancelling the subscription, ...)."""
+    if ctx.user.role != UserRole.OWNER:
+        raise ForbiddenException("Only the practice owner can do this.")
+    return ctx
 
 
 def require_plan_feature(feature: str):

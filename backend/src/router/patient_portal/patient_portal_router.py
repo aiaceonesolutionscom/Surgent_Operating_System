@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.services.patient_portal.patient_portal_auth_service import phone_key
 from src.database import get_db
 from src.server.dependencies import get_current_practice_user, get_current_portal_patient
 from src.models.user import User
@@ -114,7 +115,7 @@ async def request_otp(
     # slows both OTP-spam against one number and phone enumeration across
     # numbers.
     ip = request.client.host if request.client else None
-    client_key = f"{ip or 'unknown'}:{data.phone}"
+    client_key = f"{ip or 'unknown'}:{phone_key(data.phone)}"
     return await controller.request_otp(db, data, client_key, ip)
 
 
@@ -125,7 +126,7 @@ async def verify_otp(
     db: AsyncSession = Depends(get_db),
 ):
     ip = request.client.host if request.client else None
-    client_key = f"{ip or 'unknown'}:{data.phone}"
+    client_key = f"{ip or 'unknown'}:{phone_key(data.phone)}"
     return await controller.verify_otp(db, data, client_key, ip)
 
 
@@ -140,7 +141,7 @@ async def patient_login(
     # as verify-otp (IP + phone) so a stolen/guessed PIN still can't be
     # brute-forced across the network.
     ip = request.client.host if request.client else None
-    client_key = f"{ip or 'unknown'}:{data.phone}"
+    client_key = f"{ip or 'unknown'}:{phone_key(data.phone)}"
     return await controller.login_with_pin(db, data, client_key, ip)
 
 

@@ -1,16 +1,34 @@
 from __future__ import annotations
 
+import hmac
 import logging
 
 from fastapi import APIRouter, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import get_settings
 from src.database import get_db
+from src.server.exceptions import AppException, UnauthorizedException
 from src.services.channels.inbound_service import InboundService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai-receptionist/inbound", tags=["Inbound Webhooks"])
 inbound = InboundService()
+
+
+def _require_webhook_secret(request: Request) -> None:
+    """Authenticate a push webhook. Without this, anyone who knows a clinic's
+    Green API `idInstance` could inject patient messages, spend the clinic's
+    LLM budget and make its WhatsApp number text arbitrary people."""
+    settings = get_settings()
+    secret = settings.green_api_webhook_secret
+    if not secret:
+        if settings.app_env == "development":
+            return
+        raise AppException("Inbound webhook secret is not configured", status_code=503)
+    supplied = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if not hmac.compare_digest(supplied.encode(), secret.encode()):
+        raise UnauthorizedException("Invalid webhook credentials")
 
 
 @router.post("/whatsapp")
@@ -34,6 +52,7 @@ async def receive_whatsapp_message(request: Request) -> dict:
         }
     }
     """
+    _require_webhook_secret(request)
     payload = await request.json()
     webhook_type = payload.get("typeWebhook", "")
 
@@ -82,7 +101,7 @@ async def receive_whatsapp_message(request: Request) -> dict:
         except Exception as e:
             await db.rollback()
             logger.exception("Error handling WhatsApp message from %s", phone)
-            return {"status": "error", "detail": str(e)}
+            return {"status": "error", "detail": "Could not process the message"}
 
     return {"status": "error", "detail": "Database session failed"}
 

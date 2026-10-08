@@ -10,7 +10,10 @@ import { Logo } from "../../components/ui";
 const clerkEnabled = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
-  if (!clerkEnabled) return <>{children}</>;
+  // Dev convenience only: without a Clerk key the dashboard stays reachable
+  // locally. A production build is never allowed to fail OPEN - a missing key
+  // there is a misconfigured deploy and must show an error, not the dashboard.
+  if (!clerkEnabled) return import.meta.env.DEV ? <>{children}</> : <MissingAuthConfig />;
 
   return (
     <>
@@ -40,6 +43,16 @@ function SignInScreen() {
           Sign in
         </Link>
       </div>
+    </div>);
+
+}
+
+function MissingAuthConfig() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-canvas px-6">
+      <p className="max-w-sm text-center text-sm text-ink-muted">
+        Sign-in is not configured for this deployment. Please contact support.
+      </p>
     </div>);
 
 }

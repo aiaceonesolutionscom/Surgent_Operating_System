@@ -1,4 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+import asyncio
+from functools import lru_cache
+
 import httpx
 import jwt
 from jwt import PyJWKClient
@@ -9,6 +12,15 @@ from src.server.exceptions import AppException
 settings = get_settings()
 
 
+@lru_cache(maxsize=4)
+def _jwks_client(jwks_url: str) -> PyJWKClient:
+    """One PyJWKClient per JWKS URL for the life of the process. It caches the
+    key set (5 min by default); constructing a fresh client on every request
+    threw that cache away and made a blocking HTTPS round trip to Clerk on
+    every authenticated API call."""
+    return PyJWKClient(jwks_url, cache_jwk_set=True, lifespan=300)
+
+
 class ClerkService:
     def __init__(self):
         self.secret_key = settings.clerk_secret_key
@@ -17,8 +29,8 @@ class ClerkService:
 
     async def verify_token(self, token: str) -> dict | None:
         try:
-            jwks_client = PyJWKClient(self.jwks_url)
-            signing_key = jwks_client.get_signing_key_from_jwt(token)
+            # Off the event loop: a cache miss does a blocking HTTPS fetch.
+            signing_key = await asyncio.to_thread(_jwks_client(self.jwks_url).get_signing_key_from_jwt, token)
 
             payload = jwt.decode(
                 token,

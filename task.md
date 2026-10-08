@@ -478,8 +478,7 @@ patients with source "Landing Chat".
   `/super-admin/sales-leads` — the real sales leads table (populated by
   Landing Chat bookings).
 
-**Surgery + recovery:** Log in as Doctor (`doctor+clerk_test@aiaceone.dev` /
-`Aceonedoctor`), go to Surgery in the sidebar, schedule one, check off the
+**Surgery + recovery:** Log in as a Doctor test account (credentials are kept out of the repo), go to Surgery in the sidebar, schedule one, check off the
 pre-op checklist, mark it complete with an operative note and implant details —
 the patient's post-op recovery journal then tracks checkpoints.
 

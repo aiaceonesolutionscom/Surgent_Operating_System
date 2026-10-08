@@ -32,7 +32,7 @@ controller = DoctorsController()
 @router.post("", response_model=DoctorResponse)
 async def create_doctor(
     data: CreateDoctorRequest,
-    user: User = Depends(get_current_practice_user),
+    user: User = Depends(require_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     return await controller.create_doctor(db, user, data)

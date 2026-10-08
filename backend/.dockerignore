@@ -1,0 +1,21 @@
+# Never bake secrets, logs or local state into an image.
+.env
+.env.*
+!.env.example
+*.log
+*.txt.bak
+test_out.txt
+test_output.txt
+test_results.txt
+
+# Not needed at runtime
+tests/
+.pytest_cache/
+__pycache__/
+*.pyc
+.git/
+.venv/
+venv/
+Dockerfile
+docker-compose.yml
+README.md

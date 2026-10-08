@@ -1,8 +1,8 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
-import { PlanProvider } from "../plan/PlanContext";
+import { PlanProvider, usePlan } from "../plan/PlanContext";
 
 const COLLAPSE_KEY = "aesthetixai_sidebar_collapsed";
 
@@ -20,6 +20,21 @@ function readCollapsed(): boolean {
 // app/dashboard/README.md) — this is reachable without sign-in for now.
 // PlanProvider wraps everything below here so Sidebar/Topbar/every page share
 // one plan-tier resolution instead of each mounting its own (see plan/README.md).
+// Holds the whole shell back until the signed-in user's real role and plan have
+// been resolved, so no role-gated UI is ever rendered (or role-gated request
+// fired) on a placeholder role.
+function PlanGate({ children }: { children: React.ReactNode }) {
+  const { loading } = usePlan();
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-sand-200 border-t-accent-500" />
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
 export function DashboardLayout() {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const toggleCollapsed = () => {
@@ -36,6 +51,7 @@ export function DashboardLayout() {
 
   return (
     <PlanProvider>
+      <PlanGate>
       <div className="min-h-screen bg-canvas font-sans text-ink">
         <Sidebar collapsed={collapsed} />
         <div className={collapsed ? "lg:pl-[72px]" : "lg:pl-[280px]"}>
@@ -45,6 +61,7 @@ export function DashboardLayout() {
           </main>
         </div>
       </div>
+      </PlanGate>
     </PlanProvider>);
 
 }

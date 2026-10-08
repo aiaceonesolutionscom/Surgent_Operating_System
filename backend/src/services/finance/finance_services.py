@@ -75,7 +75,9 @@ class FinanceService:
         total_expenses, expense_count = (
             await db.execute(
                 select(func.coalesce(func.sum(Expense.amount), 0), func.count())
-                .where(Expense.practice_id == practice_id)
+                # Demo expenses are placeholder rows, not spend: counting them
+                # would show a new clinic a fabricated burn rate.
+                .where(Expense.practice_id == practice_id, Expense.is_sample.is_(False))
             )
         ).one()
 

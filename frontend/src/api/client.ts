@@ -4,7 +4,14 @@
 // `./health.ts` is the one real, working call, used to prove the wiring end
 // to end.
 
-export const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001";
+// In development an unset VITE_API_BASE_URL falls back to the local API
+// (port 8001, not FastAPI's default 8000). A PRODUCTION build must never do
+// that - it would aim every visitor's browser at their own machine - so the
+// fallback is empty there, and vite.config.ts refuses to build without a real
+// API URL in the first place.
+export const BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://127.0.0.1:8001" : "")
+).replace(/\/+$/, "");
 
 export class ApiError extends Error {
   status: number;
@@ -60,7 +67,14 @@ export async function apiFetchBlob(path: string, init?: RequestInit): Promise<Bl
 // parsed event as it arrives. Async generator so a caller does
 // `for await (const event of streamSSE(...))`.
 export async function* streamSSE<T = Record<string, unknown>>(path: string, init?: RequestInit): AsyncGenerator<T> {
-  const res = await fetch(`${BASE_URL}${path}`, init);
+  // A string body makes the browser send `Content-Type: text/plain`, and
+  // FastAPI only parses a JSON body for a JSON content type - without this
+  // header every streaming endpoint (Aria, Command Center, Finance Agent)
+  // answers 422.
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    headers: { ...(typeof init?.body === "string" ? { "Content-Type": "application/json" } : {}), ...init?.headers }
+  });
   if (!res.ok || !res.body) {
     let detail: string | null = null;
     try {

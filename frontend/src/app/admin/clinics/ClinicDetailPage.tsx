@@ -18,6 +18,20 @@ function money(n: number) {
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
+// AI spend per clinic is usually cents - keep them visible.
+function moneyPrecise(n: number) {
+  return n >= 100 ? money(n) : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function timeAgo(iso: string) {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 export function ClinicDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [detail, setDetail] = useState<AdminPracticeDetailResponse | null>(null);
@@ -239,27 +253,30 @@ export function ClinicDetailPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-sand-200 bg-white p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Est. revenue / mo</p>
-              <p className="mt-1 font-display text-2xl font-bold text-ink">{money(detail.estimated_monthly_revenue)}</p>
-            </div>
-            <div className="rounded-2xl border border-sand-200 bg-white p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Est. cost / mo</p>
-              <p className="mt-1 font-display text-2xl font-bold text-ink">{money(detail.estimated_monthly_cost)}</p>
-            </div>
-            <div className="rounded-2xl border border-sand-200 bg-white p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Est. margin / mo</p>
-              <p className="mt-1 font-display text-2xl font-bold text-success">
-                {money(detail.estimated_monthly_revenue - detail.estimated_monthly_cost)}
-              </p>
-            </div>
+          <div className="mt-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              { label: "MRR", value: detail.mrr > 0 ? money(detail.mrr) : "—", sub: detail.subscription_status === "trial" ? "on trial" : "active plan" },
+              { label: "AI cost (mo)", value: moneyPrecise(detail.ai_cost_month), sub: `${detail.ai_calls_month.toLocaleString()} runs` },
+              { label: "Patients", value: detail.patients_count.toLocaleString(), sub: `${detail.appointments_month.toLocaleString()} appts this month` },
+              { label: "Staff users", value: detail.users_count.toLocaleString() },
+              { label: "Last activity", value: detail.last_activity_at ? timeAgo(detail.last_activity_at) : "—" },
+              { label: "Joined", value: new Date(detail.joined_at).toLocaleDateString() }
+            ].map((t) =>
+            <div key={t.label} className="rounded-2xl border border-sand-200 bg-white px-4 py-3.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{t.label}</p>
+                <p className="mt-1 font-display text-xl font-bold tabular-nums text-ink">{t.value}</p>
+                {t.sub && <p className="mt-0.5 text-[11px] text-ink-muted">{t.sub}</p>}
+              </div>
+            )}
           </div>
 
           <div className="mt-6 overflow-hidden rounded-3xl border border-sand-200 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.05)]">
             <div className="border-b border-sand-200 px-5 py-4">
-              <p className="text-sm font-bold text-ink">Agent cost breakdown</p>
-              <p className="text-xs text-ink-muted">{detail.agent_breakdown.length} agents configured</p>
+              <p className="text-sm font-bold text-ink">Plan cost projection</p>
+              <p className="text-xs text-ink-muted">
+                {detail.agent_breakdown.length} agents configured · a projection from per-session prices at an assumed monthly volume
+                ({money(detail.estimated_monthly_cost)} / mo if every enabled agent ran at that volume), not measured spend — see AI cost above for what actually ran.
+              </p>
             </div>
             {detail.agent_breakdown.length === 0 ?
           <p className="p-6 text-sm text-ink-muted">No agents configured for this clinic yet.</p> :
@@ -271,7 +288,7 @@ export function ClinicDetailPage() {
                       <th className="px-5 py-3">Agent</th>
                       <th className="px-5 py-3">Enabled</th>
                       <th className="px-5 py-3">Cost / session</th>
-                      <th className="px-5 py-3">Est. cost / mo</th>
+                      <th className="px-5 py-3">Projected / mo</th>
                     </tr>
                   </thead>
                   <tbody>

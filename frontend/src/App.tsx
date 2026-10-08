@@ -54,6 +54,8 @@ export function App() {
         <Routes>
           <Route path="/" element={<RoleHome />} />
           <Route path="/channels" element={<ChannelsPage />} />
+          {/* The agents catalogue lives on the landing page; old footer/CTA links point here. */}
+          <Route path="/agents/*" element={<Navigate to="/#agents" replace />} />
           <Route path="/demo" element={<DemoPage />} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />
@@ -84,7 +86,8 @@ export function App() {
           <Route path="/super-admin/*" element={<AdminRouter />} />
           <Route path="/admin/*" element={<Navigate to="/super-admin" replace />} />
           <Route path="/user" element={<PortalPage />} />
-          <Route path="/portal" element={<PlanProvider><PortalSwitchPage /></PlanProvider>} />
+          {/* Dev-only role/plan switcher: not routed in a production build. */}
+          {import.meta.env.DEV && <Route path="/portal" element={<PlanProvider><PortalSwitchPage /></PlanProvider>} />}
           {/* Catch-all: every unknown URL lands here (404) instead of a
               silent blank screen — previously /staff, typos, and stale links
               rendered nothing. */}

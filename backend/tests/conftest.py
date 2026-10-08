@@ -46,3 +46,70 @@ async def db_session():
         await conn.run_sync(Base.metadata.drop_all)
 
     await engine.dispose()
+
+
+# --- Model factories ---------------------------------------------------------
+# Plain constructors (nothing is added to a session): tests add the objects
+# they build and flush, so each test decides its own transaction boundaries.
+# Every unique column (practice email, user clerk_id, ...) gets a random
+# suffix so two objects built in one test never collide.
+
+import uuid as _uuid
+
+from src.models.doctor import Doctor
+from src.models.patient import Patient
+from src.models.practice import Practice, PracticeStatus
+from src.models.user import User, UserRole
+
+
+def random_suffix() -> str:
+    return _uuid.uuid4().hex[:10]
+
+
+def make_practice(name: str = "Test Clinic", **overrides) -> Practice:
+    fields = {
+        "id": _uuid.uuid4(),
+        "name": name,
+        "email": f"practice-{random_suffix()}@test.local",
+        "status": PracticeStatus.ACTIVE,
+    }
+    fields.update(overrides)
+    return Practice(**fields)
+
+
+def make_patient(practice: Practice, first_name: str = "Pat", last_name: str = "Ient", **overrides) -> Patient:
+    fields = {
+        "id": _uuid.uuid4(),
+        "practice_id": practice.id,
+        "first_name": first_name,
+        "last_name": last_name,
+    }
+    fields.update(overrides)
+    return Patient(**fields)
+
+
+def make_user(practice: Practice, role=UserRole.STAFF, **overrides) -> User:
+    suffix = random_suffix()
+    fields = {
+        "id": _uuid.uuid4(),
+        "practice_id": practice.id,
+        "clerk_id": f"user_{suffix}",
+        "email": f"user-{suffix}@test.local",
+        "name": f"User {suffix}",
+        "role": UserRole(role),
+    }
+    fields.update(overrides)
+    return User(**fields)
+
+
+def make_doctor(practice: Practice, user: User | None = None, **overrides) -> Doctor:
+    suffix = random_suffix()
+    fields = {
+        "id": _uuid.uuid4(),
+        "practice_id": practice.id,
+        "user_id": user.id if user is not None else None,
+        "name": user.name if (user is not None and user.name) else f"Dr. {suffix}",
+        "email": user.email if user is not None else f"doctor-{suffix}@test.local",
+    }
+    fields.update(overrides)
+    return Doctor(**fields)

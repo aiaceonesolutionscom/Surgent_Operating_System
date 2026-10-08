@@ -1,5 +1,5 @@
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from uuid import UUID
 from datetime import datetime, date
 
@@ -189,8 +189,16 @@ class PortalEnabledResponse(BaseModel):
 
 # --- Patient-side login (phone + one-time code) ---
 
+def _check_phone(value: str) -> str:
+    if sum(ch.isdigit() for ch in value) < 8:
+        raise ValueError("Enter your full phone number.")
+    return value
+
+
 class RequestOtpRequest(BaseModel):
     phone: str
+
+    _phone = field_validator("phone")(_check_phone)
 
 
 class RequestOtpResponse(BaseModel):
@@ -202,6 +210,8 @@ class VerifyOtpRequest(BaseModel):
     phone: str
     code: str
 
+    _phone = field_validator("phone")(_check_phone)
+
 
 class PinLoginRequest(BaseModel):
     """Primary patient login path — phone + the patient's own PIN. No OTP is
@@ -209,6 +219,8 @@ class PinLoginRequest(BaseModel):
     from a code-on-every-login scheme)."""
     phone: str
     pin: str
+
+    _phone = field_validator("phone")(_check_phone)
 
 
 class SetPinRequest(BaseModel):

@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import case, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.conversation import Conversation, ConversationStatus
@@ -351,10 +351,10 @@ class AnalyticsService:
                     Procedure.id,
                     Procedure.name,
                     func.count(TreatmentPlanItem.id).label("proposals"),
-                    func.coalesce(func.sum(func.case(completed_case, else_=0)), 0).label("completed"),
+                    func.coalesce(func.sum(case(completed_case, else_=0)), 0).label("completed"),
                     func.coalesce(
                         func.sum(
-                            func.case(
+                            case(
                                 (
                                     TreatmentPlanItem.status == TreatmentPlanItemStatus.COMPLETED,
                                     func.coalesce(TreatmentPlanItem.actual_price, TreatmentPlanItem.estimated_price),

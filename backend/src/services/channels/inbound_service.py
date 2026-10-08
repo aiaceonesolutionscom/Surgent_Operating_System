@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.services.telemetry.recorder import set_current_practice
 from src.models.conversation import Conversation, ConversationChannel, ConversationStatus
 from src.models.message import Message, MessageRole
 from src.models.patient import Patient
@@ -278,6 +279,7 @@ class InboundService:
         practice = await self._find_practice_by_whatsapp_instance(db, instance_id)
         if not practice:
             return {"error": "No practice found for this WhatsApp instance", "handled": False}
+        set_current_practice(practice.id)  # attribute this conversation's LLM cost to the clinic
 
         # 2. Find or create the patient by phone number — every patient's
         # phone number is their durable identity here, so the same person

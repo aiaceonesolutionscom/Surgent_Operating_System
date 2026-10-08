@@ -9,7 +9,7 @@ from src.models.subscription import Subscription, SubscriptionStatus
 from src.models.plan import Plan
 from src.models.subscription import SubscriptionTier
 from src.services.payment.payment_service import PaymentService
-from src.server.dependencies import get_current_practice_context
+from src.server.dependencies import get_current_practice_context, get_owner_practice_context
 
 router = APIRouter(prefix="/billing", tags=["Billing"])
 payment = PaymentService()
@@ -18,7 +18,7 @@ payment = PaymentService()
 @router.post("/cancel")
 async def cancel_subscription(
     db: AsyncSession = Depends(get_db),
-    ctx=Depends(get_current_practice_context),
+    ctx=Depends(get_owner_practice_context),
 ):
     """Cancel subscription at period end (standard SaaS behavior)."""
     practice_id = ctx.practice.id
@@ -45,7 +45,7 @@ async def cancel_subscription(
 @router.post("/resume")
 async def resume_subscription(
     db: AsyncSession = Depends(get_db),
-    ctx=Depends(get_current_practice_context),
+    ctx=Depends(get_owner_practice_context),
 ):
     """Resume a subscription that was set to cancel at period end."""
     practice_id = ctx.practice.id
@@ -73,7 +73,7 @@ async def resume_subscription(
 async def change_plan(
     new_plan_tier: str,
     db: AsyncSession = Depends(get_db),
-    ctx=Depends(get_current_practice_context),
+    ctx=Depends(get_owner_practice_context),
 ):
     """Upgrade/downgrade to a different plan tier."""
     practice_id = ctx.practice.id

@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.services.telemetry.recorder import set_current_practice
 from src.models.patient import Patient, PatientLifecycleStage
 from src.models.appointment import Appointment
 from src.models.treatment_plan import TreatmentPlan
@@ -66,6 +67,7 @@ class LeadNurturingService:
                 continue
 
             try:
+                set_current_practice(patient.practice_id)
                 text = await self._draft_message(patient)
                 # PROACTIVE: this is the clinic chasing a lead, so it respects
                 # both the patient's waking hours and their market's working

@@ -27,6 +27,11 @@ function money(n: number) {
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
+// AI spend per clinic is usually cents - keep them visible.
+function moneyPrecise(n: number) {
+  return n >= 100 ? money(n) : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export function ClinicsListPage() {
   const [rows, setRows] = useState<AdminPracticeListItem[] | null>(null);
   const [q, setQ] = useState("");
@@ -125,9 +130,10 @@ export function ClinicsListPage() {
                   <th className="px-5 py-3.5">Org status</th>
                   <th className="px-5 py-3.5">Plan</th>
                   <th className="px-5 py-3.5">Billing status</th>
-                  <th className="px-5 py-3.5">Agents enabled</th>
-                  <th className="px-5 py-3.5">Est. cost / mo</th>
-                  <th className="px-5 py-3.5">Est. revenue / mo</th>
+                  <th className="px-5 py-3.5 text-right">Patients</th>
+                  <th className="px-5 py-3.5 text-right">AI runs (mo)</th>
+                  <th className="px-5 py-3.5 text-right">AI cost (mo)</th>
+                  <th className="px-5 py-3.5 text-right">MRR</th>
                   <th className="px-5 py-3.5" />
                 </tr>
               </thead>
@@ -149,9 +155,10 @@ export function ClinicsListPage() {
                         {r.subscription_status}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-ink-soft">{r.agents_enabled_count}</td>
-                    <td className="px-5 py-4 text-ink-soft">{money(r.estimated_monthly_cost)}</td>
-                    <td className="px-5 py-4 text-ink-soft">{money(r.estimated_monthly_revenue)}</td>
+                    <td className="px-5 py-4 text-right tabular-nums text-ink-soft">{r.patients_count.toLocaleString()}</td>
+                    <td className="px-5 py-4 text-right tabular-nums text-ink-soft">{r.ai_calls_month.toLocaleString()}</td>
+                    <td className="px-5 py-4 text-right tabular-nums text-ink-soft">{moneyPrecise(r.ai_cost_month)}</td>
+                    <td className="px-5 py-4 text-right tabular-nums text-ink-soft">{r.mrr > 0 ? money(r.mrr) : "—"}</td>
                     <td className="px-5 py-4 text-right">
                       <Link to={ADMIN_ROUTES.clinicDetail(r.id)} className="inline-flex items-center gap-1 text-xs font-semibold text-accent-500 hover:underline">
                         View <ArrowRightIcon className="h-3 w-3" />

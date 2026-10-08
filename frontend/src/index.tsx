@@ -53,7 +53,10 @@ if (posthogKey) {
         api_host: import.meta.env.VITE_POSTHOG_HOST || "https://us.i.posthog.com",
         capture_pageview: true,
         capture_pageleave: true,
-        session_recording: { maskTextSelector: ".sensitive, input[type=password]" },
+        // Patient names, chat text and clinical notes are on nearly every
+        // dashboard screen, so replay masks ALL text and ALL inputs - the old
+        // ".sensitive" selector matched nothing, i.e. nothing was masked.
+        session_recording: { maskAllInputs: true, maskTextSelector: "*" },
         autocapture: { dom_event_allowlist: ["click", "change", "submit"] },
       });
     });

@@ -3,16 +3,19 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.config import get_settings
 from src.database import Base
+from src.db_url import engine_config
 import src.models  # noqa: F401 — registers every model on Base.metadata before autogenerate compares against it
 
 settings = get_settings()
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Migrations use MIGRATION_DATABASE_URL when set: on a pooled host (Neon) the
+# app runs through the pooler but DDL needs the direct endpoint.
+_url, _connect_args = engine_config(settings.migration_database_url or settings.database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -21,8 +24,7 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline():
-    url = config.get_main_option("sqlalchemy.url")
-    context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
+    context.configure(url=_url.render_as_string(hide_password=False), target_metadata=target_metadata, literal_binds=True)
     with context.begin_transaction():
         context.run_migrations()
 
@@ -34,11 +36,7 @@ def do_run_migrations(connection):
 
 
 async def run_async_migrations():
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = create_async_engine(_url, poolclass=pool.NullPool, connect_args=_connect_args)
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

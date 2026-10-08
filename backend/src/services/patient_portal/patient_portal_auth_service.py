@@ -67,6 +67,20 @@ def _verify_pin(pin: str, stored: str) -> bool:
     return secrets.compare_digest(digest, expected)
 
 
+_MIN_PHONE_DIGITS = 8
+
+
+def phone_digits(phone: str) -> str:
+    return "".join(ch for ch in phone if ch.isdigit())
+
+
+def phone_key(phone: str) -> str:
+    """Canonical form of a phone for matching and rate-limit keys: the last 10
+    digits, however the number was typed ("+92 300 1234567" == "03001234567"),
+    so varying the formatting can't buy a fresh rate-limit bucket."""
+    return phone_digits(phone)[-10:]
+
+
 def _valid_pin(pin: str) -> bool:
     return pin.isdigit() and _PIN_MIN_DIGITS <= len(pin) <= _PIN_MAX_DIGITS
 
@@ -98,9 +112,15 @@ class PatientPortalAuthService:
         return pin, patient.portal_temp_pin_expires_at
 
     async def _find_patients_by_phone(self, db: AsyncSession, phone: str) -> list[Patient]:
-        digits = "".join(ch for ch in phone if ch.isdigit())
+        digits = phone_digits(phone)
+        # No digits (or a stub of them) would make `endswith("")` match EVERY
+        # portal patient on the platform - a login with junk input must find
+        # nobody, not everybody.
+        if len(digits) < _MIN_PHONE_DIGITS:
+            return []
+        tail = digits[-10:]
         result = await db.execute(select(Patient).where(Patient.portal_enabled == True))  # noqa: E712
-        return [p for p in result.scalars().all() if p.phone and "".join(ch for ch in p.phone if ch.isdigit()).endswith(digits[-10:])]
+        return [p for p in result.scalars().all() if p.phone and phone_digits(p.phone).endswith(tail)]
 
     async def _deliver_code(self, db: AsyncSession, patient: Patient, code: str) -> str:
         """Tries WhatsApp first (matches how this patient most likely

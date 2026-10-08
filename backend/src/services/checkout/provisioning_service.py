@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -12,7 +13,11 @@ from src.models.subscription import Subscription, SubscriptionStatus, Subscripti
 from src.models.plan import Plan
 from src.models.agent_config import AgentConfig
 from src.services.practice.plan_capabilities import allowed_agent_slugs
+from src.config import get_settings
 from src.server.exceptions import AppException
+from src.services.demo.sample_data_service import SampleDataService
+
+logger = logging.getLogger(__name__)
 
 
 class ProvisioningService:
@@ -86,7 +91,23 @@ class ProvisioningService:
         pending.claimed_at = datetime.now(timezone.utc)
         pending.claimed_by_clerk_id = pending.clerk_id
         await db.flush()
+
+        # Free-approval path only (a paying customer opens a real, empty
+        # clinic - see sample_data_service.py rule 3).
+        if get_settings().seed_sample_data_on_approval:
+            await self._seed_sample_data(db, practice)
         return practice
+
+    async def _seed_sample_data(self, db: AsyncSession, practice: Practice) -> None:
+        """Best-effort. Runs inside a SAVEPOINT so a failure rolls back only
+        the demo rows: a bare try/except would swallow the error yet leave the
+        PostgreSQL transaction aborted, failing the approval on the next flush
+        - the very thing a seeding problem must never do."""
+        try:
+            async with db.begin_nested():
+                await SampleDataService().seed_sample_data(db, practice)
+        except Exception:
+            logger.exception("Sample-data seeding failed for practice %s; approval continues without it", practice.id)
 
     async def _get_or_create_practice_for_org_request(self, db: AsyncSession, pending: PendingSignup) -> Practice:
         result = await db.execute(select(Practice).where(Practice.email == pending.email))
