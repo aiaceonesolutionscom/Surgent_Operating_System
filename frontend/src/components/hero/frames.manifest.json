@@ -2,57 +2,73 @@
   "reception": {
     "desktop": {
       "dir": "/lets-scroll/frames/reception",
-      "count": 96,
-      "width": 1440,
-      "height": 810
+      "count": 192,
+      "width": 1280,
+      "height": 720,
+      "fps": 24,
+      "blend": false
     },
     "mobile": {
       "dir": "/lets-scroll/frames/reception-m",
-      "count": 96,
+      "count": 192,
       "width": 540,
-      "height": 960
+      "height": 960,
+      "fps": 24,
+      "blend": false
     }
   },
   "booking": {
     "desktop": {
       "dir": "/lets-scroll/frames/booking",
-      "count": 96,
-      "width": 1440,
-      "height": 810
+      "count": 192,
+      "width": 1280,
+      "height": 720,
+      "fps": 24,
+      "blend": false
     },
     "mobile": {
       "dir": "/lets-scroll/frames/booking-m",
-      "count": 96,
+      "count": 192,
       "width": 540,
-      "height": 960
+      "height": 960,
+      "fps": 24,
+      "blend": false
     }
   },
   "care": {
     "desktop": {
       "dir": "/lets-scroll/frames/care",
-      "count": 96,
-      "width": 1440,
-      "height": 810
+      "count": 192,
+      "width": 1280,
+      "height": 720,
+      "fps": 24,
+      "blend": false
     },
     "mobile": {
       "dir": "/lets-scroll/frames/care-m",
-      "count": 96,
+      "count": 192,
       "width": 540,
-      "height": 960
+      "height": 960,
+      "fps": 24,
+      "blend": false
     }
   },
   "growth": {
     "desktop": {
       "dir": "/lets-scroll/frames/growth",
-      "count": 120,
-      "width": 1440,
-      "height": 810
+      "count": 240,
+      "width": 1280,
+      "height": 720,
+      "fps": 24,
+      "blend": false
     },
     "mobile": {
       "dir": "/lets-scroll/frames/growth-m",
-      "count": 120,
+      "count": 240,
       "width": 540,
-      "height": 960
+      "height": 960,
+      "fps": 24,
+      "blend": false
     }
   }
 }

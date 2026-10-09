@@ -231,7 +231,7 @@ function mountLetsScroll(container, config) {
   }
 
   // ---- frame-sequence renderer ----
-  const SMOOTH_MS = 70;      // scroll-smoothing time constant (frame-rate independent, so 60/120/144 Hz feel alike)
+  const SMOOTH_MS = 85;      // scroll-smoothing time constant (frame-rate independent, so 60/120/144 Hz feel alike)
   const KEEP_BEHIND = 8;     // decoded frames kept behind the playhead...
   const AHEAD = 10;          // ...and decoded ahead of it (in the direction the scroll is heading)
   const FETCHERS = 6;        // parallel downloads while sweeping a scene in
@@ -300,9 +300,17 @@ function mountLetsScroll(container, config) {
 
   // The canvas backing store follows the scene's on-screen size (capped DPR), so frames are
   // resampled once, with the browser's high-quality filter, instead of by the video scaler.
+  //
+  // It must never be sized while the scene has no layout box: past the hero the stylesheet sets
+  // the whole stage to display:none (index.css .sw-past-end), where clientWidth/Height are 0.
+  // Sizing then collapsed the canvas to 1x1 px - and nothing resized it again on the way back
+  // up, so the hero showed one stretched pixel (a flat brown screen). So: skip while hidden,
+  // and a ResizeObserver (below) re-sizes the moment the stage is shown again.
   function sizeCanvas(s) {
     if (!s.cv) return;
-    const w = Math.max(1, Math.round(s.el.clientWidth * dpr)), h = Math.max(1, Math.round(s.el.clientHeight * dpr));
+    const cssW = s.el.clientWidth, cssH = s.el.clientHeight;
+    if (!cssW || !cssH) return;                       // hidden: keep the last good size
+    const w = Math.round(cssW * dpr), h = Math.round(cssH * dpr);
     if (s.cv.width !== w || s.cv.height !== h) { s.cv.width = w; s.cv.height = h; s.dirty = true; }
     const m = /([\d.]+)%\s+([\d.]+)%/.exec(getComputedStyle(s.cv).objectPosition || '');
     s.posY = m ? parseFloat(m[2]) / 100 : 0.42;     // same focal point the stylesheet gives the poster
@@ -317,8 +325,16 @@ function mountLetsScroll(container, config) {
 
   function paint(s) {
     if (!s.ready || !s.cv) return;
+    // Belt and braces: whatever resized (or failed to resize) the stage, never paint into a
+    // canvas that no longer matches it.
+    const cssW = s.el.clientWidth, cssH = s.el.clientHeight;
+    if (cssW && cssH && (s.cv.width !== Math.round(cssW * dpr) || s.cv.height !== Math.round(cssH * dpr))) sizeCanvas(s);
+    if (s.cv.width < 2 || s.cv.height < 2) return;
     const f = clamp(s.cur, 0, 1) * (s.n - 1);
-    const i0 = Math.floor(f), a = f - i0, i1 = Math.min(i0 + 1, s.n - 1);
+    // Dense sequences show the nearest REAL frame (a blend of two frames is a cross-dissolve, which
+    // reads as ghosting/blur in motion); sparse ones may opt in to blending with `blend: true`.
+    const blend = !!s.set.blend;
+    const i0 = blend ? Math.floor(f) : Math.round(f), a = blend ? f - i0 : 0, i1 = Math.min(i0 + 1, s.n - 1);
     const fwd = s.target >= s.cur;
     for (let k = fwd ? -3 : -AHEAD; k <= (fwd ? AHEAD : 3); k++) bitmap(s, i0 + k);
     if (i0 !== s.lastI) { s.lastI = i0; evict(s, i0); }
@@ -326,7 +342,7 @@ function mountLetsScroll(container, config) {
     if (!b0) return;                                   // nothing decoded yet - the poster still shows
     const cw = s.cv.width, ch = s.cv.height;
     drawCover(s.ctx, b0, cw, ch, s.posY);
-    const b1 = a > 0.04 ? s.bmp[i1] : null;           // blend toward the next frame for sub-frame smoothness
+    const b1 = (blend && a > 0.04) ? s.bmp[i1] : null;
     if (b1 && b1 !== b0) { s.ctx.globalAlpha = a; drawCover(s.ctx, b1, cw, ch, s.posY); s.ctx.globalAlpha = 1; }
     s.dirty = false;
     if (!s.hasClip) { s.hasClip = true; s.el.classList.add('has-clip'); }
@@ -389,7 +405,11 @@ function mountLetsScroll(container, config) {
     if (disposed) return;
     const dt = lastT ? Math.min(now - lastT, 64) : 16; lastT = now;
     // Frame-rate independent exponential smoothing: the same ~70 ms glide at 60 or 144 Hz.
-    const k = reduce ? 1 : 1 - Math.exp(-dt / SMOOTH_MS);
+    // Applied under reduced motion too: with OS animations off Chrome also turns off smooth wheel
+    // scrolling, so each wheel notch is a ~100px jump - without this glide the picture would lurch
+    // ~12 frames per notch. The glide is driven only by the visitor's own scroll and settles in
+    // well under half a second; it is not autonomous motion.
+    const k = 1 - Math.exp(-dt / SMOOTH_MS);
     for (let i = 0; i < NSEG; i++) {
       const s = SEGMENTS[i];
       if (!s.ready) continue;
@@ -419,6 +439,11 @@ function mountLetsScroll(container, config) {
     layout();
   }
   window.addEventListener('resize', onResize);
+  // Fires when the stage goes display:none -> shown again (scrolling back up into the hero) and on any
+  // size change; sizeCanvas ignores the zero-size notifications.
+  const sizeWatch = (typeof ResizeObserver === 'function')
+    ? new ResizeObserver(() => SEGMENTS.forEach(sizeCanvas)) : null;
+  if (sizeWatch) sizeWatch.observe(stage);
   window.addEventListener('orientationchange', layout);
   window.addEventListener('load', layout);
   layout();
@@ -448,6 +473,7 @@ function mountLetsScroll(container, config) {
       window.removeEventListener('orientationchange', layout);
       window.removeEventListener('load', layout);
       net.abort();
+      if (sizeWatch) sizeWatch.disconnect();
       SEGMENTS.forEach(sg => { if (sg.bmp) releaseAll(sg); });
     }
   };
