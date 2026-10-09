@@ -1,15 +1,16 @@
 import { useEffect, useRef } from "react";
 import { mountLetsScroll } from "./scrub-engine";
 import type { HeroChatSeed } from "../chat/LandingChat";
+import framesManifest from "./frames.manifest.json";
 
+
+// Each scene is a WebP frame sequence (public/lets-scroll/frames, built by
+// scripts/build-scroll-frames.py) painted onto a canvas by the scrub engine.
 const SECTIONS = [
 {
   id: "reception",
   label: "First Call",
-  still: "/lets-scroll/reception.png",
-  stillMobile: "/lets-scroll/reception-mobile.png",
-  clip: "/lets-scroll/reception.mp4",
-  clipMobile: "/lets-scroll/reception-mobile.mp4",
+  frames: framesManifest.reception,
   accent: "#0B6362",
   eyebrow: "First Call, Answered",
   title: "Never miss another patient call",
@@ -19,10 +20,7 @@ const SECTIONS = [
 {
   id: "booking",
   label: "Consultations",
-  still: "/lets-scroll/booking.png",
-  stillMobile: "/lets-scroll/booking-mobile.png",
-  clip: "/lets-scroll/booking.mp4",
-  clipMobile: "/lets-scroll/booking-mobile.mp4",
+  frames: framesManifest.booking,
   accent: "#0B6362",
   eyebrow: "Consultations, Booked",
   title: "Every inquiry becomes an appointment",
@@ -32,10 +30,7 @@ const SECTIONS = [
 {
   id: "care",
   label: "Recovery",
-  still: "/lets-scroll/care.png",
-  stillMobile: "/lets-scroll/care-mobile.png",
-  clip: "/lets-scroll/care.mp4",
-  clipMobile: "/lets-scroll/care-mobile.mp4",
+  frames: framesManifest.care,
   accent: "#0B6362",
   eyebrow: "Healing, Watched Over",
   title: "Recovery checked in on, automatically",
@@ -45,10 +40,7 @@ const SECTIONS = [
 {
   id: "growth",
   label: "Growth",
-  still: "/lets-scroll/growth.png",
-  stillMobile: "/lets-scroll/growth-mobile.png",
-  clip: "/lets-scroll/growth.mp4",
-  clipMobile: "/lets-scroll/growth-mobile.mp4",
+  frames: framesManifest.growth,
   accent: "#C9A24B",
   eyebrow: "Growth, Visualized",
   title: "See your practice grow",

@@ -30,7 +30,7 @@ const OrgApplyPage = React.lazy(() => import("./app/auth/OrgApplyPage").then(m =
 const RoleHome = React.lazy(() => import("./app/auth/RoleHome").then(m => ({ default: m.RoleHome })));
 
 // Onboarding / checkout pages
-const DemoPaymentPage = React.lazy(() => import("./app/onboarding/DemoPaymentPage").then(m => ({ default: m.DemoPaymentPage })));
+const CheckoutPage = React.lazy(() => import("./app/onboarding/CheckoutPage").then(m => ({ default: m.CheckoutPage })));
 const CheckoutSuccessPage = React.lazy(() => import("./app/onboarding/CheckoutSuccessPage").then(m => ({ default: m.CheckoutSuccessPage })));
 const CheckoutCancelPage = React.lazy(() => import("./app/onboarding/CheckoutCancelPage").then(m => ({ default: m.CheckoutCancelPage })));
 const ClaimPlanPage = React.lazy(() => import("./app/onboarding/ClaimPlanPage").then(m => ({ default: m.ClaimPlanPage })));
@@ -73,7 +73,7 @@ export function App() {
           <Route path="/staff/apply/pending" element={<StaffApplyPendingPage />} />
           <Route path="/staff/apply/*" element={<StaffApplyPage />} />
           <Route path="/org/apply" element={<OrgApplyPage />} />
-          <Route path="/pricing/pay" element={<DemoPaymentPage />} />
+          <Route path="/pricing/pay" element={<CheckoutPage />} />
           <Route path="/pricing/success" element={<CheckoutSuccessPage />} />
           <Route path="/pricing/cancel" element={<CheckoutCancelPage />} />
           <Route path="/onboarding/claim" element={<ClaimPlanPage />} />

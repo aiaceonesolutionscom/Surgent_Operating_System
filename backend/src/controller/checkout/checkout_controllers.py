@@ -11,13 +11,9 @@ class CheckoutController:
         self.service = CheckoutService()
 
     async def create_checkout_session(self, db: AsyncSession, email: str, plan_tier: str) -> CheckoutSessionResponse:
-        url = await self.service.create_checkout_session(db, email, plan_tier)
-        return CheckoutSessionResponse(url=url)
+        session = await self.service.create_checkout_session(db, email, plan_tier)
+        return CheckoutSessionResponse(**session)
 
     async def get_session_status(self, db: AsyncSession, session_id: str) -> CheckoutSessionStatusResponse:
         status = await self.service.get_session_status(db, session_id)
-        return CheckoutSessionStatusResponse(**status)
-
-    async def confirm_demo_payment(self, db: AsyncSession, session_id: str) -> CheckoutSessionStatusResponse:
-        status = await self.service.confirm_demo_payment(db, session_id)
         return CheckoutSessionStatusResponse(**status)

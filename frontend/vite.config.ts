@@ -23,6 +23,9 @@ function assertProductionEnv(env: Record<string, string>) {
         '\nSet them in the host\'s environment (e.g. `insforge deployments env set`), or ALLOW_LOCAL_BUILD=1 for a local smoke build.'
     )
   }
+  if (!env.VITE_STRIPE_PUBLISHABLE_KEY) {
+    console.warn('\n[build] VITE_STRIPE_PUBLISHABLE_KEY is not set - the payment page will say checkout is unavailable.\n')
+  }
   if (env.VITE_CLERK_PUBLISHABLE_KEY.startsWith('pk_test_')) {
     console.warn('\n[build] VITE_CLERK_PUBLISHABLE_KEY is a pk_test_ key - fine for staging, not for real users.\n')
   }

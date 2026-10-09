@@ -8,7 +8,10 @@ class CheckoutSessionRequest(BaseModel):
 
 
 class CheckoutSessionResponse(BaseModel):
-    url: str
+    # Mounts Stripe's embedded payment form in the browser (there is no hosted
+    # checkout URL to redirect to).
+    client_secret: str
+    session_id: str
 
 
 class CheckoutSessionStatusResponse(BaseModel):

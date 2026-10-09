@@ -26,7 +26,7 @@ this panel edits live pricing.
 `canvas` content area - the inverse of the doctor dashboard's light sidebar -
 using the same `accent`/`cyan`/`panel` tokens established for the
 "Aiaceone premium" surfaces (`app/auth/AuthLayout.tsx`,
-`app/onboarding/DemoPaymentPage.tsx`, `app/dashboard/overview/OverviewPage.tsx`).
+`app/onboarding/CheckoutPage.tsx`, `app/dashboard/overview/OverviewPage.tsx`).
 `AdminSignInPage.tsx` reuses `AuthLayout`'s split-screen shell via its
 `variant="admin"` prop for the same reason, with its own plain form instead
 of a Clerk widget.

@@ -3,10 +3,9 @@
 The path from "just paid on Stripe" to "looking at my own dashboard":
 
 ```
-Pricing (#pricing on /) → CheckoutModal → /pricing/pay  (DemoPaymentPage, demo mode)
-  or the real Stripe Checkout page once real keys exist
-  cancelled → /pricing/cancel  (CheckoutCancelPage)
-  paid      → /pricing/success?session_id=...&plan_tier=...&email=...  (CheckoutSuccessPage)
+Pricing (#pricing on /) → CheckoutModal (collects the email)
+  → /pricing/pay  (CheckoutPage: our plan summary + Stripe's EMBEDDED payment form)
+  paid      → Stripe redirects to /pricing/success?session_id=...&plan_tier=...&email=...  (CheckoutSuccessPage)
                 → already signed in?  → straight to /onboarding/claim
                 → not signed in?      → Clerk sign-up (prefilled email) → forceRedirectUrl=/onboarding/claim
                 → /onboarding/claim  (ClaimPlanPage)
@@ -14,14 +13,16 @@ Pricing (#pricing on /) → CheckoutModal → /pricing/pay  (DemoPaymentPage, de
                 → /dashboard  (now tier-gated, see ../dashboard/plan/README.md)
 ```
 
-`/pricing/pay` (`DemoPaymentPage.tsx`) is a real card-entry step, not a
-skip-straight-to-success shortcut — order summary, live Visa/Mastercard/
-Amex/Discover detection as digits are typed, "Powered by Stripe" footer.
-Still entirely local UI (no card data leaves the browser); "Pay" calls
-`POST /checkout/session/{id}/confirm-demo-payment`, which 403s the moment
-real Stripe keys are configured (`checkout_services.py`'s
-`_stripe_configured()`) — swapping in Stripe's real Checkout/Elements at
-this exact route is the natural next step.
+`/pricing/pay` (`CheckoutPage.tsx`) asks the backend for a Checkout Session
+(`POST /checkout/create-session` → `client_secret`), loads Stripe.js from
+`js.stripe.com/dahlia` and mounts Stripe's payment form into `#checkout-form`
+(`initCheckoutFormSdk` → `createForm` → `loadActions` → `confirm`). Card details
+are typed into Stripe's iframe - they never touch our page or servers. There is
+no simulated payment anywhere: without `STRIPE_SECRET_KEY` and the plan's
+`stripe_price_id` the backend answers 503 and the page says checkout is
+unavailable. Needs `VITE_STRIPE_PUBLISHABLE_KEY` at build time. The signup is
+marked paid by the Stripe webhook (`checkout.session.completed`), which is why
+the success page polls. See `STRIPE_INTEGRATION_TODO.md` at the repo root.
 
 **`CheckoutSuccessPage` checks `useUser().isSignedIn` before showing
 "Create your account".** Clerk's default single-session mode throws

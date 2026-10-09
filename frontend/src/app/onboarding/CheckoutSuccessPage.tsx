@@ -12,16 +12,15 @@ const clerkEnabled = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 const POLL_ATTEMPTS = 5;
 const POLL_INTERVAL_MS = 1200;
 
-// Stripe redirects here after a successful payment
-// (backend/src/services/checkout/checkout_services.py builds this URL).
+// Stripe sends the browser here after the embedded payment form confirms
+// (backend/src/services/checkout/checkout_services.py builds this return_url).
 // `plan_tier`/`email` arrive as plain query params set before the Stripe
 // redirect (not something Stripe fills in) — shown immediately while a
 // short poll of GET /checkout/session/{id} confirms the backend actually
 // has it marked paid. That confirmation matters once real Stripe is
 // connected: Stripe's webhook and the browser's redirect can race, so the
 // PendingSignup row isn't guaranteed to be marked completed the instant this
-// page loads. In demo mode (no real Stripe keys — see checkout_services.py's
-// _demo_checkout) there's no race, so this resolves on the first poll.
+// page loads - hence the poll below.
 export function CheckoutSuccessPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();

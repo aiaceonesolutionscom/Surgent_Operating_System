@@ -16,6 +16,7 @@ from src.services.practice.plan_capabilities import allowed_agent_slugs
 from src.config import get_settings
 from src.server.exceptions import AppException
 from src.services.demo.sample_data_service import SampleDataService
+from src.services.payment.payment_service import PaymentService
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ class ProvisioningService:
         practice = await self._get_or_create_practice(db, pending, clerk_name)
         await self._get_or_create_owner_user(db, practice, clerk_id, clerk_email, pending.email)
         subscription = await self._get_or_create_subscription(db, practice, pending.plan_tier)
+        await self._link_stripe_subscription(subscription, pending)
         await self._seed_agent_configs(db, practice, subscription.tier)
 
         pending.practice_id = practice.id
@@ -60,6 +62,26 @@ class ProvisioningService:
         await db.flush()
 
         return practice
+
+    async def _link_stripe_subscription(self, subscription: Subscription, pending: PendingSignup) -> None:
+        """A paid checkout created a real Stripe subscription. The Subscription
+        row only comes into existence here (after the customer signs up), long
+        after Stripe's subscription events fired, so those events had nothing to
+        attach to: the clinic stayed a TRIAL with no Stripe link, billing
+        cancel / resume / plan-change had no subscription to act on, and the
+        Super Admin counted a paying clinic as trial. Link it now, and mark it
+        ACTIVE - it was paid at checkout, there is no trial to wait out."""
+        if not (pending.stripe_session_id or "").startswith("cs_"):
+            return
+        try:
+            stripe_subscription_id = await PaymentService().get_checkout_subscription_id(pending.stripe_session_id)
+        except Exception:
+            logger.exception("Could not read the Stripe subscription for checkout session %s", pending.stripe_session_id)
+            return
+        if stripe_subscription_id:
+            subscription.stripe_subscription_id = stripe_subscription_id
+            subscription.status = SubscriptionStatus.ACTIVE
+            subscription.end_date = None
 
     async def provision_from_org_request(self, db: AsyncSession, pending: PendingSignup, plan_tier: str | None = None) -> Practice:
         """The approval-time counterpart to provision_from_pending_signup —

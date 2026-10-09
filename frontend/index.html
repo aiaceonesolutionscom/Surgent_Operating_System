@@ -12,11 +12,12 @@
          has even parsed, instead of waiting for React to mount and the
          scrub-engine to request it. -->
     <script>
-      // Only the landing page shows the hero; preloading its 2 MB poster on
+      // Only the landing page shows the hero; preloading its poster on
       // /dashboard, /sign-in etc. just burns the user's bandwidth.
       if (location.pathname === "/") {
         var l = document.createElement("link");
-        l.rel = "preload"; l.as = "image"; l.href = "/lets-scroll/reception.png"; l.setAttribute("fetchpriority", "high");
+        l.rel = "preload"; l.as = "image"; l.setAttribute("fetchpriority", "high");
+        l.href = window.matchMedia("(max-width: 860px)").matches ? "/lets-scroll/frames/reception-m/000.webp" : "/lets-scroll/frames/reception/000.webp";
         document.head.appendChild(l);
       }
     </script>

@@ -1,8 +1,6 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
-import { XIcon, Loader2Icon, ArrowRightIcon } from "lucide-react";
-import { createCheckoutSession } from "../../api/commerce";
-import { ApiError } from "../../api/client";
+import { Link, useNavigate } from "react-router-dom";
+import { XIcon, ArrowRightIcon } from "lucide-react";
 
 interface CheckoutModalProps {
   planId: "solo" | "practice";
@@ -12,26 +10,13 @@ interface CheckoutModalProps {
 
 export function CheckoutModal({ planId, planName, onClose }: CheckoutModalProps) {
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
-  const submit = async (e: React.FormEvent) => {
+  // Payment itself happens on /pricing/pay, in Stripe's embedded form: this
+  // step only collects the email the receipt goes to.
+  const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      const { url } = await createCheckoutSession(email, planId);
-      window.location.href = url;
-    } catch (err) {
-      // Expected today — Stripe is wired with placeholder price IDs until
-      // real ones are set in backend/.env (STRIPE_PRICE_SOLO/PRACTICE).
-      const message =
-      err instanceof ApiError ?
-      "Checkout isn't fully connected yet — our team has been notified. Please try again shortly or book a demo instead." :
-      "Something went wrong. Please try again.";
-      setError(message);
-      setLoading(false);
-    }
+    navigate(`/pricing/pay?plan_tier=${planId}&email=${encodeURIComponent(email.trim())}`);
   };
 
   return (
@@ -67,18 +52,14 @@ export function CheckoutModal({ planId, planName, onClose }: CheckoutModalProps)
 
           </label>
 
-          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-
           <button
             type="submit"
-            disabled={loading}
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-ink py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:opacity-60">
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-ink py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-700">
 
-            {loading && <Loader2Icon className="h-4 w-4 animate-spin" />}
-            {loading ? "Redirecting to checkout…" : "Continue to checkout"}
+            Continue to checkout
           </button>
           <p className="mt-3 text-center text-xs text-ink-muted">
-            You'll be redirected to Stripe to complete payment securely.
+            Next, you'll pay securely with Stripe — card details never touch our servers.
           </p>
         </form>
 

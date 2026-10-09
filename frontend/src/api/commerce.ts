@@ -7,7 +7,9 @@ import { apiFetch } from "./client";
 
 // --- checkout ---------------------------------------------------------------
 export interface CheckoutSessionResponse {
-  url: string;
+  // Mounts Stripe's embedded payment form (there is no hosted checkout URL).
+  client_secret: string;
+  session_id: string;
 }
 
 export interface CheckoutSessionStatusResponse {
@@ -18,7 +20,8 @@ export interface CheckoutSessionStatusResponse {
 }
 
 // Matches backend/src/router/checkout/checkout_router.py's
-// POST /api/v1/checkout/create-session.
+// POST /api/v1/checkout/create-session. Called by CheckoutPage.tsx, which mounts
+// the returned client_secret as Stripe's embedded payment form.
 export function createCheckoutSession(email: string, planTier: "solo" | "practice") {
   return apiFetch<CheckoutSessionResponse>("/api/v1/checkout/create-session", {
     method: "POST",
@@ -31,14 +34,6 @@ export function createCheckoutSession(email: string, planTier: "solo" | "practic
 // race the browser redirect in real, non-demo checkout).
 export function getCheckoutSession(sessionId: string) {
   return apiFetch<CheckoutSessionStatusResponse>(`/api/v1/checkout/session/${encodeURIComponent(sessionId)}`);
-}
-
-// DemoPaymentPage.tsx's "Pay" button — only works while Stripe isn't
-// configured yet (backend 403s once real keys are set).
-export function confirmDemoPayment(sessionId: string) {
-  return apiFetch<CheckoutSessionStatusResponse>(`/api/v1/checkout/session/${encodeURIComponent(sessionId)}/confirm-demo-payment`, {
-    method: "POST"
-  });
 }
 
 // --- demo requests ----------------------------------------------------------

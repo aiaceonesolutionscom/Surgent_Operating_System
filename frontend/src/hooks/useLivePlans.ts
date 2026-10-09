@@ -8,7 +8,7 @@ function money(n: number) {
 
 // Bridges the DB-backed Plan model (backend/src/models/plan.py, editable
 // from /admin/plans) into data/plans.ts's display shape, so marketing
-// Pricing.tsx and DemoPaymentPage.tsx show whatever an admin last set
+// Pricing.tsx and CheckoutPage.tsx show whatever an admin last set
 // instead of the hardcoded PLANS array. Falls back to PLANS on load/error
 // — same "static fallback while live data loads" pattern as
 // useAgentCosting.ts, so nothing regresses if the API is unreachable.

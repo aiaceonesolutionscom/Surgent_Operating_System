@@ -29,13 +29,3 @@ async def get_session_status(
     # Also no auth — /pricing/success polls this before the customer has a
     # Clerk account yet.
     return await controller.get_session_status(db, session_id)
-
-
-@router.post("/session/{session_id}/confirm-demo-payment", response_model=CheckoutSessionStatusResponse)
-async def confirm_demo_payment(
-    session_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    # DemoPaymentPage.tsx's "Pay" button — see CheckoutService.confirm_demo_payment
-    # for why this 403s once real Stripe keys are configured.
-    return await controller.confirm_demo_payment(db, session_id)
