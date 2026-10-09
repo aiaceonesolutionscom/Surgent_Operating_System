@@ -13,7 +13,7 @@ Every command below is run from the repo root unless stated.
 
 | | |
 |---|---|
-| Frontend | https://h7snbk6c.insforge.site (InsForge hosting, project `Surgent_OS`) |
+| Frontend | https://surgeon-os.insforge.site (same site, also reachable at https://h7snbk6c.insforge.site) — InsForge hosting, project `Surgent_OS`. **Every origin that serves the frontend must be in the backend's `CORS_ORIGINS`** (comma-separated), otherwise the browser reports "Failed to fetch". |
 | Backend API | https://aiaceone-api-b878dd48-8587-49ba-8ceb-a4981544c73b.fly.dev (InsForge compute service `aiaceone-api`, region `sin`, 512 MB — the free plan's per-machine ceiling) |
 | Database | Neon project `muddy-firefly-59906622`, branch `production` (schema at Alembic head `8a4c1e9f3d27`) |
 | Auth | Clerk **development** instance → backend runs with `APP_ENV=staging` (the production guard rejects `sk_test_` keys) |

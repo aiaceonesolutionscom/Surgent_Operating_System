@@ -1,12 +1,9 @@
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { CheckIcon } from "lucide-react";
 import { Button, Container } from "../ui";
 import { useLivePlans } from "../../hooks/useLivePlans";
-import { CheckoutModal } from "./CheckoutModal";
 
 export function Pricing() {
-  const [checkoutPlan, setCheckoutPlan] = useState<{ id: "practice"; name: string } | null>(null);
   const PLANS = useLivePlans();
 
   return (
@@ -58,12 +55,12 @@ export function Pricing() {
                 </Button> :
 
             <Button
-              onClick={() => setCheckoutPlan({ id: "practice", name: p.name })}
+              to="/pricing/pay?plan_tier=practice"
               variant={p.highlight ? "cream" : "ink"}
               arrow
               className="mt-6 w-full">
 
-                  Start free trial
+                  Get started
                 </Button>
             }
 
@@ -123,9 +120,6 @@ export function Pricing() {
           </div>
         </div>
       </Container>
-      {checkoutPlan &&
-      <CheckoutModal planId={checkoutPlan.id} planName={checkoutPlan.name} onClose={() => setCheckoutPlan(null)} />
-      }
     </section>);
 
 }

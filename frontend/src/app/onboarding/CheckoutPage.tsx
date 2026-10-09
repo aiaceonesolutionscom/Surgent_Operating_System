@@ -109,9 +109,8 @@ export function CheckoutPage() {
     (async () => {
       try {
         if (!publishableKey) throw new Error("not-configured");
-        if (!email) throw new Error("missing-email");
 
-        const [session, Stripe] = await Promise.all([createCheckoutSession(email, planTier as "solo" | "practice"), loadStripeJs()]);
+        const [session, Stripe] = await Promise.all([createCheckoutSession(email || undefined, planTier as "solo" | "practice"), loadStripeJs()]);
         if (cancelled) return;
 
         const stripe = Stripe(publishableKey, { betas: ["custom_checkout_payment_form_1"] });
@@ -137,8 +136,6 @@ export function CheckoutPage() {
         console.error("Checkout failed to start:", err);
         if (err instanceof Error && err.message === "not-configured") {
           setError("Online checkout isn't available yet. Please contact us and we'll set you up.");
-        } else if (err instanceof Error && err.message === "missing-email") {
-          setError("We need your email to start checkout. Please go back and enter it.");
         } else if (err instanceof ApiError && err.status === 503) {
           setError("Online checkout isn't available yet. Please contact us and we'll set you up.");
         } else {
@@ -260,7 +257,7 @@ export function CheckoutPage() {
               <div className="rounded-2xl border border-danger/25 bg-danger/5 p-5 text-center">
                   <AlertTriangleIcon className="mx-auto h-6 w-6 text-danger" />
                   <p className="mt-2 text-sm text-ink">{error}</p>
-                  {email && publishableKey &&
+                  {publishableKey &&
                 <button
                   type="button"
                   onClick={() => setAttempt((n) => n + 1)}
@@ -283,6 +280,13 @@ export function CheckoutPage() {
             </div>
 
             <div className="border-t border-sand-200 bg-sand-50 px-8 py-4">
+              <p className="mb-3 text-center text-xs text-ink-soft">
+                Not ready to pay yet?{" "}
+                <Link to="/sign-up" className="font-semibold text-teal-700 underline-offset-4 hover:underline">
+                  Request free access
+                </Link>{" "}
+                - we&apos;ll set your organization up personally first, no card needed.
+              </p>
               <div className="flex items-center justify-center gap-1.5 text-xs text-ink-muted">
                 <LockIcon className="h-3 w-3" />
                 <span>Payments powered by</span>

@@ -10,7 +10,7 @@ class CheckoutController:
     def __init__(self):
         self.service = CheckoutService()
 
-    async def create_checkout_session(self, db: AsyncSession, email: str, plan_tier: str) -> CheckoutSessionResponse:
+    async def create_checkout_session(self, db: AsyncSession, email: str | None, plan_tier: str) -> CheckoutSessionResponse:
         session = await self.service.create_checkout_session(db, email, plan_tier)
         return CheckoutSessionResponse(**session)
 

@@ -29,7 +29,7 @@ class CheckoutService:
     def _plan_stripe_ready(self, plan) -> bool:
         return bool(plan.stripe_price_id) and "xxxx" not in plan.stripe_price_id
 
-    async def create_checkout_session(self, db: AsyncSession, email: str, plan_tier: str) -> dict:
+    async def create_checkout_session(self, db: AsyncSession, email: str | None, plan_tier: str) -> dict:
         try:
             tier = SubscriptionTier(plan_tier)
         except ValueError:
@@ -52,7 +52,9 @@ class CheckoutService:
                 "Online checkout isn't available yet - please contact sales.", status_code=503
             )
 
-        pending = PendingSignup(id=uuid.uuid4(), email=email, plan_tier=plan_tier)
+        # With no email up front the row starts empty; Stripe's form collects it and the
+        # checkout.session.completed webhook fills it in (see webhook_router.py).
+        pending = PendingSignup(id=uuid.uuid4(), email=email or "", plan_tier=plan_tier)
         db.add(pending)
         await db.flush()
 
@@ -60,14 +62,14 @@ class CheckoutService:
         # static values known before checkout (not Stripe fields) - carried so
         # /pricing/success can show the right plan immediately.
         return_url = (
-            f"{settings.frontend_url}/pricing/success?session_id={{CHECKOUT_SESSION_ID}}"
-            f"&plan_tier={plan_tier}&email={quote(email)}"
+            f"{settings.frontend_url}/pricing/success?session_id={{CHECKOUT_SESSION_ID}}&plan_tier={plan_tier}"
+            + (f"&email={quote(email)}" if email else "")
         )
         session = await self.payment.create_checkout_session(
             price_id=plan.stripe_price_id,
             practice_id=str(pending.id),  # client_reference_id - see PendingSignup's docstring
             return_url=return_url,
-            customer_email=email,
+            customer_email=email or None,
         )
         pending.stripe_session_id = session["session_id"]
         await db.flush()

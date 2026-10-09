@@ -25,7 +25,10 @@ export function CheckoutSuccessPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const planTier = (params.get("plan_tier") as PlanTier) || "practice";
-  const email = params.get("email") || "";
+  // Known up front only if the visitor typed it before paying; otherwise Stripe's form collected it and
+  // the backend returns it once the payment is confirmed (see the poll below).
+  const [paidEmail, setPaidEmail] = useState("");
+  const email = paidEmail || params.get("email") || "";
   const sessionId = params.get("session_id") || "";
   const plan = planFor(planTier);
 
@@ -44,6 +47,7 @@ export function CheckoutSuccessPage() {
           const status = await getCheckoutSession(sessionId);
           if (status.paid) {
             if (!cancelled) {
+              if (status.email) setPaidEmail(status.email);
               setConfirmed(true);
               setConfirming(false);
             }

@@ -38,6 +38,11 @@ org_request_service = OrgRequestService()
 _SVIX_TOLERANCE_SECONDS = 300
 
 
+def _plain(obj):
+    """A StripeObject (or anything with to_dict) as plain nested dicts/lists; dicts pass through."""
+    return obj.to_dict() if hasattr(obj, "to_dict") else obj
+
+
 def _verify_clerk_signature(
     payload: bytes, svix_id: str, svix_timestamp: str, svix_signature: str, secret: str
 ) -> bool:
@@ -292,7 +297,10 @@ async def stripe_webhook(
         raise AppException(f"Invalid Stripe webhook signature: {exc}", status_code=400)
 
     event_type = event["type"]
-    data = event["data"]["object"]
+    # stripe-python >= 8 hands back StripeObject instances, which are NOT dicts (no .get()), while
+    # every handler below reads the payload like a dict. Normalise once, here - before this, every
+    # checkout.session.completed raised AttributeError, so no payment ever marked a signup paid.
+    data = _plain(event["data"]["object"])
 
     # --- checkout.session.completed (existing) ---
     if event_type == "checkout.session.completed":
@@ -333,6 +341,10 @@ async def stripe_webhook(
             pending = result.scalar_one_or_none()
             if pending is not None:
                 pending.completed_at = datetime.now(timezone.utc)
+                if not pending.email:
+                    # The checkout was started without an email, so Stripe's own form collected it.
+                    details = session.get("customer_details") or {}
+                    pending.email = (details.get("email") or session.get("customer_email") or "").strip().lower()
                 await db.flush()
 
     # --- customer.subscription.created ---

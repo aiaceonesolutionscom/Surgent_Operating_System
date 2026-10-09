@@ -22,10 +22,11 @@ export interface CheckoutSessionStatusResponse {
 // Matches backend/src/router/checkout/checkout_router.py's
 // POST /api/v1/checkout/create-session. Called by CheckoutPage.tsx, which mounts
 // the returned client_secret as Stripe's embedded payment form.
-export function createCheckoutSession(email: string, planTier: "solo" | "practice") {
+export function createCheckoutSession(email: string | undefined, planTier: "solo" | "practice") {
   return apiFetch<CheckoutSessionResponse>("/api/v1/checkout/create-session", {
     method: "POST",
-    body: JSON.stringify({ email, plan_tier: planTier })
+    // No email: Stripe's payment form collects it and the webhook records it.
+    body: JSON.stringify({ ...(email ? { email } : {}), plan_tier: planTier })
   });
 }
 

@@ -206,3 +206,91 @@ async def test_subscription_deleted_event_cancels(api):
     resp = await _post_stripe_event(client, monkeypatch, "customer.subscription.deleted", {"id": "sub_123"})
     assert resp.status_code == 200
     assert (await _status_of(factory, practice_id)).status == SubscriptionStatus.CANCELLED
+
+
+# --- the REAL stripe-python object path (no construct_event mock) ------------------------
+#
+# stripe-python >= 8 returns StripeObject instances - not dicts, no .get() - and the handlers read
+# the payload like a dict. The mocked tests above feed plain dicts, so they could not see that:
+# every genuine checkout.session.completed raised AttributeError and no payment ever marked a
+# signup paid. These sign a payload the way Stripe does and send it through the real SDK parser.
+
+def _signed(payload: dict, secret: str):
+    import json as _json
+
+    body = _json.dumps(payload)
+    ts = int(time.time())
+    signature = hooks.stripe.WebhookSignature._compute_signature(f"{ts}.{body}", secret)
+    return body.encode(), {"stripe-signature": f"t={ts},v1={signature}", "content-type": "application/json"}
+
+
+async def test_genuine_checkout_completed_marks_the_signup_paid_and_records_the_email(api):
+    from src.models.pending_signup import PendingSignup
+
+    client, factory, monkeypatch = api
+    secret = "whsec_real_path_secret"
+    monkeypatch.setattr(hooks.settings, "stripe_webhook_secret", secret)
+    async with factory() as session:
+        pending = PendingSignup(id=uuid4(), email="", plan_tier="practice", stripe_session_id="cs_test_real")
+        session.add(pending)
+        await session.commit()
+        pending_id = pending.id
+
+    body, headers = _signed({
+        "id": "evt_1", "object": "event", "type": "checkout.session.completed",
+        "data": {"object": {
+            "id": "cs_test_real", "object": "checkout.session", "metadata": {},
+            "customer_details": {"email": "Buyer@Example.com"}, "subscription": "sub_1",
+        }},
+    }, secret)
+
+    resp = await client.post("/api/v1/webhooks/stripe", content=body, headers=headers)
+
+    assert resp.status_code == 200, resp.text
+    async with factory() as session:
+        row = (await session.execute(select(PendingSignup).where(PendingSignup.id == pending_id))).scalar_one()
+    assert row.completed_at is not None
+    assert row.email == "buyer@example.com"   # collected by Stripe's form, normalised
+
+
+async def test_genuine_checkout_completed_keeps_an_email_given_up_front(api):
+    from src.models.pending_signup import PendingSignup
+
+    client, factory, monkeypatch = api
+    secret = "whsec_real_path_secret"
+    monkeypatch.setattr(hooks.settings, "stripe_webhook_secret", secret)
+    async with factory() as session:
+        pending = PendingSignup(id=uuid4(), email="given@example.com", plan_tier="practice", stripe_session_id="cs_test_given")
+        session.add(pending)
+        await session.commit()
+        pending_id = pending.id
+
+    body, headers = _signed({
+        "id": "evt_2", "object": "event", "type": "checkout.session.completed",
+        "data": {"object": {"id": "cs_test_given", "object": "checkout.session", "metadata": {}, "customer_details": {"email": "other@example.com"}}},
+    }, secret)
+    assert (await client.post("/api/v1/webhooks/stripe", content=body, headers=headers)).status_code == 200
+
+    async with factory() as session:
+        row = (await session.execute(select(PendingSignup).where(PendingSignup.id == pending_id))).scalar_one()
+    assert row.completed_at is not None and row.email == "given@example.com"
+
+
+async def test_genuine_subscription_update_event_moves_the_status(api):
+    client, factory, monkeypatch = api
+    secret = "whsec_real_path_secret"
+    monkeypatch.setattr(hooks.settings, "stripe_webhook_secret", secret)
+    practice_id = await _seed_subscription(factory)
+
+    body, headers = _signed({
+        "id": "evt_3", "object": "event", "type": "customer.subscription.updated",
+        "data": {"object": {
+            "id": "sub_123", "object": "subscription", "status": "active", "cancel_at_period_end": False,
+            "items": {"object": "list", "data": [{"id": "si_1", "object": "subscription_item", "price": {"id": "price_1", "object": "price", "unit_amount": 99900}}]},
+        }},
+    }, secret)
+    resp = await client.post("/api/v1/webhooks/stripe", content=body, headers=headers)
+
+    assert resp.status_code == 200, resp.text
+    sub = await _status_of(factory, practice_id)
+    assert sub.status == SubscriptionStatus.ACTIVE and float(sub.price) == 999.0

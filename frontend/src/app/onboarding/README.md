@@ -3,7 +3,7 @@
 The path from "just paid on Stripe" to "looking at my own dashboard":
 
 ```
-Pricing (#pricing on /) → CheckoutModal (collects the email)
+Pricing (#pricing on /) → "Get started" goes straight to /pricing/pay (no email step)
   → /pricing/pay  (CheckoutPage: our plan summary + Stripe's EMBEDDED payment form)
   paid      → Stripe redirects to /pricing/success?session_id=...&plan_tier=...&email=...  (CheckoutSuccessPage)
                 → already signed in?  → straight to /onboarding/claim

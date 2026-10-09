@@ -3,7 +3,8 @@ from pydantic import BaseModel, EmailStr
 
 
 class CheckoutSessionRequest(BaseModel):
-    email: EmailStr
+    # Optional: when omitted, Stripe's payment form asks for it and the Stripe webhook records it.
+    email: EmailStr | None = None
     plan_tier: str  # "solo" | "practice" — Enterprise never reaches this endpoint, see Pricing.tsx
 
 

@@ -204,3 +204,25 @@ async def test_a_stripe_outage_does_not_block_the_clinic_from_being_created(monk
     subscription = _trial_subscription(make_practice())
     await ProvisioningService()._link_stripe_subscription(subscription, _pending("cs_test_x"))
     assert subscription.status == SubscriptionStatus.TRIAL
+
+
+async def test_checkout_can_start_without_an_email(db_session, monkeypatch):
+    """The pricing button goes straight to Stripe's form, which asks for the email itself."""
+    monkeypatch.setattr(checkout_module.settings, "stripe_secret_key", "sk_test_realish")
+    monkeypatch.setattr(checkout_module.settings, "frontend_url", "https://app.example.com")
+    await _seed_plan(db_session)
+    seen = {}
+
+    async def fake_create(self, **kwargs):
+        seen.update(kwargs)
+        return {"session_id": "cs_test_noemail", "client_secret": "cs_test_noemail_secret"}
+
+    monkeypatch.setattr(PaymentService, "create_checkout_session", fake_create)
+
+    result = await CheckoutService().create_checkout_session(db_session, None, "practice")
+
+    assert result["client_secret"] == "cs_test_noemail_secret"
+    assert seen["customer_email"] is None
+    assert "email=" not in seen["return_url"]
+    pending = (await db_session.execute(select(PendingSignup))).scalar_one()
+    assert pending.email == ""   # filled in by the checkout.session.completed webhook
