@@ -32,7 +32,7 @@ export function createCheckoutSession(email: string | undefined, planTier: "solo
 
 // GET /api/v1/checkout/session/{id} — used by CheckoutSuccessPage to confirm
 // payment landed before showing "Payment confirmed" (the Stripe webhook can
-// race the browser redirect in real, non-demo checkout).
+// race the browser redirect).
 export function getCheckoutSession(sessionId: string) {
   return apiFetch<CheckoutSessionStatusResponse>(`/api/v1/checkout/session/${encodeURIComponent(sessionId)}`);
 }

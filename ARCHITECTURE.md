@@ -161,7 +161,7 @@ plastic-surgeoun3.0/
 ```
 Marketing Site → /checkout/create-session (unauth)
     → PendingSignup created
-    → Stripe Checkout (real if keys configured, else demo page)
+    → Stripe embedded payment form (503 if Stripe isn't configured; no demo mode)
     → Stripe webhook: checkout.session.completed
         → PendingSignup.completed_at set
     → User claims via /practice/claim (Clerk signup)
@@ -233,7 +233,7 @@ CLERK_SECRET_KEY=sk_live_...
 CLERK_WEBHOOK_SECRET=whsec_...
 STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PRICE_PRACTICE=price_...
+# the subscription Price id is set per plan in Admin -> Plans (Plan.stripe_price_id)
 ADMIN_PASSWORD=<strong-random>
 ADMIN_JWT_SECRET=<strong-random>
 PATIENT_PORTAL_JWT_SECRET=<strong-random>

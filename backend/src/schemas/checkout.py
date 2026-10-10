@@ -5,7 +5,9 @@ from pydantic import BaseModel, EmailStr
 class CheckoutSessionRequest(BaseModel):
     # Optional: when omitted, Stripe's payment form asks for it and the Stripe webhook records it.
     email: EmailStr | None = None
-    plan_tier: str  # "solo" | "practice" — Enterprise never reaches this endpoint, see Pricing.tsx
+    # "practice" - Enterprise never reaches this endpoint (see Pricing.tsx). The hidden
+    # "solo" trial tier is accepted but priced as Practice (PlanService._normalize_for_checkout).
+    plan_tier: str
 
 
 class CheckoutSessionResponse(BaseModel):

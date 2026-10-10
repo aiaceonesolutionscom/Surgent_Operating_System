@@ -114,8 +114,8 @@ class BillingController:
     async def confirm_checkout_session(self, db: AsyncSession, user: User, invoice_id: UUID, session_id: str) -> InvoiceResponse:
         # Robust confirmation path for local dev, where Stripe can't call
         # our webhook directly — the frontend calls this right after
-        # Checkout redirects back, same shape as CheckoutService's own
-        # get_session_status/_demo_checkout pattern for SaaS signups.
+        # Checkout redirects back (CheckoutService.get_session_status does
+        # the same polling for SaaS signups).
         session = await self.payment.get_checkout_session(session_id)
         if session["metadata"].get("invoice_id") != str(invoice_id):
             raise AppException("This checkout session does not belong to this invoice.")

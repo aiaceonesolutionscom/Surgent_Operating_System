@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Loader2Icon } from "lucide-react";
+import { AlertTriangleIcon, Loader2Icon } from "lucide-react";
 import { OnboardingLayout } from "./OnboardingLayout";
 import { writePlanOverride } from "../dashboard/plan/plan";
 import type { PlanTier } from "../../data/planTiers";
 import { ONBOARDING_ROUTES } from "./routes";
 import { useAuthedFetch } from "../../api/authFetch";
+import { ApiError } from "../../api/client";
 import { claimPlan } from "../../api/practice";
 
 const clerkEnabled = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
@@ -13,12 +14,11 @@ const clerkEnabled = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 // Reached after Clerk sign-up completes (forceRedirectUrl from
 // CheckoutSuccessPage, carrying session_id + plan_tier). Calls the real
 // POST /api/v1/practice/claim (backend/src/router/practice/practice_router.py)
-// to provision Practice + User + Subscription from the paid session. Any
-// failure (backend unreachable, session not found, email mismatch) degrades
-// to the local plan override instead of trapping the user — same
-// graceful-degradation pattern used everywhere else Clerk is touched in this
-// app. The dashboard reads the same source either way (usePlanTier.ts's
-// chain: real /practice/me first, local override as fallback).
+// to provision Practice + User + Subscription from the paid session. If the
+// claim fails (backend unreachable, session not found, email mismatch) the user
+// sees the reason and can retry - there is no silent local fallback, because a
+// clinic that was never provisioned can't use the dashboard. Without Clerk
+// (local QA only) the dev plan override stands in for the claim.
 export function ClaimPlanPage() {
   return clerkEnabled ? <ClaimWithClerk /> : <ClaimWithoutClerk />;
 }
@@ -45,29 +45,50 @@ function ClaimWithClerk() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { authedFetch, isSignedIn } = useAuthedFetch();
-  const planTier = (params.get("plan_tier") as PlanTier) || "practice";
   const sessionId = params.get("session_id") || "";
-  const [attempted, setAttempted] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [failure, setFailure] = useState<string | null>(null);
+  const started = useRef(-1);
 
   useEffect(() => {
-    if (isSignedIn === undefined || attempted) return;
-    setAttempted(true);
+    if (isSignedIn === undefined || started.current === attempt) return;
+    started.current = attempt;
+    setFailure(null);
     (async () => {
-      if (isSignedIn && sessionId) {
-        try {
-          const result = await claimPlan(authedFetch, sessionId);
-          writePlanOverride(result.plan_tier);
-          navigate(ONBOARDING_ROUTES.setup);
-          return;
-        } catch {
-          // Real claim failed — fall through to local-only below rather
-          // than stranding the user on this page.
-        }
+      if (!isSignedIn || !sessionId) {
+        // Nothing to claim (no payment session in the URL, or not signed in yet).
+        navigate(ONBOARDING_ROUTES.setup);
+        return;
       }
-      writePlanOverride(planTier);
-      navigate(ONBOARDING_ROUTES.setup);
+      try {
+        await claimPlan(authedFetch, sessionId);
+        navigate(ONBOARDING_ROUTES.setup);
+      } catch (err) {
+        // Don't pretend it worked: without a provisioned clinic the dashboard
+        // would just bounce the user back. Say what happened and let them retry.
+        console.error("Claiming the paid plan failed:", err);
+        setFailure(err instanceof ApiError && err.message ? err.message : "We couldn't finish setting up your account.");
+      }
     })();
-  }, [isSignedIn, attempted, sessionId, planTier, authedFetch, navigate]);
+  }, [isSignedIn, attempt, sessionId, authedFetch, navigate]);
+
+  if (failure) {
+    return (
+      <OnboardingLayout step={{ current: 2, total: 3 }}>
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <AlertTriangleIcon className="h-6 w-6 text-danger" />
+          <p className="text-sm text-ink">{failure}</p>
+          <p className="text-xs text-ink-muted">Your payment is safe. Use the same email you paid with, then try again.</p>
+          <button
+            type="button"
+            onClick={() => setAttempt((n) => n + 1)}
+            className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-700">
+            Try again
+          </button>
+        </div>
+      </OnboardingLayout>);
+
+  }
 
   return <ClaimingScreen />;
 }

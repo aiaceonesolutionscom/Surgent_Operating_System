@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { LockIcon, Loader2Icon, ShieldCheckIcon, MailIcon, CheckIcon, CheckCircle2Icon, AlertTriangleIcon } from "lucide-react";
+import { Loader2Icon, AlertTriangleIcon } from "lucide-react";
 import { Logo } from "../../components/ui";
-import { planFor } from "../dashboard/plan/plan";
-import { useLivePlans } from "../../hooks/useLivePlans";
 import type { PlanTier } from "../../data/planTiers";
 import { createCheckoutSession } from "../../api/commerce";
 import { ApiError } from "../../api/client";
@@ -79,17 +77,15 @@ const STRIPE_APPEARANCE = {
 const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
 const isTestMode = Boolean(publishableKey?.startsWith("pk_test_"));
 
-// The payment step of the signup flow. Our own summary (plan, price, what's
-// included) sits beside Stripe's embedded payment form; card details are typed
-// into Stripe's iframe and never touch our page or servers. After Stripe
-// confirms, it sends the browser to /pricing/success (the return_url the backend
-// put on the session), which waits for the webhook to mark the signup paid.
+// The payment step of the signup flow: Stripe's embedded payment form and
+// nothing else of ours. Card details are typed into Stripe's iframe and never
+// touch our page or servers. After Stripe confirms, it sends the browser to
+// /pricing/success (the return_url the backend put on the session), which waits
+// for the webhook to mark the signup paid.
 export function CheckoutPage() {
   const [params] = useSearchParams();
   const planTier = (params.get("plan_tier") as PlanTier) || "practice";
   const email = params.get("email") || "";
-  const livePlans = useLivePlans();
-  const plan = livePlans.find((p) => p.id === planTier) || planFor(planTier);
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,146 +152,63 @@ export function CheckoutPage() {
   }, [attempt, email, planTier]);
 
   return (
-    <div className="flex min-h-screen bg-canvas font-sans">
-      <div className="relative hidden w-[44%] max-w-[560px] flex-col overflow-hidden bg-[#15171A] px-14 py-14 lg:flex">
-        <div className="pointer-events-none absolute -bottom-32 -left-24 h-[460px] w-[460px] rounded-full bg-accent-500/30 blur-[130px]" />
-
-        <Link to="/" className="relative flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-white">
-            <Logo className="h-6 w-6" />
+    <div className="flex min-h-screen flex-col bg-canvas font-sans">
+      <header className="flex h-16 items-center px-6">
+        <Link to="/" className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-sand-200 bg-white">
+            <Logo className="h-5 w-5" />
           </span>
-          <span className="text-lg font-bold tracking-tight text-white">Aiaceone</span>
+          <span className="text-[15px] font-bold tracking-tight text-ink">Aiaceone</span>
         </Link>
+      </header>
 
-        <div className="relative mt-16 flex flex-col gap-5">
-          <h1 className="max-w-[420px] font-display text-[2rem] font-600 leading-[1.2] tracking-tight text-white">
-            You&apos;re one step away from your AI practice team.
-          </h1>
-        </div>
-
-        <div className="relative mt-9 flex flex-col gap-4 rounded-[20px] border border-white/10 bg-white/[0.06] p-6">
-          <div className="flex items-center justify-between">
-            <p className="text-[15px] font-semibold text-white">{plan.name} Plan</p>
-            <p className="font-display text-xl font-bold text-cyan-400">
-              {plan.price}<span className="text-sm font-medium text-white/60">{plan.period}</span>
+      <main className="flex flex-1 items-start justify-center px-4 pb-10 pt-4 sm:items-center sm:px-6">
+        <div className="w-full max-w-[520px] space-y-4">
+          {isTestMode && !error &&
+          <p className="rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-xs text-ink-soft">
+              <span className="font-semibold">Test mode.</span> Use card <span className="font-mono">4242 4242 4242 4242</span>, any future expiry, any CVC. No real money is charged.
             </p>
-          </div>
-          <div className="flex flex-col gap-3">
-            {plan.features.map((f) =>
-            <div key={f} className="flex items-start gap-2.5">
-                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400" />
-                <span className="text-[13px] text-white/80">{f}</span>
+          }
+
+          <div className="rounded-3xl border border-sand-200 bg-white p-6 shadow-[0_20px_50px_-20px_rgba(11,29,38,0.25)] sm:p-8">
+            {/* Stripe mounts its payment form into this element. */}
+            <div id="checkout-form" className={ready ? "" : "hidden"} />
+
+            {!ready && !error &&
+            <div className="flex flex-col items-center gap-3 py-10 text-ink-muted">
+                <Loader2Icon className="h-6 w-6 animate-spin text-accent-500" />
+                <p className="text-sm">Loading secure payment form…</p>
               </div>
-            )}
-          </div>
-        </div>
+            }
 
-        <div className="relative mt-auto flex items-center gap-2 pt-8 text-xs text-white/50">
-          <ShieldCheckIcon className="h-3.5 w-3.5" /> Card details go straight to Stripe — they never touch our servers
-        </div>
-      </div>
-
-      <div className="flex flex-1 flex-col">
-        <div className="flex h-16 items-center justify-between px-6">
-          <Link to="/" className="flex items-center gap-2.5 lg:hidden">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-sand-200 bg-white">
-              <Logo className="h-5 w-5" />
-            </span>
-            <span className="text-[15px] font-bold tracking-tight text-ink">Aiaceone</span>
-          </Link>
-          <div className="ml-auto flex items-center gap-1.5">
-            {[1, 2, 3].map((i) =>
-            <span key={i} className={`h-1.5 w-8 rounded-full ${i === 1 ? "bg-accent-500" : "bg-sand-200"}`} />
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:px-6">
-          <div className="w-full max-w-[520px] overflow-hidden rounded-3xl border border-sand-200 bg-white shadow-[0_20px_50px_-20px_rgba(11,29,38,0.25)]">
-            <div className="px-6 pb-2 pt-7 sm:px-8 sm:pt-8">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display text-2xl font-600 text-ink">Secure checkout</h2>
-                <span className="flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-1 text-[11px] font-bold text-success">
-                  <ShieldCheckIcon className="h-3 w-3" /> 256-bit SSL
-                </span>
+            {error &&
+            <div className="rounded-2xl border border-danger/25 bg-danger/5 p-5 text-center">
+                <AlertTriangleIcon className="mx-auto h-6 w-6 text-danger" />
+                <p className="mt-2 text-sm text-ink">{error}</p>
+                {publishableKey &&
+              <button
+                type="button"
+                onClick={() => setAttempt((n) => n + 1)}
+                className="mt-3 rounded-xl bg-accent-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-700">
+                    Try again
+                  </button>
+              }
+                <Link to="/#pricing" className="mt-3 block text-xs font-semibold text-accent-700 underline-offset-4 hover:underline">
+                  Back to pricing
+                </Link>
               </div>
-              <p className="mt-1 text-sm text-ink-muted">
-                {plan.name} plan · {plan.price}{plan.period}
-              </p>
-            </div>
-
-            <div className="space-y-5 px-6 py-6 sm:px-8">
-              {email &&
-              <div>
-                  <span className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                    <MailIcon className="h-3.5 w-3.5" /> Receipt sent to
-                  </span>
-                  <div className="flex items-center justify-between rounded-xl border border-sand-200 bg-canvas px-3.5 py-2.5">
-                    <span className="truncate text-sm text-ink-soft">{email}</span>
-                    <CheckIcon className="h-4 w-4 shrink-0 text-success" />
-                  </div>
-                </div>
-              }
-
-              {isTestMode && !error &&
-              <p className="rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-xs text-ink-soft">
-                  <span className="font-semibold">Test mode.</span> Use card <span className="font-mono">4242 4242 4242 4242</span>, any future expiry, any CVC. No real money is charged.
-                </p>
-              }
-
-              {/* Stripe mounts its payment form into this element. */}
-              <div id="checkout-form" className={ready ? "" : "hidden"} />
-
-              {!ready && !error &&
-              <div className="flex flex-col items-center gap-3 py-10 text-ink-muted">
-                  <Loader2Icon className="h-6 w-6 animate-spin text-accent-500" />
-                  <p className="text-sm">Loading secure payment form…</p>
-                </div>
-              }
-
-              {error &&
-              <div className="rounded-2xl border border-danger/25 bg-danger/5 p-5 text-center">
-                  <AlertTriangleIcon className="mx-auto h-6 w-6 text-danger" />
-                  <p className="mt-2 text-sm text-ink">{error}</p>
-                  {publishableKey &&
-                <button
-                  type="button"
-                  onClick={() => setAttempt((n) => n + 1)}
-                  className="mt-3 rounded-xl bg-accent-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-700">
-                      Try again
-                    </button>
-                }
-                  <Link to="/#pricing" className="mt-3 block text-xs font-semibold text-accent-700 underline-offset-4 hover:underline">
-                    Back to pricing
-                  </Link>
-                </div>
-              }
-
-              {ready &&
-              <div className="flex items-center justify-center gap-4 pt-1 text-[11px] text-ink-muted">
-                  <span className="flex items-center gap-1"><CheckCircle2Icon className="h-3 w-3 text-success" /> Cancel anytime</span>
-                  <span className="flex items-center gap-1"><CheckCircle2Icon className="h-3 w-3 text-success" /> No setup fees</span>
-                </div>
-              }
-            </div>
-
-            <div className="border-t border-sand-200 bg-sand-50 px-8 py-4">
-              <p className="mb-3 text-center text-xs text-ink-soft">
-                Not ready to pay yet?{" "}
-                <Link to="/sign-up" className="font-semibold text-teal-700 underline-offset-4 hover:underline">
-                  Request free access
-                </Link>{" "}
-                - we&apos;ll set your organization up personally first, no card needed.
-              </p>
-              <div className="flex items-center justify-center gap-1.5 text-xs text-ink-muted">
-                <LockIcon className="h-3 w-3" />
-                <span>Payments powered by</span>
-                <span className="font-display text-sm font-bold italic text-[#635BFF]">stripe</span>
-              </div>
-            </div>
+            }
           </div>
+
+          <p className="text-center text-xs text-ink-soft">
+            Not ready to pay yet?{" "}
+            <Link to="/sign-up" className="font-semibold text-teal-700 underline-offset-4 hover:underline">
+              Request free access
+            </Link>{" "}
+            - we&apos;ll set your organization up personally first, no card needed.
+          </p>
         </div>
-      </div>
+      </main>
     </div>);
 
 }

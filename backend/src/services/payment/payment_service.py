@@ -210,13 +210,3 @@ class PaymentService:
             proration_behavior="create_prorations",
         )
         return {"status": subscription.status, "current_period_end": subscription.current_period_end}
-
-    async def get_subscription(self, stripe_subscription_id: str) -> dict:
-        subscription = stripe.Subscription.retrieve(stripe_subscription_id)
-        return {
-            "id": subscription.id,
-            "status": subscription.status,
-            "current_period_end": subscription.current_period_end,
-            "cancel_at_period_end": subscription.cancel_at_period_end,
-            "items": subscription["items"]["data"],
-        }

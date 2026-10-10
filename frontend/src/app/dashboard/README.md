@@ -244,9 +244,9 @@ data — build this first, everything else is a filtered view of it.
    Every gated surface is **visible-but-locked**, not hidden
    (`plan/UpgradeRequired.tsx`) — Sidebar, Agent Settings, Command Palette,
    Doctors' add-limit, and the Analytics route all read from the same
-   `plan/planCapabilities.ts` source of truth. Plan-switching for review
-   lives on `billing/PlanBillingPage.tsx` (dev-only "Switch to this plan"
-   buttons), not a global Topbar control.
+   `plan/planCapabilities.ts` source of truth. `billing/PlanBillingPage.tsx`
+   only displays the current plan; there is no client-side plan switch (the
+   plan comes from the clinic's Stripe-backed subscription).
    `app/onboarding/` (own README) covers the Stripe-redirect-to-dashboard
    flow: `/pricing/success` → Clerk sign-up → `/onboarding/claim` → a
    3-step skippable setup wizard → `/dashboard`.
@@ -265,12 +265,9 @@ data — build this first, everything else is a filtered view of it.
    wired into `get_current_practice_context`; `require_plan_feature("analytics")`
    now guards `GET /api/v1/analytics/sessions` (the Analytics page), while
    `/analytics/overview` stays open because it backs the Owner home screen for
-   every tier. **Demo checkout mode**
-   (`checkout_services.py`'s `_stripe_configured()`/`_demo_checkout()`) skips
-   real Stripe entirely while `backend/.env`'s Stripe keys are still "xxxx"
-   placeholders, marking checkout as paid immediately so this whole flow is
-   reviewable before real Stripe keys exist — an explicit, informed decision
-   for pre-launch demoing, automatically stops once real keys are set.
+   every tier. Checkout is always real Stripe (embedded payment form); there
+   is no demo/simulated payment, and without Stripe configured the backend
+   answers 503.
 
 Phases 1–6 above were originally shaped on `data/mockSessions.ts` /
 `data/mockPatients.ts` and `localStorage` (settings/profile) — the mocks matched

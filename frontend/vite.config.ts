@@ -1,5 +1,7 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const LOCAL_HOST = /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])([:/]|$)/i
 
@@ -31,6 +33,20 @@ function assertProductionEnv(env: Record<string, string>) {
   }
 }
 
+// The hero's frame files are cached for a year (vercel.json), so their URLs carry a content
+// version (`?v=`, written into frames.manifest.json by scripts/build-scroll-frames.py). The scrub
+// engine reads it from the manifest; index.html's poster preload gets it from here.
+function heroFramesVersion(): Plugin {
+  const manifestPath = resolve(process.cwd(), 'src/components/hero/frames.manifest.json')
+  return {
+    name: 'hero-frames-version',
+    transformIndexHtml(html) {
+      const version = JSON.parse(readFileSync(manifestPath, 'utf-8')).reception?.desktop?.v ?? ''
+      return html.split('__FRAMES_V__').join(version)
+    },
+  }
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   if (mode === 'production' && !process.env.ALLOW_LOCAL_BUILD) {
@@ -38,7 +54,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react()],
+    plugins: [react(), heroFramesVersion()],
     server: {
       host: "0.0.0.0",
       port: 5173,

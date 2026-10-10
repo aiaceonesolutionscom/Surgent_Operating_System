@@ -56,7 +56,10 @@ if (posthogKey) {
         // Patient names, chat text and clinical notes are on nearly every
         // dashboard screen, so replay masks ALL text and ALL inputs - the old
         // ".sensitive" selector matched nothing, i.e. nothing was masked.
-        session_recording: { maskAllInputs: true, maskTextSelector: "*" },
+        // The scroll-scrubbed hero restyles several elements on every scroll frame and
+        // holds nothing worth replaying (a canvas of marketing frames), so it is
+        // blocked: rrweb then neither observes nor serialises its mutations.
+        session_recording: { maskAllInputs: true, maskTextSelector: "*", blockSelector: ".cinematic-hero" },
         autocapture: { dom_event_allowlist: ["click", "change", "submit"] },
       });
     });

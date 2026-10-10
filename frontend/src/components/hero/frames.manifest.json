@@ -6,7 +6,8 @@
       "width": 1280,
       "height": 720,
       "fps": 24,
-      "blend": false
+      "blend": false,
+      "v": "b13905d7c1"
     },
     "mobile": {
       "dir": "/lets-scroll/frames/reception-m",
@@ -14,7 +15,8 @@
       "width": 540,
       "height": 960,
       "fps": 24,
-      "blend": false
+      "blend": false,
+      "v": "b13905d7c1"
     }
   },
   "booking": {
@@ -24,7 +26,8 @@
       "width": 1280,
       "height": 720,
       "fps": 24,
-      "blend": false
+      "blend": false,
+      "v": "b13905d7c1"
     },
     "mobile": {
       "dir": "/lets-scroll/frames/booking-m",
@@ -32,7 +35,8 @@
       "width": 540,
       "height": 960,
       "fps": 24,
-      "blend": false
+      "blend": false,
+      "v": "b13905d7c1"
     }
   },
   "care": {
@@ -42,7 +46,8 @@
       "width": 1280,
       "height": 720,
       "fps": 24,
-      "blend": false
+      "blend": false,
+      "v": "b13905d7c1"
     },
     "mobile": {
       "dir": "/lets-scroll/frames/care-m",
@@ -50,7 +55,8 @@
       "width": 540,
       "height": 960,
       "fps": 24,
-      "blend": false
+      "blend": false,
+      "v": "b13905d7c1"
     }
   },
   "growth": {
@@ -60,7 +66,8 @@
       "width": 1280,
       "height": 720,
       "fps": 24,
-      "blend": false
+      "blend": false,
+      "v": "b13905d7c1"
     },
     "mobile": {
       "dir": "/lets-scroll/frames/growth-m",
@@ -68,7 +75,8 @@
       "width": 540,
       "height": 960,
       "fps": 24,
-      "blend": false
+      "blend": false,
+      "v": "b13905d7c1"
     }
   }
 }

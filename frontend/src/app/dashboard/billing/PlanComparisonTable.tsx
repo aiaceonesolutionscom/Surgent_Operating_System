@@ -4,11 +4,10 @@ import { usePlan } from "../plan/PlanContext";
 
 // Reuses the marketing site's own PLANS data directly — the in-app
 // comparison is literally the Pricing section's copy, so it can't drift.
-// "Switch to this plan" writes the local plan override, same as onboarding's
-// claim step — this replaced the old Topbar DevPlanSwitcher, so plan-switching
-// now lives only here, where it reads as "manage my plan."
+// Display only: the plan a clinic is on comes from its Stripe-backed
+// subscription, so there is deliberately no client-side "switch plan" control.
 export function PlanComparisonTable() {
-  const { tier, setOverride } = usePlan();
+  const { tier } = usePlan();
 
   return (
     <div className="grid gap-4 sm:grid-cols-3">
@@ -41,15 +40,6 @@ export function PlanComparisonTable() {
                 </li>
               )}
             </ul>
-
-            {!isCurrent &&
-            <button
-              onClick={() => setOverride(plan.id)}
-              className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-sand-200 py-2.5 text-xs font-semibold text-ink-soft transition-colors hover:border-teal-600/40 hover:text-teal-600">
-
-                Switch to this plan
-              </button>
-            }
           </div>);
 
       })}

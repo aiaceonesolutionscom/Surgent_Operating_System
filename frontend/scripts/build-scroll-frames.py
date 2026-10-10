@@ -10,15 +10,21 @@ Every source frame is kept (24 fps) so the picture is exactly what the video
 showed - no frames are dropped and none are blended (a blend of two frames is a
 cross-dissolve, which reads as blur in motion).
 
-    python frontend/scripts/build-scroll-frames.py          (needs Pillow + ffmpeg)
+    python frontend/scripts/build-scroll-frames.py                  (needs Pillow + ffmpeg)
+    python frontend/scripts/build-scroll-frames.py --manifest-only  (re-hash the existing frames; no ffmpeg)
 
 ffmpeg is taken from PATH, or from the `imageio-ffmpeg` pip package.
 Output (committed): public/lets-scroll/frames/<scene>/NNN.webp (desktop),
 public/lets-scroll/frames/<scene>-m/NNN.webp (phones, portrait crop), and
-src/components/hero/frames.manifest.json (frame counts for the engine).
+src/components/hero/frames.manifest.json (frame counts + a content `v`ersion for the engine).
+
+`v` is a hash of every frame file. The engine appends it to each frame URL (`NNN.webp?v=...`) and
+vite.config.ts puts it in index.html's poster preload, so the host can serve the frames with a
+year-long immutable cache (vercel.json) and still hand out new frames the moment they change.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -97,9 +103,36 @@ def build(ffmpeg: str, clip: Path, out_dir: Path, spec: dict, pool: ProcessPoolE
     return len(frames)
 
 
+def frames_version() -> str:
+    """Short content hash of every frame file (names + bytes), stable across machines."""
+    h = hashlib.sha1()
+    for scene in SCENES:
+        for d in (OUT / scene, OUT / f"{scene}-m"):
+            for f in sorted(d.glob("*.webp")):
+                h.update(f"{d.name}/{f.name}".encode())
+                h.update(f.read_bytes())
+    return h.hexdigest()[:10]
+
+
+def write_manifest(counts: dict[str, tuple[int, int]]) -> None:
+    v = frames_version()
+    manifest = {
+        scene: {
+            "desktop": {"dir": f"/lets-scroll/frames/{scene}", "count": count, "width": DESKTOP["size"][0], "height": DESKTOP["size"][1], "fps": FPS, "blend": False, "v": v},
+            "mobile": {"dir": f"/lets-scroll/frames/{scene}-m", "count": count_m, "width": MOBILE["size"][0], "height": MOBILE["size"][1], "fps": FPS, "blend": False, "v": v},
+        }
+        for scene, (count, count_m) in counts.items()
+    }
+    MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    print("wrote", MANIFEST.relative_to(ROOT), "- frames version", v)
+
+
 def main() -> None:
+    if "--manifest-only" in sys.argv:
+        write_manifest({s: (len(list((OUT / s).glob("*.webp"))), len(list((OUT / f"{s}-m").glob("*.webp")))) for s in SCENES})
+        return
     ffmpeg = find_ffmpeg()
-    manifest: dict[str, dict] = {}
+    counts: dict[str, tuple[int, int]] = {}
     with ProcessPoolExecutor() as pool:
         for scene in SCENES:
             desktop_clip = SRC / f"{scene}.mp4"
@@ -111,12 +144,8 @@ def main() -> None:
             size = sum(f.stat().st_size for f in (OUT / scene).glob("*.webp"))
             size_m = sum(f.stat().st_size for f in (OUT / f"{scene}-m").glob("*.webp"))
             print(f"{scene:10} desktop {count} frames {size/1e6:5.1f} MB | mobile {count_m} frames {size_m/1e6:4.1f} MB", flush=True)
-            manifest[scene] = {
-                "desktop": {"dir": f"/lets-scroll/frames/{scene}", "count": count, "width": DESKTOP["size"][0], "height": DESKTOP["size"][1], "fps": FPS, "blend": False},
-                "mobile": {"dir": f"/lets-scroll/frames/{scene}-m", "count": count_m, "width": MOBILE["size"][0], "height": MOBILE["size"][1], "fps": FPS, "blend": False},
-            }
-    MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print("wrote", MANIFEST.relative_to(ROOT))
+            counts[scene] = (count, count_m)
+    write_manifest(counts)
 
 
 if __name__ == "__main__":

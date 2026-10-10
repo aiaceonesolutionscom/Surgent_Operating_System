@@ -20,7 +20,7 @@ if you want them moved to the embedded form too.
 | Field | Current Value | What to Set |
 |-------|--------------|-------------|
 | `mode` | `subscription` (real, kept) | Nothing — the Practice plan is a monthly subscription. |
-| `line_items[].price` | `price_1UOW7g9zQsQdHwaF1Cal8F5t` (a **test-mode** price, $999/mo, created in your Stripe test account) | Not hardcoded: it is read from the plan's `stripe_price_id` (Admin panel → Plans). For live mode create the real price in Stripe (live) and paste its ID there. |
+| `line_items[].price` | `price_1UOW7g9zQsQdHwaF1Cal8F5t` (a **test-mode** price, $999/mo, created in your Stripe test account) | Not hardcoded: it is read from the plan's `stripe_price_id` (column on the `plans` table; the Admin → Plans drawer has no field for it yet, so set it with SQL). For live mode create the real price in Stripe (live) and store its ID there. |
 | `STRIPE_SECRET_KEY` | `sk_test_…` | Live `sk_live_…` key when you go live (backend env). |
 | `VITE_STRIPE_PUBLISHABLE_KEY` | `pk_test_…` | Live `pk_live_…` key when you go live (frontend build env). |
 | `STRIPE_WEBHOOK_SECRET` | secret of the **test** endpoint `we_1UOWBu9zQsQdHwaFZ7TehM9l` | Create a separate **live** webhook endpoint and use its secret. |
@@ -64,7 +64,7 @@ App-specific parameters kept alongside them: `client_reference_id` (links the se
 
 **Backend** (`backend/.env`, or the host's env): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`. Dependency: `stripe` (already in `requirements.txt`).
 **Frontend** (`frontend/.env.local`, or `insforge deployments env set …`): `VITE_STRIPE_PUBLISHABLE_KEY` (browser-safe; the secret key never goes here).
-**Database:** the plan's `stripe_price_id` (Admin → Plans). In the staging deployment it is already set to the test price above.
+**Database:** the plan's `stripe_price_id` (`plans` table). In the staging deployment it is already set to the test price above.
 **Webhook:** `POST /api/v1/webhooks/stripe`, events `checkout.session.completed`, `customer.subscription.created|updated|deleted`,
 `invoice.paid`, `invoice.payment_failed`. A test-mode endpoint pointing at the staging backend already exists.
 
@@ -76,9 +76,9 @@ App-specific parameters kept alongside them: `client_reference_id` (links the se
 | [backend/src/services/checkout/checkout_services.py](backend/src/services/checkout/checkout_services.py) | builds `return_url`, remembers the session on `PendingSignup`; **no simulated payments** — 503 when Stripe/price isn't configured |
 | [backend/src/router/checkout/checkout_router.py](backend/src/router/checkout/checkout_router.py) | `POST /checkout/create-session` → `{client_secret, session_id}`; `GET /checkout/session/{id}` |
 | [backend/src/services/checkout/provisioning_service.py](backend/src/services/checkout/provisioning_service.py) | after signup, links the Stripe subscription and marks the clinic ACTIVE |
-| [frontend/src/app/onboarding/CheckoutPage.tsx](frontend/src/app/onboarding/CheckoutPage.tsx) | `/pricing/pay`: our plan summary + Stripe's form (Stripe.js from `js.stripe.com/dahlia`, `initCheckoutFormSdk` → `createForm` → `loadActions` → `confirm`) |
+| [frontend/src/app/onboarding/CheckoutPage.tsx](frontend/src/app/onboarding/CheckoutPage.tsx) | `/pricing/pay`: Stripe's form and nothing else of ours (Stripe.js from `js.stripe.com/dahlia`, `initCheckoutFormSdk` → `createForm` → `loadActions` → `confirm`) |
 
-Removed: the hand-built card form (`DemoPaymentPage.tsx`), the email-first modal (`CheckoutModal.tsx`), the demo "pay" endpoint and the demo-checkout mode.
+Removed: the hand-built card form (`DemoPaymentPage.tsx`), the email-first modal (`CheckoutModal.tsx`), the demo "pay" endpoint and the demo-checkout mode, our own plan-summary panel and header on the checkout page, the unused `/pricing/cancel` page, the dashboard's fake "Switch to this plan" button, the unused `STRIPE_PRICE_SOLO/PRACTICE` settings.
 
 ### Flow
 
@@ -97,7 +97,7 @@ Watch the result under Stripe Dashboard → Payments / Subscriptions / Developer
 
 ## Before going live
 
-1. Create the live Product + recurring Price → paste its ID into Admin → Plans.
+1. Create the live Product + recurring Price → store its ID in `plans.stripe_price_id`.
 2. Swap in live `sk_live_…` / `pk_live_…`; create a **live** webhook endpoint and use its secret.
 3. Set `APP_ENV=production` (the app then refuses to boot with test keys or a missing webhook secret).
 4. Decide on the shipping-address step (see notes).

@@ -17,7 +17,9 @@
       if (location.pathname === "/") {
         var l = document.createElement("link");
         l.rel = "preload"; l.as = "image"; l.setAttribute("fetchpriority", "high");
-        l.href = window.matchMedia("(max-width: 860px)").matches ? "/lets-scroll/frames/reception-m/000.webp" : "/lets-scroll/frames/reception/000.webp";
+        // __FRAMES_V__ is replaced at build time (vite.config.ts) with the frames' content version, so this URL is
+        // byte-identical to the one the scrub engine requests (it appends ?v=...) and the preload is actually reused.
+        l.href = window.matchMedia("(max-width: 860px)").matches ? "/lets-scroll/frames/reception-m/000.webp?v=__FRAMES_V__" : "/lets-scroll/frames/reception/000.webp?v=__FRAMES_V__";
         document.head.appendChild(l);
       }
     </script>

@@ -194,7 +194,7 @@ class RejectOrgRequestRequest(BaseModel):
 
 class ApproveOrgRequestRequest(BaseModel):
     # Which plan the approved org starts on trial of — "practice" (default)
-    # or "enterprise". The retired "solo" value is rejected upstream.
+    # or "enterprise". The retired "solo" value is normalized to "practice".
     plan_tier: Optional[str] = None
 
 

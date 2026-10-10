@@ -140,8 +140,8 @@ class Settings(BaseSettings):
 
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
-    stripe_price_solo: str = ""
-    stripe_price_practice: str = ""
+    # The subscription's Stripe Price is not configured here: it lives on the
+    # Plan row (Plan.stripe_price_id) so each plan carries its own price.
 
     # Comma-separated bootstrap allowlist — a Clerk user whose verified email
     # appears here gets User.is_platform_admin flipped to True on their next
@@ -182,7 +182,9 @@ class Settings(BaseSettings):
     storage_backend: str = "cloudinary"
     upload_max_size_mb: int = 10
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # extra="ignore": a stale key left in a .env file (e.g. the retired
+    # STRIPE_PRICE_* variables) must not stop the app from booting.
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     @property
     def cors_origin_list(self) -> list[str]:

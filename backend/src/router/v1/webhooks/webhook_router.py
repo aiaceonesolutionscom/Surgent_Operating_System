@@ -357,18 +357,10 @@ async def stripe_webhook(
             select(Subscription).where(Subscription.stripe_subscription_id == sub_id)
         )
         subscription = result.scalar_one_or_none()
-        if subscription is None:
-            # Try to find via pending signup (client_reference_id = pending.id)
-            # This happens when checkout completes and subscription is created
-            pending_id = sub.get("metadata", {}).get("pending_signup_id")
-            if pending_id:
-                result = await db.execute(select(PendingSignup).where(PendingSignup.id == UUID(pending_id)))
-                pending = result.scalar_one_or_none()
-                if pending and pending.practice_id:
-                    result = await db.execute(
-                        select(Subscription).where(Subscription.practice_id == pending.practice_id)
-                    )
-                    subscription = result.scalar_one_or_none()
+        # At this point a signup has usually not been claimed yet, so there is no
+        # Subscription row to find: provisioning links the Stripe subscription
+        # itself when the clinic is created (_link_stripe_subscription). This
+        # branch only refreshes an already-linked subscription.
         if subscription:
             subscription.stripe_subscription_id = sub_id
             subscription.price = (sub.get("items", {}).get("data", [{}])[0].get("price", {}).get("unit_amount") or 0) / 100

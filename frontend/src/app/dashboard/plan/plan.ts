@@ -37,9 +37,9 @@ export type PlanSource = "api" | "local" | "default";
 
 // ============================================================================
 // Local overrides (storage) — mirrors profile/usePracticeProfile.ts's
-// localStorage pattern. Fallbacks a real onboarding claim step or
-// billing/PlanComparisonTable.tsx's dev "Switch to this plan" buttons write,
-// read as source #2 in usePlanTier()'s chain (behind a real /practice/me).
+// localStorage pattern. A fallback that Clerk-less local QA (onboarding's
+// claim step) writes, read as source #2 in usePlanTier()'s chain (behind a real
+// /practice/me). Dev builds only - inert in production (see below).
 // ============================================================================
 
 const STORAGE_KEY = "aesthetixai_dashboard_plan_tier";
@@ -304,15 +304,6 @@ export function usePlanTier(authedFetch: AuthedFetch = null) {
     };
   }, [authedFetch]);
 
-  // Plan & Billing's dev switch buttons, or onboarding's claim step, call
-  // this — writes the local override and updates state immediately (doesn't
-  // wait for a reload).
-  const setOverride = useCallback((next: PlanTier) => {
-    writePlanOverride(next);
-    setTier(next);
-    setSource("local");
-  }, []);
-
   // Plan & Billing's "Preview as" dev switcher calls this — but only when no
   // real backend role resolved (source === "api" means the live session IS
   // that role, so a demo override could only fake a role that would then
@@ -323,7 +314,7 @@ export function usePlanTier(authedFetch: AuthedFetch = null) {
     setRole(next);
   }, [source]);
 
-  return { tier, role, permissions, source, loading, setOverride, setRoleOverride };
+  return { tier, role, permissions, source, loading, setRoleOverride };
 }
 
 export { tierAtLeast };

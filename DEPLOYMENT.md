@@ -85,8 +85,8 @@ Strongly recommended: `REDIS_URL` (a hosted Redis, `rediss://…` — without it
 `SENTRY_DSN`, `PLATFORM_ADMIN_EMAILS`, `CLOUDINARY_*`, `RESEND_API_KEY` + `RESEND_FROM_EMAIL` (verify a sending domain),
 at least one LLM key (`GROQ_API_KEY` / `MISTRAL_API_KEY` / `OPENAI_API_KEY`).
 
-Billing (when ready): `STRIPE_SECRET_KEY` (live), `STRIPE_WEBHOOK_SECRET`, and a `stripe_price_id` on the Plan rows (Admin → Plans).
-**Until Stripe is configured, online checkout answers 503 in production** (the demo-payment flow is disabled there on purpose — it marks a signup "paid" without any payment).
+Billing (when ready): `STRIPE_SECRET_KEY` (live), `STRIPE_WEBHOOK_SECRET`, and a `stripe_price_id` on the Plan rows. (The Admin → Plans drawer has no field for it yet, so set it with SQL: `update plans set stripe_price_id = 'price_…' where tier::text ilike 'practice'`.)
+**Until Stripe is configured, online checkout answers 503** — there is no demo/simulated payment mode in any environment.
 
 Optional: `GREEN_API_WEBHOOK_SECRET` (only if you switch WhatsApp from polling to push), `SEED_SAMPLE_DATA_ON_APPROVAL=false` (start approved clinics empty).
 
@@ -127,7 +127,7 @@ npx @insforge/cli deployments deploy .
 * `vercel.json` provides the SPA rewrite, cache headers and security headers. Missing `/assets/*` files 404 instead of returning the HTML shell.
 * Never set `VITE_DEMO_MODE` (the build refuses if it is set).
 * A local `npm run build` is refused while `.env.local` points at localhost — use `ALLOW_LOCAL_BUILD=1 npm run build` for a local smoke build.
-* `frontend/public/` is ~47 MB (nine 2–3.5 MB videos + large PNGs). It deploys, but moving the `lets-scroll/` media to InsForge Storage / a CDN will speed the first deploy and page loads.
+* The hero's scroll animation is 1,632 static WebP frames in `frontend/public/lets-scroll/frames/` (~31 MB: 816 desktop + 816 mobile, from `scripts/build-scroll-frames.py`); they are served by the same hosting as the site (not Cloudinary, not the database) and loaded lazily per scene. `vercel.json` caches them for a year (`immutable`) - safe because every frame URL carries `?v=<hash>` from `src/components/hero/frames.manifest.json`. After regenerating frames run the script (or `--manifest-only`) so the hash changes.
 
 ## 5. Third-party setup
 

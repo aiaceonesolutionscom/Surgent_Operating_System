@@ -95,7 +95,7 @@ export function CheckoutSuccessPage() {
           </span>
           <p className="mt-4 text-lg font-bold text-ink">Still confirming your payment</p>
           <p className="mt-1.5 text-sm text-ink-muted">
-            This can take a moment. We'll email you as soon as it's confirmed — no need to wait here.
+            Stripe has your payment and we're waiting for it to be confirmed. This usually takes a few seconds — refresh this page to check again.
           </p>
         </div>
       </OnboardingLayout>);

@@ -239,7 +239,7 @@ tracked.)
 | **WhatsApp / Green API** | `GREEN_API_ID`, `GREEN_API_TOKEN` | Real (one real number connected) | Live WhatsApp conversations, media/profile lookups, human-takeover replies |
 | **Cloudinary** | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Real in this project's `.env` | Before/after photo uploads and doctor-application documents fail (uploads stored here) |
 | **Resend** | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Real | The active outbound-email path (notifications, practice outreach) |
-| **Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_SOLO`, `STRIPE_PRICE_PRACTICE` | Placeholder | Checkout sessions are created server-side and the flow works end-to-end locally, but a real transaction needs real keys |
+| **Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (+ `VITE_STRIPE_PUBLISHABLE_KEY` in the frontend) | Test-mode keys on staging | Signup checkout is Stripe's embedded payment form; the subscription's Price id lives on the plan (`Plan.stripe_price_id`, Admin → Plans). Without keys checkout answers 503 (no demo mode) |
 | **Redis** | `REDIS_URL` | Configured (WSL), optional at runtime | Rate limiting / OTP store / booking drafts / meeting-cache **fail open** if unreachable (see note above) — real protection needs it running |
 
 ## How ready is this, honestly

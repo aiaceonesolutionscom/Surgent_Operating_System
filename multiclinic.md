@@ -312,7 +312,7 @@ PROSPECT LANDS
    ▼
 /pricing  ── reads plan cards, prices, feature lists
    │
-   ├─► "Start free trial / Buy" ──► CheckoutModal ──► Stripe ──► /onboarding/claim
+   ├─► "Get started" ──► /pricing/pay (Stripe's embedded form) ──► /onboarding/claim
    │                                                            └─► ClaimPlanPage
    │                                                                └─► ProvisioningService
    │                                                                    .provision_from_pending_signup
@@ -370,7 +370,7 @@ SUPER-ADMIN SIGNS IN  (/super-admin/sign-in)
 ### 4.3 The paid path (unchanged, still fully live)
 
 ```
-/pricing → CheckoutModal → Stripe Checkout Session
+/pricing → /pricing/pay → Stripe Checkout Session (embedded form)
    → webhook checkout.session.completed → PendingSignup.completed_at
    → user creates Clerk account → /onboarding/claim
    → POST /practice/claim → ProvisioningService.provision_from_pending_signup

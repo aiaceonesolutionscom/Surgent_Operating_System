@@ -177,7 +177,7 @@ function mountLetsScroll(container, config) {
       scene.appendChild(s.cv);
     }
     s.loading = false; s.ready = false; s.cur = 0; s.target = 0; s.visible = false;
-    s.warm = false; s.dirty = true; s.held = 0; s.lastI = -1; s.posY = 0.42;
+    s.warm = false; s.dirty = true; s.held = 0; s.lastI = -1; s.drawnI = -1; s.posY = 0.42;
   });
 
   // per-section copy / route / nav
@@ -231,15 +231,18 @@ function mountLetsScroll(container, config) {
   }
 
   // ---- frame-sequence renderer ----
-  const SMOOTH_MS = 85;      // scroll-smoothing time constant (frame-rate independent, so 60/120/144 Hz feel alike)
+  const SMOOTH_MS = 55;      // scroll-smoothing time constant (frame-rate independent, so 60/120/144 Hz feel alike)
   const KEEP_BEHIND = 8;     // decoded frames kept behind the playhead...
   const AHEAD = 10;          // ...and decoded ahead of it (in the direction the scroll is heading)
-  const FETCHERS = 6;        // parallel downloads while sweeping a scene in
+  const FETCHERS = 4;        // parallel low-priority downloads while sweeping a scene in
   const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   const net = new AbortController();
 
   function framesFor(s) { return (isMobile() && s.frames.mobile) ? s.frames.mobile : s.frames.desktop; }
-  function frameUrl(set, i) { return set.dir + '/' + String(i).padStart(3, '0') + '.webp'; }
+  // `v` (written into frames.manifest.json by build-scroll-frames.py) changes whenever the frames are
+  // regenerated, which is what lets the host serve them with a year-long immutable cache. index.html's
+  // poster preload uses the same URL, so keep the two in step.
+  function frameUrl(set, i) { return set.dir + '/' + String(i).padStart(3, '0') + '.webp' + (set.v ? '?v=' + set.v : ''); }
 
   function loadFrames(s) {
     // prefers-reduced-motion used to skip loading entirely, leaving only the poster stills
@@ -258,15 +261,22 @@ function mountLetsScroll(container, config) {
     s.ready = true;
     sizeCanvas(s);
     // Sweep the scene in the background so its encoded frames are in memory well before the
-    // visitor scrolls through it; decoding stays demand-driven (see paint).
-    let next = 0;
-    const worker = async () => { while (!disposed && next < s.n) { await blob(s, next++).catch(() => null); } };
-    for (let k = 0; k < FETCHERS; k++) worker();
+    // visitor scrolls through it; decoding stays demand-driven (see paint). The sweep waits for
+    // the page's own load (scripts, fonts, posters) and runs at low priority, so it never
+    // competes with them; a frame the playhead needs sooner is fetched on demand at normal
+    // priority by paint() -> bitmap() -> blob().
+    const sweep = () => {
+      let next = 0;
+      const worker = async () => { while (!disposed && next < s.n) { await blob(s, next++, true).catch(() => null); } };
+      for (let k = 0; k < FETCHERS; k++) worker();
+    };
+    if (document.readyState === 'complete') sweep();
+    else window.addEventListener('load', sweep, { once: true });
   }
 
-  function blob(s, i) {
+  function blob(s, i, low) {
     if (!s.blobP[i]) {
-      s.blobP[i] = fetch(frameUrl(s.set, i), { signal: net.signal })
+      s.blobP[i] = fetch(frameUrl(s.set, i), { signal: net.signal, priority: low ? 'low' : 'auto' })
         .then(r => r.ok ? r.blob() : Promise.reject(new Error('frame ' + i)))
         .catch(e => { s.blobP[i] = null; throw e; });   // forget failures so a later request retries
     }
@@ -288,7 +298,7 @@ function mountLetsScroll(container, config) {
   }
 
   function drop(s, i) { if (s.bmp[i]) { s.bmp[i].close(); s.bmp[i] = null; s.held--; } }
-  function releaseAll(s) { for (let i = 0; i < s.n; i++) drop(s, i); s.lastI = -1; }
+  function releaseAll(s) { for (let i = 0; i < s.n; i++) drop(s, i); s.lastI = -1; s.drawnI = -1; }
   function evict(s, i0) {
     for (let i = 0; i < s.n; i++) if (s.bmp[i] && (i < i0 - KEEP_BEHIND - 2 || i > i0 + AHEAD + 2)) drop(s, i);
   }
@@ -340,8 +350,14 @@ function mountLetsScroll(container, config) {
     if (i0 !== s.lastI) { s.lastI = i0; evict(s, i0); }
     const b0 = s.bmp[i0] || nearest(s, i0);
     if (!b0) return;                                   // nothing decoded yet - the poster still shows
+    const exact = b0 === s.bmp[i0];
+    // The canvas already shows this exact frame and nothing invalidated it (a resize or a newly
+    // decoded bitmap sets `dirty`): slow scrolling and the tail of the glide land on the same
+    // frame many times in a row, and re-drawing it is a full-viewport resample for nothing.
+    if (!blend && exact && !s.dirty && s.drawnI === i0) return;
     const cw = s.cv.width, ch = s.cv.height;
     drawCover(s.ctx, b0, cw, ch, s.posY);
+    s.drawnI = exact ? i0 : -1;                        // a stand-in neighbour must be replaced once the real frame arrives
     const b1 = (blend && a > 0.04) ? s.bmp[i1] : null;
     if (b1 && b1 !== b0) { s.ctx.globalAlpha = a; drawCover(s.ctx, b1, cw, ch, s.posY); s.ctx.globalAlpha = 1; }
     s.dirty = false;
@@ -395,7 +411,9 @@ function mountLetsScroll(container, config) {
       container.style.setProperty('--sw-accent', SECTIONS[near].accent || '');
     }
     scrollbarFill.style.transform = `scaleX(${clamp(y / (totalW * vh))})`;
-    hint.style.opacity = clamp(1 - y / (0.5 * vh));
+    const hintOp = clamp(1 - y / (0.5 * vh));
+    hint.style.opacity = hintOp;
+    hint.style.visibility = hintOp > 0.01 ? '' : 'hidden';   // its looping animation costs nothing while hidden
     if (particles) particles.style.transform = `translate3d(0, ${-y * 0.05}px, 0)`;
     ticking = false;
   }
@@ -403,6 +421,9 @@ function mountLetsScroll(container, config) {
   let lastT = 0;
   function raf(now) {
     if (disposed) return;
+    // Read the scroll position in THIS frame, just before painting: a separate rAF scheduled from the
+    // scroll event ran after this loop's paint, so the picture always used the previous frame's target.
+    if (ticking) read();
     const dt = lastT ? Math.min(now - lastT, 64) : 16; lastT = now;
     // Frame-rate independent exponential smoothing: the same ~70 ms glide at 60 or 144 Hz.
     // Applied under reduced motion too: with OS animations off Chrome also turns off smooth wheel
@@ -427,7 +448,7 @@ function mountLetsScroll(container, config) {
 
   // Particles are a per-frame cost we can't afford alongside video scrubbing on a phone.
   seedParticles(particles, reduce || coarse);
-  function onScroll() { if (!ticking) { ticking = true; requestAnimationFrame(read); } }
+  function onScroll() { ticking = true; }   // raf() picks it up on the next frame
   window.addEventListener('scroll', onScroll, { passive: true });
   // Mobile browsers fire `resize` every time the URL bar slides in/out. Re-running
   // layout() there rebuilds the track height and yanks the scroll position, so on
@@ -442,7 +463,7 @@ function mountLetsScroll(container, config) {
   // Fires when the stage goes display:none -> shown again (scrolling back up into the hero) and on any
   // size change; sizeCanvas ignores the zero-size notifications.
   const sizeWatch = (typeof ResizeObserver === 'function')
-    ? new ResizeObserver(() => SEGMENTS.forEach(sizeCanvas)) : null;
+    ? new ResizeObserver(() => SEGMENTS.forEach(s => { sizeCanvas(s); s.dirty = true; })) : null;   // dirty: redraw after display:none -> shown
   if (sizeWatch) sizeWatch.observe(stage);
   window.addEventListener('orientationchange', layout);
   window.addEventListener('load', layout);
@@ -551,7 +572,7 @@ function injectCSS() {
   .sw-hint{position:fixed;left:50%;bottom:26px;z-index:30;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;font-size:.76rem;letter-spacing:.14em;text-transform:uppercase;color:var(--sw-ink-soft);transition:opacity .3s;}
   .sw-hint i{width:22px;height:34px;border-radius:12px;border:2px solid color-mix(in srgb,var(--sw-ink) 28%,transparent);position:relative;}
   .sw-hint i::after{content:"";position:absolute;left:50%;top:7px;width:4px;height:7px;border-radius:2px;background:var(--sw-accent);transform:translateX(-50%);animation:sw-wheel 1.7s ease-in-out infinite;}
-  @keyframes sw-wheel{0%{opacity:0;top:6px}40%{opacity:1}100%{opacity:0;top:17px}}
+  @keyframes sw-wheel{0%{opacity:0;transform:translate(-50%,-1px)}40%{opacity:1}100%{opacity:0;transform:translate(-50%,10px)}}
   .sw-track{position:relative;z-index:1;width:100%;pointer-events:none;}
   @media (max-width:860px){
     .sw-nav{display:none;}

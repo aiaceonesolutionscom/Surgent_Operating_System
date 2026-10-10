@@ -4,7 +4,7 @@ The path from "just paid on Stripe" to "looking at my own dashboard":
 
 ```
 Pricing (#pricing on /) → "Get started" goes straight to /pricing/pay (no email step)
-  → /pricing/pay  (CheckoutPage: our plan summary + Stripe's EMBEDDED payment form)
+  → /pricing/pay  (CheckoutPage: Stripe's EMBEDDED payment form, nothing else of ours)
   paid      → Stripe redirects to /pricing/success?session_id=...&plan_tier=...&email=...  (CheckoutSuccessPage)
                 → already signed in?  → straight to /onboarding/claim
                 → not signed in?      → Clerk sign-up (prefilled email) → forceRedirectUrl=/onboarding/claim
@@ -47,18 +47,16 @@ Practice-tier session produced exactly 24 `AgentConfig` rows (5 front-desk +
 `dashboard/plan/planCapabilities.ts`'s mapping exactly.
 
 `CheckoutSuccessPage` polls the real `GET /checkout/session/{id}` a few
-times before showing "Payment confirmed" — matters once real Stripe is
-connected (its webhook can race the browser redirect); in demo mode (below)
-there's no race so this resolves immediately.
+times before showing "Payment confirmed" — Stripe's webhook can race the
+browser redirect.
 
 `usePlanTier.ts`'s source #1 (`GET /api/v1/practice/me`, via
 `api/authFetch.ts`'s Clerk-token-attached fetch) is live — a signed-in
-practice's dashboard reads its real tier from the database, not the local
-override. The local override (`planStorage.ts`) is still the fallback for
-Clerk-disabled dev/testing and for `ClaimPlanPage`'s error path (backend
-unreachable, session not found, email mismatch) — same
-graceful-degradation pattern used everywhere else Clerk is touched in this
-app (`Navbar.tsx`, `RequireAuth.tsx`).
+practice's dashboard reads its real tier from the database. The local
+override (`plan.ts`) exists only for Clerk-disabled local dev and is inert in
+production builds. If `POST /practice/claim` fails (backend unreachable,
+session not found, email mismatch) `ClaimPlanPage` shows the reason with a
+"Try again" button instead of pretending the clinic was set up.
 
 **One thing genuinely not verifiable yet**: a full browser-driven Clerk
 sign-up → claim round trip. Clerk's device-verification challenge (an email
@@ -69,19 +67,6 @@ clean 401s for missing/invalid tokens — `get_current_user`'s JWT
 verification itself is pre-existing, unmodified code already proven working
 elsewhere in this app. A real signed-in browser session should work; it just
 wasn't possible to prove with literal pixels in this environment.
-
-## Demo checkout mode
-
-`checkout_services.py`'s `_stripe_configured()` checks for the "xxxx"
-placeholders still in `backend/.env`'s `STRIPE_SECRET_KEY`/`STRIPE_PRICE_*`.
-While they're placeholders, `create_checkout_session()` skips Stripe
-entirely (`_demo_checkout()`) — marks the `PendingSignup` as paid
-immediately and redirects straight to `/pricing/success`, so the whole
-purchase → claim → dashboard flow can be reviewed end to end before Stripe
-is connected. This was an explicit, informed decision (not a default
-behavior to leave in production) — the moment real keys are set,
-`_stripe_configured()` stops matching and the real Stripe Checkout path
-runs; nothing else changes.
 
 ## Why a setup wizard, not straight to an empty dashboard
 
